@@ -1,0 +1,2 @@
+com.byw.common.security.config.JwtAutoConfiguration
+com.byw.common.security.config.SecurityMvcAutoConfiguration

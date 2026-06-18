@@ -1,0 +1,76 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: byw-gateway
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:localhost:8848}
+        namespace: ${NACOS_NAMESPACE:}
+      config:
+        server-addr: ${NACOS_ADDR:localhost:8848}
+        namespace: ${NACOS_NAMESPACE:}
+        file-extension: yml
+    gateway:
+      routes:
+        - id: byw-auth
+          uri: lb://byw-auth
+          predicates:
+            - Path=/api/auth/**
+          filters:
+            - StripPrefix=1
+
+        - id: byw-user
+          uri: lb://byw-user
+          predicates:
+            - Path=/api/user/**
+          filters:
+            - StripPrefix=1
+
+        - id: byw-product
+          uri: lb://byw-product
+          predicates:
+            - Path=/api/product/**,/api/category/**,/api/search/**,/api/brand/**
+          filters:
+            - StripPrefix=1
+
+        - id: byw-cart
+          uri: lb://byw-cart
+          predicates:
+            - Path=/api/cart/**
+
+        - id: byw-order
+          uri: lb://byw-order
+          predicates:
+            - Path=/api/order/**
+
+        - id: byw-pay
+          uri: lb://byw-pay
+          predicates:
+            - Path=/api/pay/**
+
+        - id: byw-logistics
+          uri: lb://byw-logistics
+          predicates:
+            - Path=/api/logistics/**
+
+        - id: byw-review
+          uri: lb://byw-review
+          predicates:
+            - Path=/api/review/**
+
+        - id: byw-promotion
+          uri: lb://byw-promotion
+          predicates:
+            - Path=/api/promotion/**,/api/coupon/**,/api/seckill/**
+
+    sentinel:
+      transport:
+        dashboard: ${SENTINEL_DASHBOARD:localhost:8080}
+
+byw:
+  jwt:
+    secret: buyyouwant-secret-key-must-be-at-least-256-bits-long-for-hs256
+    expiration: 86400000

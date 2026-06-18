@@ -1,0 +1,28 @@
+package com.byw.api.user;
+
+import com.byw.api.user.dto.UserDTO;
+import com.byw.common.core.result.R;
+import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+
+@FeignClient(name = "byw-user", contextId = "userFeignClient")
+public interface UserFeignClient {
+
+    @GetMapping("/feign/user/{userId}")
+    R<UserDTO> getUserById(@PathVariable("userId") Long userId);
+
+    @GetMapping("/feign/user/username/{username}")
+    R<UserDTO> getUserByUsername(@PathVariable("username") String username);
+
+    @GetMapping("/feign/user/phone/{phone}")
+    R<UserDTO> getUserByPhone(@PathVariable("phone") String phone);
+
+    @PostMapping("/feign/user")
+    R<Long> createUser(@RequestBody UserDTO userDTO);
+
+    @PostMapping("/feign/user/check-username/{username}")
+    R<Boolean> checkUsernameExists(@PathVariable("username") String username);
+}
