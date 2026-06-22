@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @FeignClient(name = "byw-user", contextId = "userFeignClient")
 public interface UserFeignClient {
@@ -25,4 +26,7 @@ public interface UserFeignClient {
 
     @PostMapping("/feign/user/check-username/{username}")
     R<Boolean> checkUsernameExists(@PathVariable("username") String username);
+
+    @PostMapping("/feign/user/validate-password")
+    R<Boolean> validatePassword(@RequestParam("username") String username, @RequestParam("password") String password);
 }

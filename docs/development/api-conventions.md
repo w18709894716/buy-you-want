@@ -86,7 +86,9 @@ R.fail(ResultCode)        // 失败，使用枚举
 
 | 路径匹配 | 目标服务 | 说明 |
 |---------|---------|------|
-| /api/auth/** | byw-auth | 认证相关 |
+| /api/admin/auth/** | byw-auth | 管理端登录/注册（StripPrefix=2，免 Token） |
+| /api/admin/** | byw-admin | 管理端 BFF，StripPrefix=1 |
+| /api/auth/** | byw-auth | 认证相关（免 Token） |
 | /api/user/** | byw-user | 用户相关 |
 | /api/product/** | byw-product | 商品相关 |
 | /api/category/** | byw-product | 分类相关 |
@@ -102,6 +104,8 @@ R.fail(ResultCode)        // 失败，使用枚举
 | /api/seckill/** | byw-promotion | 秒杀 |
 
 ## API 文档
-项目集成 Knife4j，启动后可通过以下地址访问 API 文档：
-- Gateway 聚合文档: http://localhost:8080/doc.html
-- 各服务独立文档: http://localhost:{port}/doc.html
+
+各微服务集成 Knife4j，Gateway 通过 SpringDoc 聚合所有服务的 API 文档：
+
+- **Gateway 聚合文档**: http://localhost:8080/swagger-ui.html（下拉切换各服务）
+- **各服务独立文档 (Knife4j)**: http://localhost:{port}/doc.html（直接访问服务端口）

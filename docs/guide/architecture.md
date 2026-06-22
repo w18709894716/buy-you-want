@@ -179,19 +179,21 @@ sequenceDiagram
 
 ## Gateway 路由规则
 
-| 路径前缀 | 目标服务 |
-|---------|---------|
-| `/api/auth/**` | byw-auth |
-| `/api/user/**` | byw-user |
-| `/api/product/**` | byw-product |
-| `/api/category/**` | byw-product |
-| `/api/search/**` | byw-product |
-| `/api/brand/**` | byw-product |
-| `/api/cart/**` | byw-cart |
-| `/api/order/**` | byw-order |
-| `/api/pay/**` | byw-pay |
-| `/api/logistics/**` | byw-logistics |
-| `/api/review/**` | byw-review |
-| `/api/promotion/**` | byw-promotion |
-| `/api/coupon/**` | byw-promotion |
-| `/api/seckill/**` | byw-promotion |
+| 路径前缀 | 目标服务 | 备注 |
+|---------|---------|------|
+| `/api/admin/auth/**` | byw-auth | StripPrefix=2，`/api/admin/auth/login` → `/auth/login` |
+| `/api/admin/**` | byw-admin | 管理端 BFF，StripPrefix=1，`/api/admin/product/list` → `/admin/product/list` |
+| `/api/auth/**` | byw-auth | StripPrefix=1 |
+| `/api/user/**` | byw-user | StripPrefix=1 |
+| `/api/product/**` | byw-product | StripPrefix=1 |
+| `/api/category/**` | byw-product | StripPrefix=1 |
+| `/api/search/**` | byw-product | StripPrefix=1 |
+| `/api/brand/**` | byw-product | StripPrefix=1 |
+| `/api/cart/**` | byw-cart | StripPrefix=1 |
+| `/api/order/**` | byw-order | StripPrefix=1 |
+| `/api/pay/**` | byw-pay | StripPrefix=1 |
+| `/api/logistics/**` | byw-logistics | StripPrefix=1 |
+| `/api/review/**` | byw-review | StripPrefix=1 |
+| `/api/promotion/**` | byw-promotion | StripPrefix=1 |
+| `/api/coupon/**` | byw-promotion | StripPrefix=1 |
+| `/api/seckill/**` | byw-promotion | StripPrefix=1 |

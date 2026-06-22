@@ -2,7 +2,7 @@
   <div class="max-w-7xl mx-auto px-4 py-6">
     <div class="flex gap-6">
       <!-- 侧边栏 -->
-      <aside class="w-52 flex-shrink-0">
+      <aside class="w-52 flex-shrink-0 hidden md:block">
         <div class="bg-white rounded-lg p-4 mb-4">
           <div class="flex items-center gap-3">
             <div class="w-14 h-14 bg-primary-100 rounded-full flex items-center justify-center text-primary text-xl font-bold">
@@ -35,12 +35,12 @@
         <h2 class="text-xl font-bold text-gray-800 mb-4">我的订单</h2>
 
         <!-- Tab 栏 -->
-        <div class="bg-white rounded-t-lg border-b flex">
+        <div class="bg-white rounded-t-lg border-b flex overflow-x-auto scrollbar-hide">
           <button
             v-for="tab in tabs"
             :key="tab.value"
             :class="[
-              'px-6 py-3 text-sm font-medium border-b-2 transition-colors',
+              'px-3 sm:px-6 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0',
               activeTab === tab.value ? 'border-primary text-primary' : 'border-transparent text-gray-600 hover:text-gray-800'
             ]"
             @click="switchTab(tab.value)"
@@ -60,8 +60,8 @@
           <div v-else class="divide-y">
             <div v-for="order in filteredOrders" :key="order.id" class="p-4">
               <!-- 订单头部 -->
-              <div class="flex items-center justify-between text-sm text-gray-500 mb-3 pb-3 border-b border-gray-100">
-                <div class="flex items-center gap-4">
+              <div class="flex flex-wrap items-center justify-between text-sm text-gray-500 mb-3 pb-3 border-b border-gray-100 gap-2">
+                <div class="flex items-center gap-2 sm:gap-4 flex-wrap">
                   <span>订单号：{{ order.id }}</span>
                   <span>{{ order.date }}</span>
                 </div>
@@ -86,12 +86,12 @@
               </div>
 
               <!-- 订单底部 -->
-              <div class="flex items-center justify-between">
+              <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div class="text-sm text-gray-500">
                   共 {{ order.quantity }} 件商品，合计：
                   <span class="text-primary font-bold text-lg">¥{{ order.total.toFixed(2) }}</span>
                 </div>
-                <div class="flex gap-2">
+                <div class="flex flex-wrap gap-2">
                   <button
                     v-if="order.status === 'pending_pay'"
                     class="px-4 py-1.5 bg-primary text-white text-sm rounded hover:bg-primary-600 transition-colors"

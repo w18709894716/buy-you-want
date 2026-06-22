@@ -1,5 +1,6 @@
 package com.byw.product.feign;
 
+import com.byw.api.product.ProductFeignClient;
 import com.byw.api.product.dto.ProductDTO;
 import com.byw.api.product.dto.SkuDTO;
 import com.byw.api.product.dto.SkuStockDeductDTO;
@@ -18,7 +19,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/feign/product")
 @RequiredArgsConstructor
-public class ProductFeignImpl {
+public class ProductFeignImpl implements ProductFeignClient {
 
     private final ProductService productService;
     private final SkuService skuService;

@@ -2,11 +2,11 @@
   <div>
     <!-- 轮播 Banner -->
     <section class="max-w-7xl mx-auto px-4 mt-4">
-      <div class="relative rounded-lg overflow-hidden bg-gradient-to-r from-primary-500 to-primary-700 h-64 flex items-center">
-        <div class="text-white px-12">
-          <h2 class="text-4xl font-bold mb-4">买你所想，尽在此刻</h2>
-          <p class="text-lg opacity-90 mb-6">全场满减优惠，新品上市特惠</p>
-          <button class="bg-white text-primary px-8 py-2 rounded-full font-medium hover:bg-gray-100 transition-colors">
+      <div class="relative rounded-lg overflow-hidden bg-gradient-to-r from-primary-500 to-primary-700 h-40 sm:h-64 flex items-center">
+        <div class="text-white px-6 sm:px-12">
+          <h2 class="text-2xl sm:text-4xl font-bold mb-2 sm:mb-4">买你所想，尽在此刻</h2>
+          <p class="text-sm sm:text-lg opacity-90 mb-3 sm:mb-6">全场满减优惠，新品上市特惠</p>
+          <button class="bg-white text-primary px-5 sm:px-8 py-2 rounded-full font-medium hover:bg-gray-100 transition-colors text-sm sm:text-base">
             立即抢购
           </button>
         </div>
@@ -22,7 +22,7 @@
     <!-- 三级分类导航 -->
     <section class="max-w-7xl mx-auto px-4 mt-6">
       <div class="bg-white rounded-lg p-6">
-        <div class="grid grid-cols-5 gap-6">
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 sm:gap-6">
           <div
             v-for="category in categoryTree"
             :key="category.name"
@@ -71,7 +71,7 @@
 
     <!-- 快捷入口 -->
     <section class="max-w-7xl mx-auto px-4 mt-6">
-      <div class="grid grid-cols-10 gap-3">
+      <div class="grid grid-cols-5 sm:grid-cols-10 gap-3">
         <div
           v-for="shortcut in shortcuts"
           :key="shortcut.label"

@@ -15,6 +15,20 @@ spring:
         file-extension: yml
     gateway:
       routes:
+        - id: byw-admin-auth
+          uri: lb://byw-auth
+          predicates:
+            - Path=/api/admin/auth/**
+          filters:
+            - StripPrefix=2
+
+        - id: byw-admin
+          uri: lb://byw-admin
+          predicates:
+            - Path=/api/admin/**
+          filters:
+            - StripPrefix=1
+
         - id: byw-auth
           uri: lb://byw-auth
           predicates:
@@ -66,6 +80,76 @@ spring:
           predicates:
             - Path=/api/promotion/**,/api/coupon/**,/api/seckill/**
 
+        - id: api-docs-auth
+          uri: lb://byw-auth
+          predicates:
+            - Path=/v3/api-docs/byw-auth
+          filters:
+            - RewritePath=/v3/api-docs/byw-auth, /v3/api-docs
+
+        - id: api-docs-user
+          uri: lb://byw-user
+          predicates:
+            - Path=/v3/api-docs/byw-user
+          filters:
+            - RewritePath=/v3/api-docs/byw-user, /v3/api-docs
+
+        - id: api-docs-product
+          uri: lb://byw-product
+          predicates:
+            - Path=/v3/api-docs/byw-product
+          filters:
+            - RewritePath=/v3/api-docs/byw-product, /v3/api-docs
+
+        - id: api-docs-cart
+          uri: lb://byw-cart
+          predicates:
+            - Path=/v3/api-docs/byw-cart
+          filters:
+            - RewritePath=/v3/api-docs/byw-cart, /v3/api-docs
+
+        - id: api-docs-order
+          uri: lb://byw-order
+          predicates:
+            - Path=/v3/api-docs/byw-order
+          filters:
+            - RewritePath=/v3/api-docs/byw-order, /v3/api-docs
+
+        - id: api-docs-pay
+          uri: lb://byw-pay
+          predicates:
+            - Path=/v3/api-docs/byw-pay
+          filters:
+            - RewritePath=/v3/api-docs/byw-pay, /v3/api-docs
+
+        - id: api-docs-logistics
+          uri: lb://byw-logistics
+          predicates:
+            - Path=/v3/api-docs/byw-logistics
+          filters:
+            - RewritePath=/v3/api-docs/byw-logistics, /v3/api-docs
+
+        - id: api-docs-review
+          uri: lb://byw-review
+          predicates:
+            - Path=/v3/api-docs/byw-review
+          filters:
+            - RewritePath=/v3/api-docs/byw-review, /v3/api-docs
+
+        - id: api-docs-promotion
+          uri: lb://byw-promotion
+          predicates:
+            - Path=/v3/api-docs/byw-promotion
+          filters:
+            - RewritePath=/v3/api-docs/byw-promotion, /v3/api-docs
+
+        - id: api-docs-admin
+          uri: lb://byw-admin
+          predicates:
+            - Path=/v3/api-docs/byw-admin
+          filters:
+            - RewritePath=/v3/api-docs/byw-admin, /v3/api-docs
+
     sentinel:
       transport:
         dashboard: ${SENTINEL_DASHBOARD:localhost:8080}
@@ -74,3 +158,30 @@ byw:
   jwt:
     secret: buyyouwant-secret-key-must-be-at-least-256-bits-long-for-hs256
     expiration: 86400000
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+    urls:
+      - name: Auth Service
+        url: /v3/api-docs/byw-auth
+      - name: User Service
+        url: /v3/api-docs/byw-user
+      - name: Product Service
+        url: /v3/api-docs/byw-product
+      - name: Cart Service
+        url: /v3/api-docs/byw-cart
+      - name: Order Service
+        url: /v3/api-docs/byw-order
+      - name: Pay Service
+        url: /v3/api-docs/byw-pay
+      - name: Logistics Service
+        url: /v3/api-docs/byw-logistics
+      - name: Review Service
+        url: /v3/api-docs/byw-review
+      - name: Promotion Service
+        url: /v3/api-docs/byw-promotion
+      - name: Admin BFF
+        url: /v3/api-docs/byw-admin

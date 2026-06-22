@@ -2,8 +2,8 @@
   <div class="max-w-7xl mx-auto px-4 py-6">
     <h2 class="text-xl font-bold text-gray-800 mb-6">确认订单</h2>
 
-    <div class="flex gap-6">
-      <div class="flex-1 space-y-4">
+    <div class="flex flex-col lg:flex-row gap-6">
+      <div class="flex-1 min-w-0 space-y-4">
         <!-- 收货地址 -->
         <div class="bg-white rounded-lg p-6">
           <h3 class="font-medium text-gray-800 mb-4 flex items-center gap-2">
@@ -105,8 +105,8 @@
       </div>
 
       <!-- 右侧结算信息 -->
-      <div class="w-80 flex-shrink-0">
-        <div class="bg-white rounded-lg p-6 sticky top-40">
+      <div class="w-full lg:w-80 lg:flex-shrink-0">
+        <div class="bg-white rounded-lg p-6 lg:sticky lg:top-40">
           <h3 class="font-medium text-gray-800 mb-4">订单汇总</h3>
           <div class="space-y-3 text-sm">
             <div class="flex justify-between text-gray-600">

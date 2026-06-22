@@ -10,10 +10,10 @@
     </nav>
 
     <!-- 商品详情主体 -->
-    <div class="bg-white rounded-lg p-6">
-      <div class="flex gap-8">
+    <div class="bg-white rounded-lg p-4 sm:p-6">
+      <div class="flex flex-col md:flex-row gap-6 md:gap-8">
         <!-- 左侧图片画廊 -->
-        <div class="w-96 flex-shrink-0">
+        <div class="w-full md:w-96 md:flex-shrink-0">
           <!-- 主图 -->
           <div class="aspect-square bg-gray-100 rounded-lg overflow-hidden mb-3">
             <img
@@ -58,7 +58,7 @@
           </div>
 
           <!-- 销量信息 -->
-          <div class="flex gap-6 mt-4 text-sm text-gray-500">
+          <div class="flex flex-wrap gap-x-6 gap-y-2 mt-4 text-sm text-gray-500">
             <span>累计销量：<span class="text-gray-800">{{ product.salesCount }}</span></span>
             <span>累计评价：<span class="text-gray-800">{{ product.reviewCount }}</span></span>
             <span>店铺：<span class="text-primary">{{ product.shopName }}</span></span>
@@ -126,7 +126,7 @@
           v-for="tab in detailTabs"
           :key="tab.value"
           :class="[
-            'px-8 py-3 text-sm font-medium border-b-2 transition-colors',
+            'px-4 sm:px-8 py-3 text-sm font-medium border-b-2 transition-colors',
             activeTab === tab.value ? 'border-primary text-primary' : 'border-transparent text-gray-600 hover:text-gray-800'
           ]"
           @click="activeTab = tab.value"
@@ -140,7 +140,7 @@
         <div class="prose max-w-none text-gray-600 text-sm leading-relaxed">
           <h3 class="text-lg font-medium text-gray-800 mb-4">商品描述</h3>
           <p>{{ product.description }}</p>
-          <div class="mt-6 grid grid-cols-2 gap-4">
+          <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div v-for="(value, key) in product.specs" :key="key" class="flex border-b py-2">
               <span class="w-32 text-gray-500 flex-shrink-0">{{ key }}</span>
               <span class="text-gray-800">{{ value }}</span>

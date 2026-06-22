@@ -17,7 +17,8 @@
 | Seata | 2.0.0 | 分布式事务框架，AT/TCC/Saga 模式 |
 | Sa-Token | 1.38.0 | 轻量级权限认证框架，单点登录 |
 | Hutool | 5.8.27 | Java 工具集（字符串、日期、加密、HTTP 等） |
-| Knife4j | 4.4.0 | OpenAPI 3.0 接口文档 UI，增强 Swagger |
+| Knife4j | 4.4.0 | 各微服务 OpenAPI 3.0 接口文档 UI，增强 Swagger |
+| SpringDoc OpenAPI | 2.3.0 | Gateway 端 WebFlux API 文档聚合（springdoc-openapi-starter-webflux-ui） |
 | JJWT | 0.12.5 | JWT 令牌签发、解析与验证 |
 | Nacos | 2.3.2 | 服务注册发现 + 配置管理中心 |
 | Sentinel | — | 流量控制、熔断降级、系统负载保护 |

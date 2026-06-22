@@ -38,11 +38,20 @@ seata:
   enabled: true
   application-id: byw-order
   tx-service-group: byw-order-tx-group
+  service:
+    vgroup-mapping:
+      byw-order-tx-group: default
   registry:
     type: nacos
     nacos:
       server-addr: ${NACOS_ADDR:localhost:8848}
       namespace: ${NACOS_NAMESPACE:}
+  config:
+    type: nacos
+    nacos:
+      server-addr: ${NACOS_ADDR:localhost:8848}
+      namespace: ${NACOS_NAMESPACE:}
+      group: SEATA_GROUP
 
 mybatis-plus:
   configuration:

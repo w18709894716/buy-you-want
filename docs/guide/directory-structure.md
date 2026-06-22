@@ -14,7 +14,7 @@ buy-you-want/
 │   ├── byw-common-security/               # 安全模块：JWT 工具类、UserContext 线程上下文、鉴权拦截器
 │   ├── byw-common-kafka/                  # 消息队列：Kafka 生产者/消费者配置、Topic 常量定义
 │   ├── byw-common-elasticsearch/          # 搜索引擎：ES RestHighLevelClient / ElasticsearchClient 配置
-│   ├── byw-common-swagger/                # API 文档：Knife4j OpenAPI3 统一配置、分组管理
+│   ├── byw-common-swagger/                # API 文档：Knife4j OpenAPI3 统一配置、分组管理（仅 Servlet 服务）
 │   └── byw-common-log/                    # 日志模块：@OperLog 操作日志 AOP 切面
 │
 ├── byw-api/                               # Feign 远程调用接口定义（接口 + DTO）
@@ -175,9 +175,11 @@ byw-xxx/
 - ES 索引操作工具类
 
 ### byw-common-swagger
-- Knife4j OpenAPI3 统一配置
+- Knife4j OpenAPI3 统一配置（仅用于 Servlet 微服务，不含 Gateway）
 - 分组配置（按微服务划分 API 分组）
 - 全局 Token 请求头配置
+
+> **注**：Gateway 为 WebFlux 架构，单独引入 `springdoc-openapi-starter-webflux-ui` 实现 API 文档聚合，访问地址为 `/swagger-ui.html`。
 
 ### byw-common-log
 - `@OperLog` 自定义注解

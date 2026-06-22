@@ -31,6 +31,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public LoginResponse login(LoginRequest request) {
+        // Fetch user info (including password) via single Feign call
         R<UserDTO> result = userFeignClient.getUserByUsername(request.getUsername());
         if (!result.isSuccess() || result.getData() == null) {
             throw new BusinessException(ResultCode.USER_NOT_FOUND);
@@ -41,9 +42,10 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ResultCode.USER_DISABLED);
         }
 
-        // For now, we compare directly since we'll encode during registration
-        // In a real system, the password would be stored as BCrypt hash
-        // This is a simplified version - password validation would happen in user service
+        // Local password verification
+        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+            throw new BusinessException(ResultCode.PASSWORD_ERROR);
+        }
 
         String token = jwtUtil.generateToken(user.getId(), user.getUsername());
 
@@ -65,6 +67,7 @@ public class AuthServiceImpl implements AuthService {
         // Create user via Feign
         UserDTO userDTO = new UserDTO();
         userDTO.setUsername(request.getUsername());
+        userDTO.setPassword(request.getPassword());
         userDTO.setPhone(request.getPhone());
         userDTO.setNickname(request.getNickname() != null ? request.getNickname() : request.getUsername());
         userDTO.setStatus(1);

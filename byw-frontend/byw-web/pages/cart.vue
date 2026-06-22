@@ -8,11 +8,11 @@
       <NuxtLink to="/" class="text-primary hover:text-primary-600">去逛逛 &gt;</NuxtLink>
     </div>
 
-    <div v-else class="flex gap-6">
+    <div v-else class="flex flex-col lg:flex-row gap-6">
       <!-- 购物车列表 -->
-      <div class="flex-1">
-        <!-- 表头 -->
-        <div class="bg-white rounded-t-lg p-3 flex items-center gap-4 text-sm text-gray-500 border-b">
+      <div class="flex-1 min-w-0">
+        <!-- 表头 - 桌面端显示 -->
+        <div class="bg-white rounded-t-lg p-3 items-center gap-4 text-sm text-gray-500 border-b hidden lg:flex">
           <label class="flex items-center gap-2 w-12">
             <input
               type="checkbox"
@@ -29,18 +29,29 @@
           <span class="w-16 text-center">操作</span>
         </div>
 
+        <!-- 移动端全选 -->
+        <div class="bg-white rounded-t-lg lg:hidden p-3 flex items-center gap-2 border-b">
+          <input
+            type="checkbox"
+            :checked="cartStore.isAllChecked"
+            class="w-4 h-4 accent-primary cursor-pointer"
+            @change="cartStore.toggleAll()"
+          />
+          <span class="text-sm text-gray-500">全选</span>
+        </div>
+
         <!-- 商品列表 -->
-        <div class="bg-white rounded-b-lg divide-y">
+        <div class="bg-white rounded-b-lg lg:divide-y">
           <div
             v-for="item in cartStore.items"
             :key="item.cartId"
-            class="p-4 flex items-center gap-4"
+            class="p-4 flex items-start lg:items-center gap-3 lg:gap-4 border-b lg:border-b last:border-b-0"
           >
             <!-- 选中框 -->
             <input
               type="checkbox"
               :checked="item.checked"
-              class="w-4 h-4 accent-primary cursor-pointer flex-shrink-0"
+              class="w-4 h-4 accent-primary cursor-pointer flex-shrink-0 mt-5 lg:mt-0"
               @change="cartStore.toggleItem(item.cartId)"
             />
 
@@ -53,29 +64,52 @@
               />
             </NuxtLink>
 
-            <!-- 商品信息 -->
+            <!-- 商品信息 + 移动端价格/数量 -->
             <div class="flex-1 min-w-0">
               <NuxtLink :to="`/product/${item.productId}`" class="text-sm text-gray-800 hover:text-primary line-clamp-2">
                 {{ item.productName }}
               </NuxtLink>
               <div v-if="item.skuSpecs" class="text-xs text-gray-400 mt-1">{{ item.skuSpecs }}</div>
+
+              <!-- 移动端：价格和数量 -->
+              <div class="flex items-center justify-between mt-2 lg:hidden">
+                <span class="text-sm text-primary font-bold">¥{{ item.price.toFixed(2) }}</span>
+                <div class="flex items-center border rounded">
+                  <button
+                    class="w-7 h-7 flex items-center justify-center text-gray-500 hover:bg-gray-100 disabled:opacity-50"
+                    :disabled="item.quantity <= 1"
+                    @click="cartStore.updateQuantity(item.cartId, item.quantity - 1)"
+                  >-</button>
+                  <input
+                    :value="item.quantity"
+                    type="number"
+                    min="1"
+                    class="w-10 h-7 text-center border-x outline-none text-sm"
+                    @change="(e: Event) => cartStore.updateQuantity(item.cartId, Number((e.target as HTMLInputElement).value) || 1)"
+                  />
+                  <button
+                    class="w-7 h-7 flex items-center justify-center text-gray-500 hover:bg-gray-100"
+                    @click="cartStore.updateQuantity(item.cartId, item.quantity + 1)"
+                  >+</button>
+                </div>
+              </div>
+              <div class="flex items-center justify-between mt-1 lg:hidden">
+                <span class="text-sm font-bold text-primary">小计: ¥{{ (item.price * item.quantity).toFixed(2) }}</span>
+                <button class="text-gray-400 hover:text-red-500 text-xs" @click="handleRemove(item.cartId)">删除</button>
+              </div>
             </div>
 
-            <!-- 单价 -->
-            <div class="w-24 text-center">
+            <!-- 桌面端列 -->
+            <div class="w-24 text-center hidden lg:block">
               <span class="text-sm text-gray-800">¥{{ item.price.toFixed(2) }}</span>
             </div>
-
-            <!-- 数量调节器 -->
-            <div class="w-32 flex justify-center">
+            <div class="w-32 justify-center hidden lg:flex">
               <div class="flex items-center border rounded">
                 <button
                   class="w-7 h-7 flex items-center justify-center text-gray-500 hover:bg-gray-100 disabled:opacity-50"
                   :disabled="item.quantity <= 1"
                   @click="cartStore.updateQuantity(item.cartId, item.quantity - 1)"
-                >
-                  -
-                </button>
+                >-</button>
                 <input
                   :value="item.quantity"
                   type="number"
@@ -86,33 +120,22 @@
                 <button
                   class="w-7 h-7 flex items-center justify-center text-gray-500 hover:bg-gray-100"
                   @click="cartStore.updateQuantity(item.cartId, item.quantity + 1)"
-                >
-                  +
-                </button>
+                >+</button>
               </div>
             </div>
-
-            <!-- 小计 -->
-            <div class="w-24 text-center">
+            <div class="w-24 text-center hidden lg:block">
               <span class="text-sm font-bold text-primary">¥{{ (item.price * item.quantity).toFixed(2) }}</span>
             </div>
-
-            <!-- 删除 -->
-            <div class="w-16 text-center">
-              <button
-                class="text-gray-400 hover:text-red-500 text-sm"
-                @click="handleRemove(item.cartId)"
-              >
-                删除
-              </button>
+            <div class="w-16 text-center hidden lg:block">
+              <button class="text-gray-400 hover:text-red-500 text-sm" @click="handleRemove(item.cartId)">删除</button>
             </div>
           </div>
         </div>
       </div>
 
       <!-- 结算栏 -->
-      <div class="w-72 flex-shrink-0">
-        <div class="bg-white rounded-lg p-4 sticky top-40">
+      <div class="w-full lg:w-72 lg:flex-shrink-0">
+        <div class="bg-white rounded-lg p-4 lg:sticky lg:top-40">
           <h3 class="font-medium text-gray-800 mb-4">订单摘要</h3>
           <div class="space-y-2 text-sm">
             <div class="flex justify-between text-gray-600">

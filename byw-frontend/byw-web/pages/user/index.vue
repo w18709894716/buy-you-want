@@ -2,7 +2,7 @@
   <div class="max-w-7xl mx-auto px-4 py-6">
     <div class="flex gap-6">
       <!-- 侧边栏 -->
-      <aside class="w-52 flex-shrink-0">
+      <aside class="w-52 flex-shrink-0 hidden md:block">
         <!-- 用户信息卡片 -->
         <div class="bg-white rounded-lg p-4 mb-4">
           <div class="flex items-center gap-3">
@@ -36,7 +36,7 @@
       <!-- 主内容区 -->
       <div class="flex-1">
         <!-- 概览卡片 -->
-        <div class="grid grid-cols-4 gap-4 mb-6">
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
           <div
             v-for="stat in statsCards"
             :key="stat.label"
@@ -80,10 +80,12 @@
           </div>
           <div class="space-y-4">
             <div v-for="order in recentOrders" :key="order.id" class="border rounded-lg p-4">
-              <div class="flex items-center justify-between text-sm text-gray-500 mb-3">
+              <div class="flex flex-wrap items-center justify-between text-sm text-gray-500 mb-3 gap-1">
                 <span>订单号：{{ order.id }}</span>
-                <span>{{ order.date }}</span>
-                <span :class="order.statusClass">{{ order.statusText }}</span>
+                <div class="flex items-center gap-2">
+                  <span>{{ order.date }}</span>
+                  <span :class="order.statusClass">{{ order.statusText }}</span>
+                </div>
               </div>
               <div class="flex items-center gap-4">
                 <img :src="order.image" :alt="order.productName" class="w-16 h-16 object-cover rounded" />

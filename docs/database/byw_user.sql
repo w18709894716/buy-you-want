@@ -54,3 +54,7 @@ INSERT INTO t_user_level (level_name, level_code, discount_rate, min_points) VAL
 ('银卡会员', 1, 0.95, 1000),
 ('金卡会员', 2, 0.90, 5000),
 ('钻石会员', 3, 0.85, 20000);
+
+-- 管理员账号 (admin / admin123)
+INSERT INTO t_user (username, password, phone, nickname, status, user_level) VALUES
+('admin', '$2a$10$mG4HpWhYdqOSYql91nc17OrmYxpwkchw/0Vbs5oR.txUEHBmEiVem', '13800000000', '系统管理员', 1, 3);
