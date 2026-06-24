@@ -4,6 +4,7 @@ import lombok.Data;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 @Data
 public class ProductDTO implements Serializable {
@@ -16,4 +17,5 @@ public class ProductDTO implements Serializable {
     private String subImages;
     private Integer status;
     private Integer salesCount;
+    private LocalDateTime createdAt;
 }

@@ -92,31 +92,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox, FormInstance } from 'element-plus'
+import request from '../../utils/request'
 
-const treeData = ref<any[]>([
-  {
-    id: 1, name: '数码电子', sort: 1, children: [
-      { id: 11, name: '手机', sort: 1, children: [] },
-      { id: 12, name: '耳机', sort: 2, children: [] },
-      { id: 13, name: '电脑', sort: 3, children: [] }
-    ]
-  },
-  {
-    id: 2, name: '服装鞋帽', sort: 2, children: [
-      { id: 21, name: '运动鞋', sort: 1, children: [] },
-      { id: 22, name: 'T恤', sort: 2, children: [] }
-    ]
-  },
-  {
-    id: 3, name: '食品饮料', sort: 3, children: [
-      { id: 31, name: '零食', sort: 1, children: [] },
-      { id: 32, name: '饮料', sort: 2, children: [] }
-    ]
-  },
-  { id: 4, name: '家居家装', sort: 4, children: [] }
-])
+const treeData = ref<any[]>([])
+
+const fetchCategoryTree = async () => {
+  try {
+    const data: any = await request.get('/admin/product/category/tree')
+    treeData.value = data || []
+  } catch (e: any) {
+    ElMessage.error(e.message || '获取分类列表失败')
+  }
+}
 
 const currentNode = ref<any>(null)
 const dialogVisible = ref(false)
@@ -154,40 +143,42 @@ const handleEdit = (data: any) => {
 
 const handleDelete = async (data: any) => {
   await ElMessageBox.confirm(`确定要删除分类"${data.name}"吗？`, '提示', { type: 'warning' })
-  // 从树中删除节点
-  const removeFromTree = (nodes: any[]): boolean => {
-    const idx = nodes.findIndex(n => n.id === data.id)
-    if (idx >= 0) { nodes.splice(idx, 1); return true }
-    return nodes.some(n => n.children && removeFromTree(n.children))
+  try {
+    await request.delete(`/admin/product/category/${data.id}`)
+    ElMessage.success('删除成功')
+    fetchCategoryTree()
+    if (currentNode.value?.id === data.id) currentNode.value = null
+  } catch (e: any) {
+    ElMessage.error(e.message || '删除失败')
   }
-  removeFromTree(treeData.value)
-  ElMessage.success('删除成功')
-  if (currentNode.value?.id === data.id) currentNode.value = null
 }
 
 const submitForm = async () => {
   if (!dialogFormRef.value) return
-  await dialogFormRef.value.validate((valid) => {
+  await dialogFormRef.value.validate(async (valid) => {
     if (!valid) return
-    if (dialogType.value === 'add') {
-      const newNode = { id: Date.now(), name: dialogForm.name, sort: dialogForm.sort, children: [] }
-      if (parentNode.value) {
-        if (!parentNode.value.children) parentNode.value.children = []
-        parentNode.value.children.push(newNode)
+    try {
+      const payload = {
+        name: dialogForm.name,
+        parentId: parentNode.value?.id || 0,
+        sortOrder: dialogForm.sort
+      }
+      if (dialogType.value === 'add') {
+        await request.post('/admin/product/category/create', payload)
+        ElMessage.success('添加成功')
       } else {
-        treeData.value.push(newNode)
+        await request.put(`/admin/product/category/${currentNode.value.id}`, payload)
+        ElMessage.success('修改成功')
       }
-      ElMessage.success('添加成功')
-    } else {
-      if (currentNode.value) {
-        currentNode.value.name = dialogForm.name
-        currentNode.value.sort = dialogForm.sort
-      }
-      ElMessage.success('修改成功')
+      dialogVisible.value = false
+      fetchCategoryTree()
+    } catch (e: any) {
+      ElMessage.error(e.message || '操作失败')
     }
-    dialogVisible.value = false
   })
 }
+
+onMounted(fetchCategoryTree)
 </script>
 
 <style scoped lang="scss">

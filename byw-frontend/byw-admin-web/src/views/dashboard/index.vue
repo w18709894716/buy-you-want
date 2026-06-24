@@ -79,7 +79,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
@@ -90,6 +90,7 @@ import {
   LegendComponent,
   GridComponent
 } from 'echarts/components'
+import request from '../../utils/request'
 
 use([
   CanvasRenderer,
@@ -102,11 +103,25 @@ use([
 ])
 
 const stats = reactive({
-  totalUsers: 12680,
-  totalOrders: 35420,
-  totalRevenue: 2856000,
-  todayOrders: 128
+  totalUsers: 0,
+  totalOrders: 0,
+  totalRevenue: 0,
+  todayOrders: 0
 })
+
+const fetchStats = async () => {
+  try {
+    const data: any = await request.get('/admin/dashboard/stats')
+    stats.totalUsers = data.totalUsers || 0
+    stats.totalOrders = data.totalOrders || 0
+    stats.totalRevenue = data.totalRevenue || 0
+    stats.todayOrders = data.todayOrders || 0
+  } catch (e) {
+    console.error('获取统计数据失败:', e)
+  }
+}
+
+onMounted(fetchStats)
 
 // 订单趋势折线图
 const orderTrendOption = {

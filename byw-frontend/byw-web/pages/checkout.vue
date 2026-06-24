@@ -1,5 +1,19 @@
 <template>
   <div class="max-w-7xl mx-auto px-4 py-6">
+    <!-- Toast 通知 -->
+    <Transition name="toast">
+      <div
+        v-if="toast.visible"
+        :class="[
+          'fixed top-20 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2',
+          toast.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+        ]"
+      >
+        <span>{{ toast.type === 'success' ? '✓' : '✕' }}</span>
+        <span>{{ toast.message }}</span>
+      </div>
+    </Transition>
+
     <h2 class="text-xl font-bold text-gray-800 mb-6">确认订单</h2>
 
     <div class="flex flex-col lg:flex-row gap-6">
@@ -161,6 +175,18 @@ const appliedCoupon = ref<{ name: string; discount: number } | null>(null)
 const remark = ref('')
 const submitting = ref(false)
 
+// Toast 通知
+const toast = reactive({ visible: false, message: '', type: 'success' as 'success' | 'error' })
+let toastTimer: ReturnType<typeof setTimeout> | null = null
+
+function showToast(message: string, type: 'success' | 'error' = 'success') {
+  if (toastTimer) clearTimeout(toastTimer)
+  toast.visible = true
+  toast.message = message
+  toast.type = type
+  toastTimer = setTimeout(() => { toast.visible = false }, 2500)
+}
+
 // 占位地址数据
 const addresses = ref([
   { id: 1, name: '张三', phone: '138****8888', address: '北京市朝阳区建国路88号SOHO现代城A座1201室', isDefault: true },
@@ -184,14 +210,15 @@ function applyCoupon() {
   // 模拟优惠券验证
   if (couponCode.value.trim().toUpperCase() === 'BYW100') {
     appliedCoupon.value = { name: '满500减100', discount: 100 }
+    showToast('优惠券已使用', 'success')
   } else {
-    alert('无效的优惠券码')
+    showToast('无效的优惠券码', 'error')
   }
 }
 
 async function submitOrder() {
   if (!selectedAddressId.value) {
-    alert('请选择收货地址')
+    showToast('请选择收货地址', 'error')
     return
   }
 
@@ -199,10 +226,10 @@ async function submitOrder() {
   try {
     // TODO: 调用后端接口创建订单
     await new Promise(resolve => setTimeout(resolve, 1000))
-    alert('订单提交成功！')
-    navigateTo('/user/orders')
+    showToast('订单提交成功！', 'success')
+    setTimeout(() => navigateTo('/user/orders'), 1500)
   } catch (error: any) {
-    alert(error?.message || '订单提交失败')
+    showToast(error?.message || '订单提交失败', 'error')
   } finally {
     submitting.value = false
   }
@@ -214,3 +241,20 @@ onMounted(() => {
   }
 })
 </script>
+
+<style scoped>
+.toast-enter-active,
+.toast-leave-active {
+  transition: all 0.3s ease;
+}
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -10px);
+}
+.toast-enter-to,
+.toast-leave-from {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+</style>

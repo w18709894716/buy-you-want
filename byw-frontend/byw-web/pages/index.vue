@@ -112,56 +112,21 @@
 </template>
 
 <script setup lang="ts">
+import { get } from '~/utils/request'
+
 const hoveredCategory = ref('')
 
-// 三级分类数据
-const categoryTree = [
-  {
-    name: '数码电器',
-    icon: '📱',
-    children: [
-      { name: '手机通讯', children: ['智能手机', '功能手机', '手机配件'] },
-      { name: '电脑办公', children: ['笔记本', '台式机', '平板电脑', '显示器'] },
-      { name: '影音设备', children: ['耳机', '音箱', '投影仪'] },
-    ],
-  },
-  {
-    name: '服装鞋包',
-    icon: '👕',
-    children: [
-      { name: '男装', children: ['T恤', '衬衫', '夹克', '裤子'] },
-      { name: '女装', children: ['连衣裙', '半身裙', '卫衣', '外套'] },
-      { name: '鞋靴', children: ['运动鞋', '休闲鞋', '皮鞋', '靴子'] },
-    ],
-  },
-  {
-    name: '食品生鲜',
-    icon: '🍎',
-    children: [
-      { name: '水果蔬菜', children: ['新鲜水果', '蔬菜', '干果'] },
-      { name: '肉禽蛋奶', children: ['猪肉', '牛肉', '鸡肉', '牛奶'] },
-      { name: '零食饮料', children: ['膨化食品', '坚果', '饮料', '茶'] },
-    ],
-  },
-  {
-    name: '美妆护肤',
-    icon: '💄',
-    children: [
-      { name: '面部护肤', children: ['洁面', '精华', '面霜', '面膜'] },
-      { name: '彩妆', children: ['口红', '粉底', '眼影', '腮红'] },
-      { name: '个护清洁', children: ['洗发水', '沐浴露', '牙膏'] },
-    ],
-  },
-  {
-    name: '家居家装',
-    icon: '🏠',
-    children: [
-      { name: '家具', children: ['沙发', '床', '书桌', '衣柜'] },
-      { name: '家纺', children: ['床上用品', '毛巾', '窗帘'] },
-      { name: '厨具', children: ['锅具', '餐具', '刀具'] },
-    ],
-  },
-]
+// 分类数据从接口获取
+const categoryTree = ref<any[]>([])
+
+const fetchCategories = async () => {
+  try {
+    const data = await get('/product/category/tree')
+    categoryTree.value = data || []
+  } catch (e) {
+    console.error('获取分类失败:', e)
+  }
+}
 
 // 快捷入口
 const shortcuts = [
@@ -177,26 +142,46 @@ const shortcuts = [
   { icon: '💬', label: '在线客服' },
 ]
 
-// 热门商品占位数据
-const hotProducts = [
-  { id: 1, title: 'Apple iPhone 15 Pro Max 256GB 原色钛金属', image: 'https://via.placeholder.com/300x300?text=iPhone+15', price: 9999, originalPrice: 10999, salesCount: 58000, promotion: '热卖' },
-  { id: 2, title: '华为 Mate 60 Pro 512GB 雅丹黑', image: 'https://via.placeholder.com/300x300?text=Mate+60', price: 7999, originalPrice: 8999, salesCount: 42000, promotion: '新品' },
-  { id: 3, title: '小米14 Ultra 影像旗舰 16+512GB', image: 'https://via.placeholder.com/300x300?text=Mi+14', price: 6499, salesCount: 31000 },
-  { id: 4, title: 'Sony WH-1000XM5 无线降噪头戴式耳机', image: 'https://via.placeholder.com/300x300?text=Sony+XM5', price: 2299, originalPrice: 2999, salesCount: 18000, promotion: '特价' },
-  { id: 5, title: 'Nintendo Switch OLED 马力欧限定版', image: 'https://via.placeholder.com/300x300?text=Switch', price: 2349, salesCount: 25000 },
-  { id: 6, title: '戴森 V15 Detect 无线吸尘器', image: 'https://via.placeholder.com/300x300?text=Dyson+V15', price: 4990, originalPrice: 5990, salesCount: 12000, promotion: '满减' },
-  { id: 7, title: 'LEGO 乐高 42151 布加迪 Bolide', image: 'https://via.placeholder.com/300x300?text=LEGO', price: 399, salesCount: 8900 },
-  { id: 8, title: 'Apple MacBook Air M3 15英寸 16+512GB', image: 'https://via.placeholder.com/300x300?text=MacBook', price: 12499, originalPrice: 13499, salesCount: 9800, promotion: '教育优惠' },
-  { id: 9, title: '三星 Galaxy S24 Ultra 12+256GB 钛灰', image: 'https://via.placeholder.com/300x300?text=Galaxy+S24', price: 8999, salesCount: 15600 },
-  { id: 10, title: 'Bose QuietComfort 消噪耳塞 II', image: 'https://via.placeholder.com/300x300?text=Bose+QC', price: 1699, originalPrice: 2299, salesCount: 22000, promotion: '限时折扣' },
-]
+// 热门商品从接口获取
+const hotProducts = ref<any[]>([])
+const newProducts = ref<any[]>([])
 
-// 新品推荐占位数据
-const newProducts = [
-  { id: 11, title: 'Apple Vision Pro 空间计算设备', image: 'https://via.placeholder.com/300x300?text=Vision+Pro', price: 29999, salesCount: 3200, promotion: '新品' },
-  { id: 12, title: 'OPPO Find X7 Ultra 卫星通信版', image: 'https://via.placeholder.com/300x300?text=OPPO+X7', price: 6999, salesCount: 5600, promotion: '新品' },
-  { id: 13, title: '大疆 DJI Mini 4 Pro 航拍无人机', image: 'https://via.placeholder.com/300x300?text=DJI+Mini4', price: 5788, originalPrice: 6388, salesCount: 7800 },
-  { id: 14, title: 'Kindle Scribe 电子墨水阅读器', image: 'https://via.placeholder.com/300x300?text=Kindle', price: 2399, salesCount: 4100 },
-  { id: 15, title: 'Marshall Stanmore III 蓝牙音箱', image: 'https://via.placeholder.com/300x300?text=Marshall', price: 3999, originalPrice: 4499, salesCount: 6300, promotion: '新品' },
-]
+const fetchProducts = async () => {
+  try {
+    // 获取热门商品（按销量排序）
+    const hotData = await get('/product/list', { pageNum: 1, pageSize: 10, sort: 'sales' })
+    hotProducts.value = (hotData?.list || []).map((p: any) => ({
+      id: p.id,
+      title: p.name,
+      image: p.mainImage,
+      price: p.price || p.minPrice,
+      originalPrice: p.originalPrice,
+      salesCount: p.salesCount,
+      promotion: p.promotion
+    }))
+  } catch (e) {
+    console.error('获取热门商品失败:', e)
+  }
+
+  try {
+    // 获取新品（按创建时间排序）
+    const newData = await get('/product/list', { pageNum: 1, pageSize: 5, sort: 'new' })
+    newProducts.value = (newData?.list || []).map((p: any) => ({
+      id: p.id,
+      title: p.name,
+      image: p.mainImage,
+      price: p.price || p.minPrice,
+      originalPrice: p.originalPrice,
+      salesCount: p.salesCount,
+      promotion: p.promotion
+    }))
+  } catch (e) {
+    console.error('获取新品失败:', e)
+  }
+}
+
+onMounted(() => {
+  fetchCategories()
+  fetchProducts()
+})
 </script>

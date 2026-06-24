@@ -66,28 +66,8 @@ export const useCartStore = defineStore('cart', {
 
     /** 添加商品到购物车 */
     async addToCart(productId: number, quantity: number, skuSpecs: string = '') {
-      try {
-        await post('/cart/add', { productId, quantity, skuSpecs })
-        await this.getCartList()
-      } catch {
-        // 未登录时存本地
-        const existing = this.items.find(item => item.productId === productId && item.skuSpecs === skuSpecs)
-        if (existing) {
-          existing.quantity += quantity
-        } else {
-          this.items.push({
-            cartId: Date.now(),
-            productId,
-            productName: '商品',
-            image: '',
-            price: 0,
-            quantity,
-            skuSpecs,
-            checked: true,
-          })
-        }
-        this.saveLocal()
-      }
+      await post('/cart/add', null, { params: { skuId: productId, quantity } })
+      await this.getCartList()
     },
 
     /** 删除购物车商品 */

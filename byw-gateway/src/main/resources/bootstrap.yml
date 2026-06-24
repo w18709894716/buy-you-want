@@ -54,31 +54,43 @@ spring:
           uri: lb://byw-cart
           predicates:
             - Path=/api/cart/**
+          filters:
+            - StripPrefix=1
 
         - id: byw-order
           uri: lb://byw-order
           predicates:
             - Path=/api/order/**
+          filters:
+            - StripPrefix=1
 
         - id: byw-pay
           uri: lb://byw-pay
           predicates:
             - Path=/api/pay/**
+          filters:
+            - StripPrefix=1
 
         - id: byw-logistics
           uri: lb://byw-logistics
           predicates:
             - Path=/api/logistics/**
+          filters:
+            - StripPrefix=1
 
         - id: byw-review
           uri: lb://byw-review
           predicates:
             - Path=/api/review/**
+          filters:
+            - StripPrefix=1
 
         - id: byw-promotion
           uri: lb://byw-promotion
           predicates:
             - Path=/api/promotion/**,/api/coupon/**,/api/seckill/**
+          filters:
+            - StripPrefix=1
 
         - id: api-docs-auth
           uri: lb://byw-auth

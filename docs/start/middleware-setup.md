@@ -210,33 +210,82 @@ mongosh
 
 ---
 
-## Seata 2.0（分布式事务，可选）
+## Seata 2.0.0（分布式事务，可选）
 
-> **说明**：Seata 是可选组件。开发环境可以先不启动 Seata，订单服务中的 `@GlobalTransactional` 注解在 Seata 不可用时不影响基本功能的运行。
+> **说明**：Seata 是可选组件。如果不需要分布式事务，可以不启动 Seata Server，byw-order 会持续打印警告日志但不影响基本业务。
 
 ### 下载
 
-- https://github.com/seata/seata/releases
+- https://github.com/apache/incubator-seata/releases/tag/v2.0.0
 - 选择 `seata-server-2.0.0.zip`
 
-### 安装步骤
+### Seata Server 配置
 
-1. 解压到任意目录
+解压后编辑 `conf/application.yml`，配置注册中心为 Nacos：
 
-2. 修改 `conf\application.yml` 中的注册中心配置为 Nacos：
-   ```yaml
-   seata:
-     registry:
-       type: nacos
-       nacos:
-         server-addr: 127.0.0.1:8848
-         namespace: ""
-         group: SEATA_GROUP
-   ```
+```yaml
+seata:
+  registry:
+    type: nacos
+    nacos:
+      server-addr: 127.0.0.1:8848
+      namespace: ""
+      cluster: default
+  store:
+    mode: file
+```
 
-3. 启动 Seata Server：
-   ```bash
-   bin\seata-server.bat
-   ```
+> **注意**：`group` 和 `application` 不配则使用默认值 `DEFAULT_GROUP` / `seata-server`。如果配了自定义 group（如 `SEATA_GROUP`），客户端也必须配相同的 group，否则互相找不到。
 
-4. 默认端口：**8091**（客户端连接）/ **7091**（TC 通信）
+### 客户端配置（byw-order）
+
+`byw-order/src/main/resources/bootstrap.yml` 中的 Seata 配置：
+
+```yaml
+seata:
+  enabled: true
+  application-id: byw-order
+  tx-service-group: byw-order-tx-group
+  service:
+    vgroup-mapping:
+      byw-order-tx-group: default    # 值必须与 Server 的 cluster 一致
+  registry:
+    type: nacos
+    nacos:
+      server-addr: localhost:8848
+      namespace: ""
+  config:
+    type: file                       # 从本地 yml 读取 vgroup 映射
+```
+
+### 配置对齐要点
+
+| 配置项 | Seata Server | byw-order（客户端） | 说明 |
+|--------|-------------|-------------------|------|
+| Nacos 地址 | `registry.nacos.server-addr` | `registry.nacos.server-addr` | 必须相同 |
+| Namespace | `registry.nacos.namespace` | `registry.nacos.namespace` | 必须相同 |
+| Cluster | `registry.nacos.cluster` | `service.vgroup-mapping.xxx` | 值必须对应 |
+| Group | `registry.nacos.group`（可选） | `registry.nacos.group`（可选） | 都配或都不配 |
+| Config | - | `config.type: file` | 从本地读取 vgroup 映射 |
+
+### 启动
+
+```bash
+bin\seata-server.bat
+```
+
+默认端口：**8091**（客户端连接）/ **7091**（TC 通信）
+
+### 验证
+
+1. 访问 Nacos 控制台 http://localhost:8848/nacos
+2. 服务管理 → 服务列表，应看到 `seata-server` 服务
+3. 启动 byw-order，日志中无 `no available service` 报错
+
+### 常见问题
+
+| 错误 | 原因 | 解决 |
+|------|------|------|
+| `ConfigNotFoundException: service.vgroupMapping...` | `config.type` 配成了 `nacos`，去 Nacos 找 vgroup 映射但找不到 | 改为 `config.type: file` |
+| `no available service found in cluster 'default'` | Seata Server 未启动，或 Server/Client 的 Nacos 地址/namespace/group 不一致 | 启动 Server 并检查配置对齐 |
+| 启动后 Nacos 看不到 seata-server | Server 的 `registry.type` 没配成 `nacos` | 检查 `conf/application.yml` |

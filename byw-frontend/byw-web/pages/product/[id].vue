@@ -1,5 +1,19 @@
 <template>
-  <div class="max-w-7xl mx-auto px-4 py-6">
+  <div class="max-w-7xl mx-auto px-4 py-6 relative">
+    <!-- Toast 通知 -->
+    <Transition name="toast">
+      <div
+        v-if="toast.visible"
+        :class="[
+          'fixed top-20 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2 transition-all',
+          toast.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+        ]"
+      >
+        <span>{{ toast.type === 'success' ? '✓' : '✕' }}</span>
+        <span>{{ toast.message }}</span>
+      </div>
+    </Transition>
+
     <!-- 面包屑 -->
     <nav class="text-sm text-gray-500 mb-4">
       <NuxtLink to="/" class="hover:text-primary">首页</NuxtLink>
@@ -84,11 +98,13 @@
                 v-model.number="quantity"
                 type="number"
                 min="1"
-                max="999"
+                :max="product.stock"
                 class="w-14 h-8 text-center border-x outline-none text-sm"
+                @blur="clampQuantity"
               />
               <button
-                class="w-8 h-8 flex items-center justify-center hover:bg-gray-100"
+                class="w-8 h-8 flex items-center justify-center hover:bg-gray-100 disabled:opacity-50"
+                :disabled="quantity >= product.stock"
                 @click="quantity++"
               >
                 +
@@ -251,14 +267,70 @@ function onSpecChange(specs: Record<string, string>) {
   selectedSpecs.value = specs
 }
 
+// 数量边界约束
+function clampQuantity() {
+  if (quantity.value < 1) quantity.value = 1
+  if (quantity.value > product.stock) quantity.value = product.stock
+}
+
+// Toast 通知
+const toast = reactive({ visible: false, message: '', type: 'success' as 'success' | 'error' })
+let toastTimer: ReturnType<typeof setTimeout> | null = null
+
+function showToast(message: string, type: 'success' | 'error' = 'success') {
+  if (toastTimer) clearTimeout(toastTimer)
+  toast.visible = true
+  toast.message = message
+  toast.type = type
+  toastTimer = setTimeout(() => { toast.visible = false }, 2500)
+}
+
 async function handleAddToCart() {
+  // 校验规格是否已选择
+  if (specGroups.length > 0 && Object.keys(selectedSpecs.value).length < specGroups.length) {
+    const missingGroups = specGroups.filter((_, i) => !selectedSpecs.value[specGroups[i].name])
+    showToast(`请选择${missingGroups.map(g => g.name).join('、')}`, 'error')
+    return
+  }
+
+  // 校验库存
+  if (quantity.value > product.stock) {
+    showToast(`库存不足，当前库存 ${product.stock} 件`, 'error')
+    quantity.value = product.stock
+    return
+  }
+
   const specsStr = Object.entries(selectedSpecs.value).map(([k, v]) => `${k}:${v}`).join(' ')
-  await cartStore.addToCart(productId.value, quantity.value, specsStr)
-  // 提示添加成功
-  alert('已添加到购物车！')
+  try {
+    await cartStore.addToCart(productId.value, quantity.value, specsStr)
+    showToast('已添加到购物车！', 'success')
+  } catch (error: any) {
+    showToast(error?.message || '添加失败，请重试', 'error')
+  }
 }
 
 function handleBuyNow() {
-  handleAddToCart().then(() => navigateTo('/cart'))
+  handleAddToCart().then(() => {
+    if (toast.type === 'success') {
+      setTimeout(() => navigateTo('/cart'), 1000)
+    }
+  })
 }
 </script>
+
+<style scoped>
+.toast-enter-active,
+.toast-leave-active {
+  transition: all 0.3s ease;
+}
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -10px);
+}
+.toast-enter-to,
+.toast-leave-from {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+</style>

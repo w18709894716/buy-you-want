@@ -29,9 +29,12 @@ export default defineNuxtConfig({
     },
   },
 
-  routeRules: {
-    '/api/**': {
-      proxy: 'http://localhost:8080/**',
+  nitro: {
+    devProxy: {
+      '/api': {
+        target: 'http://localhost:8080/api',
+        changeOrigin: true,
+      },
     },
   },
 })

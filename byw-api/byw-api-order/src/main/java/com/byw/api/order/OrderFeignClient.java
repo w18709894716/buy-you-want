@@ -2,9 +2,14 @@ package com.byw.api.order;
 
 import com.byw.api.order.dto.OrderCreateDTO;
 import com.byw.api.order.dto.OrderDetailDTO;
+import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
+import lombok.Data;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.*;
+
+import java.io.Serializable;
+import java.math.BigDecimal;
 
 @FeignClient(name = "byw-order", contextId = "orderFeignClient")
 public interface OrderFeignClient {
@@ -20,4 +25,29 @@ public interface OrderFeignClient {
 
     @PostMapping("/feign/order/update-status")
     R<Boolean> updateOrderStatus(@RequestParam("orderNo") String orderNo, @RequestParam("status") Integer status);
+
+    @GetMapping("/feign/order/list")
+    R<PageResult<OrderDetailDTO>> listOrders(@RequestParam(value = "pageNum", defaultValue = "1") Integer pageNum,
+                                             @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,
+                                             @RequestParam(value = "status", required = false) Integer status,
+                                             @RequestParam(value = "orderNo", required = false) String orderNo);
+
+    @GetMapping("/feign/order/stats")
+    R<OrderStatsDTO> getOrderStats();
+
+    @GetMapping("/feign/order/today-stats")
+    R<TodayOrderStatsDTO> getTodayOrderStats();
+
+    @Data
+    class OrderStatsDTO implements Serializable {
+        private Long totalOrders;
+        private BigDecimal totalRevenue;
+        private Long pendingOrders;
+    }
+
+    @Data
+    class TodayOrderStatsDTO implements Serializable {
+        private Long todayOrders;
+        private BigDecimal todayRevenue;
+    }
 }

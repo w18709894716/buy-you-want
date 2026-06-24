@@ -137,14 +137,14 @@ const categoryOptions = [
 // 编辑模式加载数据
 const loadProduct = async () => {
   if (!route.params.id) return
+  loading.value = true
   try {
     const data: any = await request.get(`/admin/product/${route.params.id}`)
     Object.assign(formData, data)
-  } catch {
-    // 编辑模式 mock 数据
-    formData.name = 'Apple iPhone 15 Pro Max'
-    formData.brandId = 1
-    formData.status = 1
+  } catch (error: any) {
+    ElMessage.error(error?.message || '加载商品信息失败')
+  } finally {
+    loading.value = false
   }
 }
 
@@ -162,9 +162,8 @@ const handleSubmit = async () => {
         ElMessage.success('添加成功')
       }
       router.push('/product/list')
-    } catch {
-      ElMessage.success(isEdit.value ? '修改成功（mock）' : '添加成功（mock）')
-      router.push('/product/list')
+    } catch (error: any) {
+      ElMessage.error(error?.message || (isEdit.value ? '修改失败' : '添加失败'))
     } finally {
       submitting.value = false
     }

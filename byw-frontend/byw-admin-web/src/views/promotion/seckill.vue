@@ -103,25 +103,21 @@ import request from '../../utils/request'
 const loading = ref(false)
 const tableData = ref<any[]>([])
 
-const statusMap: Record<string, { label: string; type: string }> = {
-  NOT_STARTED: { label: '未开始', type: 'info' },
-  IN_PROGRESS: { label: '进行中', type: 'success' },
-  ENDED: { label: '已结束', type: 'warning' }
+const statusMap: Record<number, { label: string; type: string }> = {
+  0: { label: '未开始', type: 'info' },
+  1: { label: '进行中', type: 'success' },
+  2: { label: '已结束', type: 'warning' }
 }
-const statusLabel = (s: string) => statusMap[s]?.label || s
-const statusType = (s: string) => (statusMap[s]?.type as any) || 'info'
+const statusLabel = (s: number) => statusMap[s]?.label || s
+const statusType = (s: number) => (statusMap[s]?.type as any) || 'info'
 
 const fetchData = async () => {
   loading.value = true
   try {
     const data: any = await request.get('/admin/promotion/seckill/list')
     tableData.value = data || []
-  } catch {
-    tableData.value = [
-      { id: 1, title: '618限时秒杀专场', startTime: '2025-06-18 00:00:00', endTime: '2025-06-18 23:59:59', productCount: 8, status: 'NOT_STARTED' },
-      { id: 2, title: '每日10点限量特惠', startTime: '2025-06-01 10:00:00', endTime: '2025-06-30 10:30:00', productCount: 3, status: 'IN_PROGRESS' },
-      { id: 3, title: '520浪漫特惠秒杀', startTime: '2025-05-20 00:00:00', endTime: '2025-05-20 23:59:59', productCount: 5, status: 'ENDED' }
-    ]
+  } catch (e: any) {
+    ElMessage.error(e.message || '获取秒杀活动列表失败')
   } finally {
     loading.value = false
   }
@@ -154,30 +150,38 @@ const handleEdit = (row: any) => {
 }
 
 const handleDelete = async (row: any) => {
-  await ElMessageBox.confirm(`确定删除活动"${row.title}"？`, '提示', { type: 'warning' })
-  tableData.value = tableData.value.filter(item => item.id !== row.id)
-  ElMessage.success('删除成功')
+  await ElMessageBox.confirm(`确定删除活动"${row.name}"？`, '提示', { type: 'warning' })
+  try {
+    await request.delete(`/admin/promotion/seckill/${row.id}`)
+    ElMessage.success('删除成功')
+    fetchData()
+  } catch (e: any) {
+    ElMessage.error(e.message || '删除失败')
+  }
 }
 
 const submitForm = async () => {
   if (!formRef.value) return
-  await formRef.value.validate((valid) => {
+  await formRef.value.validate(async (valid) => {
     if (!valid) return
-    if (dialogType.value === 'add') {
-      tableData.value.push({
-        id: Date.now(), title: form.title,
-        startTime: form.timeRange[0], endTime: form.timeRange[1],
-        productCount: 0, status: 'NOT_STARTED'
-      })
-      ElMessage.success('创建成功')
-    } else {
-      const target = tableData.value.find(item => item.id === editingId.value)
-      if (target) {
-        Object.assign(target, { title: form.title, startTime: form.timeRange[0], endTime: form.timeRange[1] })
+    try {
+      const payload = {
+        name: form.title,
+        startTime: form.timeRange[0],
+        endTime: form.timeRange[1]
       }
-      ElMessage.success('修改成功')
+      if (dialogType.value === 'add') {
+        await request.post('/admin/promotion/seckill/create', payload)
+        ElMessage.success('创建成功')
+      } else {
+        await request.put(`/admin/promotion/seckill/${editingId.value}`, payload)
+        ElMessage.success('修改成功')
+      }
+      dialogVisible.value = false
+      fetchData()
+    } catch (e: any) {
+      ElMessage.error(e.message || '操作失败')
     }
-    dialogVisible.value = false
   })
 }
 
@@ -185,23 +189,34 @@ const submitForm = async () => {
 const productDialogVisible = ref(false)
 const seckillProducts = ref<any[]>([])
 
-const handleManageProducts = (row: any) => {
-  seckillProducts.value = [
-    { productName: 'Apple AirPods Pro 2', originalPrice: 1799, seckillPrice: 999, stock: 50, limitPerUser: 1 },
-    { productName: '小米手环8 NFC版', originalPrice: 249, seckillPrice: 99, stock: 200, limitPerUser: 2 }
-  ]
+const handleManageProducts = async (row: any) => {
+  try {
+    const data: any = await request.get(`/admin/promotion/seckill/${row.id}`)
+    seckillProducts.value = data?.items || []
+  } catch (e: any) {
+    ElMessage.error(e.message || '获取活动商品失败')
+    seckillProducts.value = []
+  }
   productDialogVisible.value = true
 }
 
 const addSeckillProduct = () => {
   seckillProducts.value.push({
-    productName: '新商品', originalPrice: 0, seckillPrice: 0, stock: 100, limitPerUser: 1
+    productName: '', originalPrice: 0, seckillPrice: 0, stock: 100, limitPerUser: 1
   })
 }
 
-const saveSeckillProducts = () => {
-  ElMessage.success('保存成功')
-  productDialogVisible.value = false
+const saveSeckillProducts = async () => {
+  try {
+    await request.post('/admin/promotion/seckill/save-items', {
+      activityId: seckillProducts.value[0]?.activityId,
+      items: seckillProducts.value
+    })
+    ElMessage.success('保存成功')
+    productDialogVisible.value = false
+  } catch (e: any) {
+    ElMessage.error(e.message || '保存失败')
+  }
 }
 
 onMounted(fetchData)

@@ -47,11 +47,7 @@ seata:
       server-addr: ${NACOS_ADDR:localhost:8848}
       namespace: ${NACOS_NAMESPACE:}
   config:
-    type: nacos
-    nacos:
-      server-addr: ${NACOS_ADDR:localhost:8848}
-      namespace: ${NACOS_NAMESPACE:}
-      group: SEATA_GROUP
+    type: file
 
 mybatis-plus:
   configuration:

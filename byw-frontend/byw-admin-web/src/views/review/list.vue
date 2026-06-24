@@ -137,12 +137,11 @@ const resetSearch = () => {
 const toggleVisible = async (row: any) => {
   const action = row.visible ? '隐藏' : '显示'
   try {
-    await request.put(`/admin/review/${row.id}/visible`, { visible: !row.visible })
+    await request.put(`/admin/review/${row.id}/visible`, null, { params: { visible: !row.visible } })
     row.visible = !row.visible
     ElMessage.success(`${action}成功`)
-  } catch {
-    row.visible = !row.visible
-    ElMessage.success(`${action}成功（mock）`)
+  } catch (error: any) {
+    ElMessage.error(error?.message || `${action}失败`)
   }
 }
 
@@ -152,9 +151,8 @@ const handleDelete = async (row: any) => {
     await request.delete(`/admin/review/${row.id}`)
     ElMessage.success('删除成功')
     fetchData()
-  } catch {
-    tableData.value = tableData.value.filter(item => item.id !== row.id)
-    ElMessage.success('删除成功（mock）')
+  } catch (error: any) {
+    ElMessage.error(error?.message || '删除失败')
   }
 }
 

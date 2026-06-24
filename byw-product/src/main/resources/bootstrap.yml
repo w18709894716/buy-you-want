@@ -23,7 +23,7 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
   elasticsearch:
-    uris: ${ES_URIS:http://localhost:9200}
+    uris: ${ES_URIS:localhost:9200}
   kafka:
     bootstrap-servers: ${KAFKA_SERVERS:localhost:9092}
     producer:

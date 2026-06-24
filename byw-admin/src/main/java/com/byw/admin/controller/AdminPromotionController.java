@@ -1,13 +1,15 @@
 package com.byw.admin.controller;
 
 import com.byw.api.promotion.PromotionFeignClient;
+import com.byw.api.promotion.PromotionFeignClient.SeckillActivityDTO;
+import com.byw.api.promotion.dto.CouponDTO;
+import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
 import com.byw.common.security.annotation.RequireAdmin;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.List;
 
 @RestController
 @RequestMapping("/admin/promotion")
@@ -20,73 +22,56 @@ public class AdminPromotionController {
     // ========== 优惠券管理 ==========
 
     @GetMapping("/coupon/list")
-    public R<Map<String, Object>> listCoupons(@RequestParam(defaultValue = "1") Integer pageNum,
-                                               @RequestParam(defaultValue = "10") Integer pageSize) {
-        // TODO: 实现优惠券列表查询
-        Map<String, Object> result = new HashMap<>();
-        result.put("list", java.util.Collections.emptyList());
-        result.put("total", 0);
-        return R.ok(result);
+    public R<PageResult<CouponDTO>> listCoupons(@RequestParam(defaultValue = "1") Integer pageNum,
+                                               @RequestParam(defaultValue = "10") Integer pageSize,
+                                               @RequestParam(required = false) Integer status) {
+        return promotionFeignClient.listCoupons(pageNum, pageSize, status);
     }
 
     @GetMapping("/coupon/{couponId}")
-    public R<Object> getCouponById(@PathVariable Long couponId) {
-        return R.ok(promotionFeignClient.getCouponById(couponId).getData());
+    public R<CouponDTO> getCouponById(@PathVariable Long couponId) {
+        return promotionFeignClient.getCouponById(couponId);
     }
 
     @PostMapping("/coupon")
-    public R<Long> createCoupon(@RequestBody Object couponDTO) {
-        // TODO: 实现优惠券创建
-        return R.ok(0L);
+    public R<Long> createCoupon(@RequestBody CouponDTO couponDTO) {
+        return promotionFeignClient.createCoupon(couponDTO);
     }
 
     @PutMapping("/coupon/{couponId}")
-    public R<Boolean> updateCoupon(@PathVariable Long couponId,
-                                   @RequestBody Object couponDTO) {
-        // TODO: 实现优惠券更新
-        return R.ok(true);
+    public R<Boolean> updateCoupon(@PathVariable Long couponId, @RequestBody CouponDTO couponDTO) {
+        return promotionFeignClient.updateCoupon(couponId, couponDTO);
     }
 
     @DeleteMapping("/coupon/{couponId}")
     public R<Boolean> deleteCoupon(@PathVariable Long couponId) {
-        // TODO: 实现优惠券删除
-        return R.ok(true);
+        return promotionFeignClient.deleteCoupon(couponId);
     }
 
     // ========== 秒杀活动管理 ==========
 
     @GetMapping("/seckill/list")
-    public R<Map<String, Object>> listSeckillActivities(@RequestParam(defaultValue = "1") Integer pageNum,
-                                                         @RequestParam(defaultValue = "10") Integer pageSize) {
-        // TODO: 实现秒杀活动列表查询
-        Map<String, Object> result = new HashMap<>();
-        result.put("list", java.util.Collections.emptyList());
-        result.put("total", 0);
-        return R.ok(result);
+    public R<List<SeckillActivityDTO>> listSeckillActivities() {
+        return promotionFeignClient.listSeckillActivities();
     }
 
     @GetMapping("/seckill/{activityId}")
-    public R<Object> getSeckillActivityById(@PathVariable Long activityId) {
-        // TODO: 实现秒杀活动详情查询
-        return R.ok(null);
+    public R<SeckillActivityDTO> getSeckillActivityById(@PathVariable Long activityId) {
+        return promotionFeignClient.getSeckillActivityById(activityId);
     }
 
     @PostMapping("/seckill")
-    public R<Long> createSeckillActivity(@RequestBody Object activityDTO) {
-        // TODO: 实现秒杀活动创建
-        return R.ok(0L);
+    public R<Long> createSeckillActivity(@RequestBody SeckillActivityDTO activityDTO) {
+        return promotionFeignClient.createSeckillActivity(activityDTO);
     }
 
     @PutMapping("/seckill/{activityId}")
-    public R<Boolean> updateSeckillActivity(@PathVariable Long activityId,
-                                            @RequestBody Object activityDTO) {
-        // TODO: 实现秒杀活动更新
-        return R.ok(true);
+    public R<Boolean> updateSeckillActivity(@PathVariable Long activityId, @RequestBody SeckillActivityDTO activityDTO) {
+        return promotionFeignClient.updateSeckillActivity(activityId, activityDTO);
     }
 
     @DeleteMapping("/seckill/{activityId}")
     public R<Boolean> deleteSeckillActivity(@PathVariable Long activityId) {
-        // TODO: 实现秒杀活动删除
-        return R.ok(true);
+        return promotionFeignClient.deleteSeckillActivity(activityId);
     }
 }

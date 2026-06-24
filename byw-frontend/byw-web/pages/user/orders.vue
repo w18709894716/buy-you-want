@@ -162,6 +162,7 @@
 
 <script setup lang="ts">
 import { useUserStore } from '~/stores/user'
+import { get } from '~/utils/request'
 
 definePageMeta({ middleware: ['auth'] })
 
@@ -179,115 +180,87 @@ const sidebarMenu = [
 
 const activeTab = ref((route.query.status as string) || 'all')
 const currentPage = ref(1)
-const totalPages = ref(3)
+const totalPages = ref(1)
 
-const tabs = [
-  { label: '全部订单', value: 'all', count: 15 },
-  { label: '待付款', value: 'pending_pay', count: 2 },
-  { label: '待发货', value: 'pending_ship', count: 1 },
-  { label: '待收货', value: 'pending_receive', count: 3 },
-  { label: '已完成', value: 'completed', count: 9 },
-]
-
-// 占位订单数据
-const orders = ref([
-  {
-    id: 'BYW202606160001',
-    date: '2026-06-15 14:30:22',
-    status: 'pending_ship',
-    statusText: '待发货',
-    statusClass: 'text-orange-500',
-    productId: 1,
-    image: 'https://via.placeholder.com/80x80?text=iPhone',
-    productName: 'Apple iPhone 15 Pro Max 256GB 原色钛金属',
-    specs: '原色钛金属 / 256GB',
-    price: 9999,
-    quantity: 1,
-    total: 9999,
-  },
-  {
-    id: 'BYW202606140002',
-    date: '2026-06-14 10:15:33',
-    status: 'pending_receive',
-    statusText: '待收货',
-    statusClass: 'text-blue-500',
-    productId: 4,
-    image: 'https://via.placeholder.com/80x80?text=Sony',
-    productName: 'Sony WH-1000XM5 无线降噪头戴式耳机',
-    specs: '黑色',
-    price: 2299,
-    quantity: 1,
-    total: 2299,
-  },
-  {
-    id: 'BYW202606120003',
-    date: '2026-06-12 09:45:11',
-    status: 'pending_pay',
-    statusText: '待付款',
-    statusClass: 'text-red-500',
-    productId: 6,
-    image: 'https://via.placeholder.com/80x80?text=Dyson',
-    productName: '戴森 V15 Detect 无线吸尘器',
-    specs: '金色',
-    price: 4990,
-    quantity: 1,
-    total: 4990,
-  },
-  {
-    id: 'BYW202606100004',
-    date: '2026-06-10 16:22:08',
-    status: 'completed',
-    statusText: '已完成',
-    statusClass: 'text-green-500',
-    productId: 7,
-    image: 'https://via.placeholder.com/80x80?text=LEGO',
-    productName: 'LEGO 乐高 42151 布加迪 Bolide',
-    specs: '标准版',
-    price: 399,
-    quantity: 2,
-    total: 798,
-  },
-  {
-    id: 'BYW202606080005',
-    date: '2026-06-08 11:30:45',
-    status: 'pending_receive',
-    statusText: '待收货',
-    statusClass: 'text-blue-500',
-    productId: 2,
-    image: 'https://via.placeholder.com/80x80?text=Huawei',
-    productName: '华为 Mate 60 Pro 512GB 雅丹黑',
-    specs: '雅丹黑 / 512GB',
-    price: 7999,
-    quantity: 1,
-    total: 7999,
-  },
-  {
-    id: 'BYW202606050006',
-    date: '2026-06-05 20:18:30',
-    status: 'completed',
-    statusText: '已完成',
-    statusClass: 'text-green-500',
-    productId: 10,
-    image: 'https://via.placeholder.com/80x80?text=Bose',
-    productName: 'Bose QuietComfort 消噪耳塞 II',
-    specs: '黑色',
-    price: 1699,
-    quantity: 1,
-    total: 1699,
-  },
+const tabs = ref([
+  { label: '全部订单', value: 'all', count: 0 },
+  { label: '待付款', value: '0', count: 0 },
+  { label: '待发货', value: '1', count: 0 },
+  { label: '待收货', value: '2', count: 0 },
+  { label: '已完成', value: '3', count: 0 },
 ])
+
+const statusTextMap: Record<number, string> = {
+  0: '待付款',
+  1: '待发货',
+  2: '待收货',
+  3: '已完成',
+  4: '已取消',
+  5: '退款中',
+  6: '已退款'
+}
+
+const statusClassMap: Record<number, string> = {
+  0: 'text-red-500',
+  1: 'text-orange-500',
+  2: 'text-blue-500',
+  3: 'text-green-500',
+  4: 'text-gray-500',
+  5: 'text-yellow-500',
+  6: 'text-gray-400'
+}
+
+// 订单列表从接口获取
+const orders = ref<any[]>([])
+
+const fetchOrders = async () => {
+  try {
+    const data = await get('/order/list', {
+      pageNum: currentPage.value,
+      pageSize: 10,
+      status: activeTab.value === 'all' ? undefined : activeTab.value
+    })
+    orders.value = (data?.list || []).map((o: any) => ({
+      id: o.orderNo || o.id,
+      date: o.createdAt,
+      status: o.status,
+      statusText: statusTextMap[o.status] || '未知',
+      statusClass: statusClassMap[o.status] || 'text-gray-500',
+      productId: o.items?.[0]?.productId || o.productId,
+      image: o.items?.[0]?.productImage || o.productImage,
+      productName: o.items?.[0]?.productName || o.productName,
+      specs: o.items?.[0]?.skuName || '',
+      price: o.items?.[0]?.price || o.totalAmount,
+      quantity: o.items?.[0]?.quantity || 1,
+      total: o.payAmount || o.totalAmount
+    }))
+    totalPages.value = Math.ceil((data?.total || 0) / 10)
+    
+    // 更新 tab 计数
+    tabs.value.forEach(tab => {
+      if (tab.value !== 'all') {
+        tab.count = orders.value.filter(o => o.status === parseInt(tab.value)).length
+      }
+    })
+  } catch (e) {
+    console.error('获取订单列表失败:', e)
+    orders.value = []
+  }
+}
 
 const filteredOrders = computed(() => {
   if (activeTab.value === 'all') return orders.value
-  return orders.value.filter(o => o.status === activeTab.value)
+  return orders.value.filter(o => o.status === parseInt(activeTab.value))
 })
 
 function switchTab(tab: string) {
   activeTab.value = tab
   currentPage.value = 1
+  fetchOrders()
 }
 
 onMounted(() => {
   userStore.getUserInfo()
+  fetchOrders()
 })
 </script>

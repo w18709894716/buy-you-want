@@ -38,24 +38,24 @@
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column label="图片" width="80">
           <template #default="{ row }">
-            <el-image :src="row.image" fit="cover" style="width:50px;height:50px;border-radius:4px;" />
+            <el-image :src="row.mainImage" fit="cover" style="width:50px;height:50px;border-radius:4px;" />
           </template>
         </el-table-column>
         <el-table-column prop="name" label="商品名称" min-width="200" show-overflow-tooltip />
-        <el-table-column prop="price" label="价格（元）" width="110">
-          <template #default="{ row }">
-            <span style="color:#F56C6C;font-weight:600;">¥{{ row.price.toFixed(2) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="stock" label="库存" width="90" />
+        <el-table-column prop="subtitle" label="副标题" min-width="160" show-overflow-tooltip />
         <el-table-column prop="status" label="状态" width="90">
           <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'info'">
-              {{ row.status === 1 ? '上架' : '下架' }}
+            <el-tag :type="statusType(row.status)">
+              {{ statusLabel(row.status) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="sales" label="销量" width="90" />
+        <el-table-column prop="salesCount" label="销量" width="90">
+          <template #default="{ row }">
+            {{ row.salesCount || 0 }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="createdAt" label="创建时间" width="170" />
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" size="small" text @click="handleEdit(row)">编辑</el-button>
@@ -99,22 +99,24 @@ const searchForm = reactive({
   categoryId: undefined as number | undefined
 })
 
+const statusMap: Record<number, { label: string; type: string }> = {
+  0: { label: '草稿', type: 'info' },
+  1: { label: '上架', type: 'success' },
+  2: { label: '下架', type: 'warning' }
+}
+const statusLabel = (s: number) => statusMap[s]?.label || '未知'
+const statusType = (s: number) => (statusMap[s]?.type || 'info') as any
+
 const fetchData = async () => {
   loading.value = true
   try {
     const data: any = await request.get('/admin/product/list', {
-      params: { page: page.value, pageSize: pageSize.value, ...searchForm }
+      params: { pageNum: page.value, pageSize: pageSize.value, keyword: searchForm.name, status: searchForm.status }
     })
-    tableData.value = data.records || []
+    tableData.value = data.list || []
     total.value = data.total || 0
-  } catch {
-    tableData.value = [
-      { id: 1, image: 'https://via.placeholder.com/50', name: 'Apple iPhone 15 Pro Max 256GB 原色钛金属', price: 9999, stock: 120, status: 1, sales: 3280 },
-      { id: 2, image: 'https://via.placeholder.com/50', name: 'Sony WH-1000XM5 无线降噪头戴式耳机 黑色', price: 2299, stock: 85, status: 1, sales: 1456 },
-      { id: 3, image: 'https://via.placeholder.com/50', name: 'Nike Air Max 270 男士运动鞋 黑白配色', price: 899, stock: 0, status: 0, sales: 892 },
-      { id: 4, image: 'https://via.placeholder.com/50', name: '小米14 Ultra 徕卡影像旗舰 16GB+512GB', price: 6499, stock: 45, status: 1, sales: 2100 }
-    ]
-    total.value = 4
+  } catch (error: any) {
+    ElMessage.error(error?.message || '获取商品列表失败')
   } finally {
     loading.value = false
   }
@@ -142,9 +144,8 @@ const handleDelete = async (row: any) => {
     await request.delete(`/admin/product/${row.id}`)
     ElMessage.success('删除成功')
     fetchData()
-  } catch {
-    ElMessage.success('删除成功（mock）')
-    tableData.value = tableData.value.filter(item => item.id !== row.id)
+  } catch (error: any) {
+    ElMessage.error(error?.message || '删除失败')
   }
 }
 

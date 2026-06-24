@@ -78,21 +78,29 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox, FormInstance } from 'element-plus'
 import ImageUpload from '../../components/ImageUpload.vue'
+import request from '../../utils/request'
 
 const loading = ref(false)
 const searchForm = reactive({ name: '' })
 
-const tableData = ref<any[]>([
-  { id: 1, logo: 'https://via.placeholder.com/60x40', name: 'Apple', firstLetter: 'A', sort: 1, status: 1, productCount: 128 },
-  { id: 2, logo: 'https://via.placeholder.com/60x40', name: 'Sony', firstLetter: 'S', sort: 2, status: 1, productCount: 85 },
-  { id: 3, logo: 'https://via.placeholder.com/60x40', name: 'Nike', firstLetter: 'N', sort: 3, status: 1, productCount: 210 },
-  { id: 4, logo: 'https://via.placeholder.com/60x40', name: '小米', firstLetter: 'X', sort: 4, status: 1, productCount: 96 },
-  { id: 5, logo: 'https://via.placeholder.com/60x40', name: '华为', firstLetter: 'H', sort: 5, status: 1, productCount: 152 },
-  { id: 6, logo: 'https://via.placeholder.com/60x40', name: 'Adidas', firstLetter: 'A', sort: 6, status: 0, productCount: 73 }
-])
+const tableData = ref<any[]>([])
+
+const fetchData = async () => {
+  loading.value = true
+  try {
+    const data: any = await request.get('/admin/product/brand/list', {
+      params: { name: searchForm.name || undefined }
+    })
+    tableData.value = data || []
+  } catch (e: any) {
+    ElMessage.error(e.message || '获取品牌列表失败')
+  } finally {
+    loading.value = false
+  }
+}
 
 const filteredData = computed(() => {
   if (!searchForm.name) return tableData.value
@@ -119,7 +127,7 @@ const dialogRules = {
   firstLetter: [{ required: true, message: '请输入首字母', trigger: 'blur' }]
 }
 
-const handleSearch = () => { /* computed handles filtering */ }
+const handleSearch = () => { fetchData() }
 
 const handleAdd = () => {
   dialogType.value = 'add'
@@ -143,41 +151,41 @@ const handleEdit = (row: any) => {
 
 const handleDelete = async (row: any) => {
   await ElMessageBox.confirm(`确定要删除品牌"${row.name}"吗？`, '提示', { type: 'warning' })
-  tableData.value = tableData.value.filter(item => item.id !== row.id)
-  ElMessage.success('删除成功')
+  try {
+    await request.delete(`/admin/product/brand/${row.id}`)
+    ElMessage.success('删除成功')
+    fetchData()
+  } catch (e: any) {
+    ElMessage.error(e.message || '删除失败')
+  }
 }
 
 const submitForm = async () => {
   if (!dialogFormRef.value) return
-  await dialogFormRef.value.validate((valid) => {
+  await dialogFormRef.value.validate(async (valid) => {
     if (!valid) return
-    if (dialogType.value === 'add') {
-      tableData.value.push({
-        id: Date.now(),
-        logo: dialogForm.logoList[0] || 'https://via.placeholder.com/60x40',
+    try {
+      const payload = {
         name: dialogForm.name,
-        firstLetter: dialogForm.firstLetter,
-        sort: dialogForm.sort,
-        status: dialogForm.status,
-        productCount: 0
-      })
-      ElMessage.success('添加成功')
-    } else {
-      const target = tableData.value.find(item => item.id === editingId.value)
-      if (target) {
-        Object.assign(target, {
-          name: dialogForm.name,
-          firstLetter: dialogForm.firstLetter,
-          logo: dialogForm.logoList[0] || target.logo,
-          sort: dialogForm.sort,
-          status: dialogForm.status
-        })
+        logo: dialogForm.logoList[0] || '',
+        sortOrder: dialogForm.sort
       }
-      ElMessage.success('修改成功')
+      if (dialogType.value === 'add') {
+        await request.post('/admin/product/brand/create', payload)
+        ElMessage.success('添加成功')
+      } else {
+        await request.put(`/admin/product/brand/${editingId.value}`, payload)
+        ElMessage.success('修改成功')
+      }
+      dialogVisible.value = false
+      fetchData()
+    } catch (e: any) {
+      ElMessage.error(e.message || '操作失败')
     }
-    dialogVisible.value = false
   })
 }
+
+onMounted(fetchData)
 </script>
 
 <style scoped lang="scss">

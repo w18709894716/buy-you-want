@@ -91,6 +91,11 @@ export async function request<T = any>(
         navigateTo('/login')
       }
     }
+    // 尝试从响应体中提取业务错误信息
+    const data = error?.data || error?.response?._data
+    if (data && data.message) {
+      throw new Error(data.message)
+    }
     throw error
   }
 }

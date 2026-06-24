@@ -93,6 +93,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import request from '../../utils/request'
 
 const loading = ref(false)
@@ -104,30 +105,24 @@ const tableData = ref<any[]>([])
 const searchForm = reactive({ orderNo: '', status: '' })
 
 const statusMap: Record<string, { label: string; type: string }> = {
-  COLLECTED: { label: '已揽收', type: 'info' },
-  IN_TRANSIT: { label: '运输中', type: 'primary' },
-  DELIVERING: { label: '派送中', type: 'warning' },
-  SIGNED: { label: '已签收', type: 'success' }
+  0: { label: '已揽收', type: 'info' },
+  1: { label: '运输中', type: 'primary' },
+  2: { label: '派送中', type: 'warning' },
+  3: { label: '已签收', type: 'success' }
 }
-const statusLabel = (s: string) => statusMap[s]?.label || s
-const statusType = (s: string) => (statusMap[s]?.type as any) || 'info'
+const statusLabel = (s: number | string) => statusMap[s]?.label || s
+const statusType = (s: number | string) => (statusMap[s]?.type as any) || 'info'
 
 const fetchData = async () => {
   loading.value = true
   try {
     const data: any = await request.get('/admin/logistics/list', {
-      params: { page: page.value, pageSize: pageSize.value, ...searchForm }
+      params: { pageNum: page.value, pageSize: pageSize.value, ...searchForm }
     })
-    tableData.value = data.records || []
+    tableData.value = data.list || []
     total.value = data.total || 0
-  } catch {
-    tableData.value = [
-      { id: 1, orderNo: 'BYW20250601001', company: '顺丰速运', trackingNo: 'SF1234567890', status: 'SIGNED', latestInfo: '您的快件已由本人签收，感谢使用顺丰', updatedTime: '2025-06-03 15:20:30' },
-      { id: 2, orderNo: 'BYW20250602002', company: '中通快递', trackingNo: 'ZT9876543210', status: 'IN_TRANSIT', latestInfo: '快件已到达【北京转运中心】', updatedTime: '2025-06-14 08:10:22' },
-      { id: 3, orderNo: 'BYW20250603003', company: '京东物流', trackingNo: 'JD1122334455', status: 'DELIVERING', latestInfo: '快递员正在派送中，请保持电话畅通', updatedTime: '2025-06-15 10:05:18' },
-      { id: 4, orderNo: 'BYW20250604004', company: '圆通速递', trackingNo: 'YT5566778899', status: 'COLLECTED', latestInfo: '快件已由深圳市南山区网点揽收', updatedTime: '2025-06-15 14:40:50' }
-    ]
-    total.value = 4
+  } catch (e: any) {
+    ElMessage.error(e.message || '获取物流列表失败')
   } finally {
     loading.value = false
   }
@@ -141,15 +136,18 @@ const trackingVisible = ref(false)
 const currentLogistics = ref<any>(null)
 const trackingList = ref<any[]>([])
 
-const showTracking = (row: any) => {
+const showTracking = async (row: any) => {
   currentLogistics.value = row
-  trackingList.value = [
-    { time: '2025-06-15 14:40:50', info: '快件已由发货地网点揽收' },
-    { time: '2025-06-15 18:20:10', info: '快件已到达【深圳转运中心】' },
-    { time: '2025-06-15 22:05:33', info: '快件已从【深圳转运中心】发出，下一站【北京转运中心】' },
-    { time: '2025-06-16 08:10:22', info: '快件已到达【北京转运中心】' },
-    { time: '2025-06-16 10:05:18', info: '快递员正在派送中，请保持电话畅通' }
-  ]
+  try {
+    const data: any = await request.get(`/admin/logistics/${row.id}/trace`)
+    trackingList.value = (data || []).map((item: any) => ({
+      time: item.traceTime || item.createdAt,
+      info: item.description
+    }))
+  } catch (e: any) {
+    ElMessage.error(e.message || '获取物流轨迹失败')
+    trackingList.value = []
+  }
   trackingVisible.value = true
 }
 

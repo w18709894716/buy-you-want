@@ -34,7 +34,7 @@ export const useUserStore = defineStore('user', {
     /** 登录 */
     async login(username: string, password: string) {
       const data = await post<{ token: string; userId: number; username: string; nickname: string; avatar: string }>(
-        '/user/auth/login',
+        '/auth/login',
         { username, password }
       )
       this.token = data.token
@@ -47,14 +47,14 @@ export const useUserStore = defineStore('user', {
 
     /** 注册 */
     async register(params: { username: string; password: string; phone: string; nickname: string }) {
-      await post('/user/auth/register', params)
+      await post('/auth/register', params)
     },
 
     /** 获取用户信息 */
     async getUserInfo() {
       try {
         const data = await get<{ userId: number; username: string; nickname: string; avatar: string }>(
-          '/user/info'
+          '/user/me'
         )
         this.userId = data.userId
         this.username = data.username

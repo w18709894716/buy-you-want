@@ -38,14 +38,14 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="level" label="会员等级" width="100">
+        <el-table-column prop="userLevel" label="会员等级" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.level === 'VIP' ? 'warning' : 'info'">
-              {{ row.level || '普通' }}
+            <el-tag :type="levelTag(row.userLevel)">
+              {{ levelLabel(row.userLevel) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="created" label="注册时间" min-width="160" />
+        <el-table-column prop="createdAt" label="注册时间" min-width="160" />
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
             <el-button
@@ -93,23 +93,23 @@ const searchForm = reactive({
   status: undefined as number | undefined
 })
 
+const levelMap: Record<number, string> = { 0: '普通用户', 1: '银卡会员', 2: '金卡会员', 3: '钻石会员' }
+const levelLabel = (level: number) => levelMap[level] || '普通用户'
+const levelTag = (level: number) => {
+  const map: Record<number, string> = { 0: 'info', 1: '', 2: 'warning', 3: 'danger' }
+  return (map[level] || 'info') as any
+}
+
 const fetchData = async () => {
   loading.value = true
   try {
     const data: any = await request.get('/admin/user/list', {
-      params: { page: page.value, pageSize: pageSize.value, ...searchForm }
+      params: { pageNum: page.value, pageSize: pageSize.value, keyword: searchForm.username || searchForm.phone }
     })
-    tableData.value = data.records || []
+    tableData.value = data.list || []
     total.value = data.total || 0
-  } catch {
-    // 使用 mock 数据兜底
-    tableData.value = [
-      { id: 1, username: 'zhangsan', phone: '13800001111', nickname: '张三', status: 1, level: 'VIP', created: '2025-01-10 10:20:30' },
-      { id: 2, username: 'lisi', phone: '13800002222', nickname: '李四', status: 1, level: '普通', created: '2025-02-15 14:05:12' },
-      { id: 3, username: 'wangwu', phone: '13800003333', nickname: '王五', status: 0, level: '普通', created: '2025-03-22 09:18:45' },
-      { id: 4, username: 'zhaoliu', phone: '13800004444', nickname: '赵六', status: 1, level: 'VIP', created: '2025-04-01 16:40:20' }
-    ]
-    total.value = 4
+  } catch (error: any) {
+    ElMessage.error(error?.message || '获取用户列表失败')
   } finally {
     loading.value = false
   }
@@ -129,15 +129,14 @@ const resetSearch = () => {
 
 const toggleStatus = async (row: any) => {
   const action = row.status === 1 ? '禁用' : '启用'
+  const newStatus = row.status === 1 ? 0 : 1
   await ElMessageBox.confirm(`确定要${action}该用户吗？`, '提示', { type: 'warning' })
   try {
-    await request.put(`/admin/user/${row.id}/status`, { status: row.status === 1 ? 0 : 1 })
+    await request.put(`/admin/user/${row.id}/status`, null, { params: { status: newStatus } })
     ElMessage.success(`${action}成功`)
-    row.status = row.status === 1 ? 0 : 1
-  } catch {
-    // mock 切换
-    row.status = row.status === 1 ? 0 : 1
-    ElMessage.success(`${action}成功（mock）`)
+    row.status = newStatus
+  } catch (error: any) {
+    ElMessage.error(error?.message || `${action}失败`)
   }
 }
 

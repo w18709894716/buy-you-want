@@ -118,6 +118,8 @@
 </template>
 
 <script setup lang="ts">
+import { get } from '~/utils/request'
+
 const route = useRoute()
 
 const keyword = computed(() => (route.query.keyword as string) || '')
@@ -146,21 +148,11 @@ const priceRanges = [
   { label: '5000+', min: 5000, max: 0 },
 ]
 
-const filterCategories = ['数码电器', '服装鞋包', '食品生鲜', '美妆护肤', '家居家装', '运动户外', '图书文具']
+const filterCategories = ref<string[]>([])
 
-// 占位商品数据
-const products = ref([
-  { id: 1, title: 'Apple iPhone 15 Pro Max 256GB 原色钛金属', image: 'https://via.placeholder.com/300x300?text=iPhone+15', price: 9999, originalPrice: 10999, salesCount: 58000, promotion: '热卖' },
-  { id: 2, title: '华为 Mate 60 Pro 512GB 雅丹黑', image: 'https://via.placeholder.com/300x300?text=Mate+60', price: 7999, originalPrice: 8999, salesCount: 42000, promotion: '新品' },
-  { id: 3, title: '小米14 Ultra 影像旗舰 16+512GB', image: 'https://via.placeholder.com/300x300?text=Mi+14', price: 6499, salesCount: 31000 },
-  { id: 4, title: 'Sony WH-1000XM5 无线降噪头戴式耳机', image: 'https://via.placeholder.com/300x300?text=Sony+XM5', price: 2299, originalPrice: 2999, salesCount: 18000, promotion: '特价' },
-  { id: 5, title: 'Nintendo Switch OLED 马力欧限定版', image: 'https://via.placeholder.com/300x300?text=Switch', price: 2349, salesCount: 25000 },
-  { id: 6, title: '戴森 V15 Detect 无线吸尘器', image: 'https://via.placeholder.com/300x300?text=Dyson+V15', price: 4990, originalPrice: 5990, salesCount: 12000, promotion: '满减' },
-  { id: 7, title: 'LEGO 乐高 42151 布加迪 Bolide', image: 'https://via.placeholder.com/300x300?text=LEGO', price: 399, salesCount: 8900 },
-  { id: 8, title: 'Apple MacBook Air M3 15英寸 16+512GB', image: 'https://via.placeholder.com/300x300?text=MacBook', price: 12499, originalPrice: 13499, salesCount: 9800, promotion: '教育优惠' },
-])
+// 商品列表从接口获取
+const products = ref<any[]>([])
 
-total.value = 86
 const totalPages = computed(() => Math.ceil(total.value / pageSize))
 
 const visiblePages = computed(() => {
@@ -171,15 +163,52 @@ const visiblePages = computed(() => {
   return pages
 })
 
+const fetchProducts = async () => {
+  try {
+    const data = await get('/product/list', {
+      pageNum: currentPage.value,
+      pageSize,
+      keyword: keyword.value || undefined,
+      category: category.value || undefined,
+      sort: currentSort.value,
+      minPrice: priceRange.min || undefined,
+      maxPrice: priceRange.max || undefined
+    })
+    products.value = (data?.list || []).map((p: any) => ({
+      id: p.id,
+      title: p.name,
+      image: p.mainImage,
+      price: p.price || p.minPrice,
+      originalPrice: p.originalPrice,
+      salesCount: p.salesCount,
+      promotion: p.promotion
+    }))
+    total.value = data?.total || 0
+  } catch (e) {
+    console.error('获取商品列表失败:', e)
+    products.value = []
+    total.value = 0
+  }
+}
+
+const fetchCategories = async () => {
+  try {
+    const data = await get('/product/category/list')
+    filterCategories.value = (data || []).map((c: any) => c.name)
+  } catch (e) {
+    console.error('获取分类失败:', e)
+  }
+}
+
 function changeSort(sort: string) {
   currentSort.value = sort
   currentPage.value = 1
-  // TODO: 调用接口重新加载数据
+  fetchProducts()
 }
 
 function goPage(page: number) {
   currentPage.value = page
-  // TODO: 调用接口加载对应页数据
+  fetchProducts()
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
@@ -188,5 +217,11 @@ function selectPriceRange(range: { label: string; min: number; max: number }) {
   priceRange.min = range.min
   priceRange.max = range.max
   currentPage.value = 1
+  fetchProducts()
 }
+
+onMounted(() => {
+  fetchCategories()
+  fetchProducts()
+})
 </script>

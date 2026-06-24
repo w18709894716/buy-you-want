@@ -1,7 +1,11 @@
 package com.byw.user.feign;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byw.api.user.UserFeignClient;
 import com.byw.api.user.dto.UserDTO;
+import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
 import com.byw.user.entity.User;
 import com.byw.user.service.UserService;
@@ -9,6 +13,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/feign/user")
@@ -72,5 +81,50 @@ public class UserFeignImpl implements UserFeignClient {
         }
         boolean matches = passwordEncoder.matches(password, user.getPassword());
         return R.ok(matches);
+    }
+
+    @Override
+    @GetMapping("/list")
+    public R<PageResult<UserDTO>> listUsers(@RequestParam(value = "pageNum", defaultValue = "1") Integer pageNum,
+                                            @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,
+                                            @RequestParam(value = "keyword", required = false) String keyword) {
+        LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
+        if (keyword != null && !keyword.isEmpty()) {
+            wrapper.like(User::getUsername, keyword)
+                    .or().like(User::getNickname, keyword)
+                    .or().like(User::getPhone, keyword);
+        }
+        wrapper.orderByDesc(User::getCreatedAt);
+        IPage<User> page = userService.page(new Page<>(pageNum, pageSize), wrapper);
+        List<UserDTO> dtoList = page.getRecords().stream().map(user -> {
+            UserDTO dto = new UserDTO();
+            BeanUtils.copyProperties(user, dto);
+            return dto;
+        }).collect(Collectors.toList());
+        return R.ok(PageResult.of(dtoList, page.getTotal(), pageNum, pageSize));
+    }
+
+    @Override
+    @PutMapping("/{userId}/status")
+    public R<Boolean> updateUserStatus(@PathVariable("userId") Long userId, @RequestParam("status") Integer status) {
+        User user = userService.getById(userId);
+        if (user == null) return R.fail("用户不存在");
+        user.setStatus(status);
+        return R.ok(userService.updateById(user));
+    }
+
+    @Override
+    @GetMapping("/count")
+    public R<Long> countUsers() {
+        return R.ok(userService.count());
+    }
+
+    @Override
+    @GetMapping("/count-today")
+    public R<Long> countTodayNewUsers() {
+        LocalDateTime todayStart = LocalDate.now().atStartOfDay();
+        long count = userService.count(new LambdaQueryWrapper<User>()
+                .ge(User::getCreatedAt, todayStart));
+        return R.ok(count);
     }
 }

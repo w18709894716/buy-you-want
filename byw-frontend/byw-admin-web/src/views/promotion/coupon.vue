@@ -116,12 +116,8 @@ const fetchData = async () => {
   try {
     const data: any = await request.get('/admin/promotion/coupon/list')
     tableData.value = data || []
-  } catch {
-    tableData.value = [
-      { id: 1, name: '新用户专享满减券', type: 'FIXED', value: 20, minAmount: 100, totalCount: 1000, usedCount: 328, startTime: '2025-06-01 00:00:00', endTime: '2025-06-30 23:59:59', status: 1 },
-      { id: 2, name: '618大促折扣券', type: 'PERCENT', value: 8.5, minAmount: 200, totalCount: 5000, usedCount: 1256, startTime: '2025-06-15 00:00:00', endTime: '2025-06-20 23:59:59', status: 1 },
-      { id: 3, name: '会员专属满减券', type: 'FIXED', value: 50, minAmount: 300, totalCount: 500, usedCount: 89, startTime: '2025-05-01 00:00:00', endTime: '2025-12-31 23:59:59', status: 1 }
-    ]
+  } catch (e: any) {
+    ElMessage.error(e.message || '获取优惠券列表失败')
   } finally {
     loading.value = false
   }
@@ -170,33 +166,41 @@ const handleEdit = (row: any) => {
 
 const handleDelete = async (row: any) => {
   await ElMessageBox.confirm(`确定删除优惠券"${row.name}"？`, '提示', { type: 'warning' })
-  tableData.value = tableData.value.filter(item => item.id !== row.id)
-  ElMessage.success('删除成功')
+  try {
+    await request.delete(`/admin/promotion/coupon/${row.id}`)
+    ElMessage.success('删除成功')
+    fetchData()
+  } catch (e: any) {
+    ElMessage.error(e.message || '删除失败')
+  }
 }
 
 const submitForm = async () => {
   if (!formRef.value) return
-  await formRef.value.validate((valid) => {
+  await formRef.value.validate(async (valid) => {
     if (!valid) return
-    if (dialogType.value === 'add') {
-      tableData.value.push({
-        id: Date.now(), name: form.name, type: form.type, value: form.value,
-        minAmount: form.minAmount, totalCount: form.totalCount, usedCount: 0,
-        startTime: form.timeRange[0], endTime: form.timeRange[1], status: 1
-      })
-      ElMessage.success('创建成功')
-    } else {
-      const target = tableData.value.find(item => item.id === editingId.value)
-      if (target) {
-        Object.assign(target, {
-          name: form.name, type: form.type, value: form.value,
-          minAmount: form.minAmount, totalCount: form.totalCount,
-          startTime: form.timeRange[0], endTime: form.timeRange[1]
-        })
+    try {
+      const payload = {
+        name: form.name,
+        type: form.type === 'FIXED' ? 1 : 2,
+        discountValue: form.value,
+        minAmount: form.minAmount,
+        totalCount: form.totalCount,
+        startTime: form.timeRange[0],
+        endTime: form.timeRange[1]
       }
-      ElMessage.success('修改成功')
+      if (dialogType.value === 'add') {
+        await request.post('/admin/promotion/coupon/create', payload)
+        ElMessage.success('创建成功')
+      } else {
+        await request.put(`/admin/promotion/coupon/${editingId.value}`, payload)
+        ElMessage.success('修改成功')
+      }
+      dialogVisible.value = false
+      fetchData()
+    } catch (e: any) {
+      ElMessage.error(e.message || '操作失败')
     }
-    dialogVisible.value = false
   })
 }
 
