@@ -51,12 +51,15 @@
     <!-- SKU 表格 -->
     <template v-if="skuList.length > 0">
       <el-divider>SKU 列表（共 {{ skuList.length }} 个）</el-divider>
+      <div style="margin-bottom: 12px;">
+        <el-checkbox v-model="autoGenSkuCode" @change="onAutoGenChange">自动生成SKU编码</el-checkbox>
+      </div>
       <el-table :data="skuList" stripe border size="small">
         <el-table-column
           v-for="(spec, specIdx) in specs"
           :key="specIdx"
           :label="spec.name || `规格${specIdx + 1}`"
-          width="140"
+          min-width="120"
         >
           <template #default="{ row }">
             {{ row.specs[specIdx] }}
@@ -72,9 +75,10 @@
             <el-input-number v-model="row.stock" :min="0" size="small" controls-position="right" />
           </template>
         </el-table-column>
-        <el-table-column label="SKU编码" width="160">
-          <template #default="{ row }">
-            <el-input v-model="row.skuCode" size="small" placeholder="可选" />
+        <el-table-column label="SKU编码" width="180">
+          <template #default="{ row, $index }">
+            <el-input v-if="!autoGenSkuCode" v-model="row.skuCode" size="small" placeholder="可选" />
+            <span v-else style="color: #909399; font-size: 12px;">{{ row.skuCode }}</span>
           </template>
         </el-table-column>
       </el-table>
@@ -109,6 +113,54 @@ const emit = defineEmits<{
 
 const specs = ref<SpecGroup[]>([])
 const skuList = ref<SkuItem[]>([])
+const autoGenSkuCode = ref(true)
+let specsBuilt = false
+
+// 自动生成 SKU 编码（基于规格值拼接）
+const generateSkuCode = (s: string[]): string => s.join('-') || ''
+
+const onAutoGenChange = () => {
+  if (autoGenSkuCode.value) {
+    skuList.value.forEach(sku => {
+      // 只填充空编码，不覆盖已有的原始编码
+      if (!sku.skuCode) {
+        sku.skuCode = generateSkuCode(sku.specs)
+      }
+    })
+  }
+}
+
+// 从 SKU 数据反推规格组（仅首次）
+const buildSpecsFromData = (data: SkuItem[]) => {
+  if (specsBuilt || !data.length || !data[0].specs?.length) return
+  const specCount = data[0].specs.length
+  const newSpecs: SpecGroup[] = []
+  for (let i = 0; i < specCount; i++) {
+    const values = [...new Set(data.map(s => s.specs[i]).filter(Boolean))] as string[]
+    newSpecs.push({ name: `规格${i + 1}`, values, inputVisible: false, inputValue: '' })
+  }
+  specs.value = newSpecs
+  specsBuilt = true
+}
+
+// 监听外部数据变化（仅响应引用变化，不响应深层修改）
+watch(() => props.modelValue, (val) => {
+  if (val && val.length > 0) {
+    skuList.value = val
+    buildSpecsFromData(val)
+  }
+})
+
+defineExpose({
+  getData: () => skuList.value,
+  getSpecNames: () => specs.value.filter(s => s.name && s.values.length > 0).map(s => s.name),
+  setSpecNames: (names: string[]) => {
+    specs.value = specs.value.map((s, i) => ({
+      ...s,
+      name: names[i] || s.name
+    }))
+  }
+})
 
 // 添加规格组
 const addSpec = () => {
@@ -173,27 +225,20 @@ const generateSkuTable = () => {
     oldMap.set(sku.specs.join('|'), sku)
   })
 
-  skuList.value = combinations.map(combo => {
+  const newList = combinations.map(combo => {
     const key = combo.join('|')
     const old = oldMap.get(key)
     return {
       specs: combo,
       price: old?.price ?? 0,
       stock: old?.stock ?? 0,
-      skuCode: old?.skuCode ?? ''
+      skuCode: old?.skuCode || (autoGenSkuCode.value ? generateSkuCode(combo) : '')
     }
   })
 
+  // 原地更新数组，保持与父组件 formData.skus 的引用一致
+  skuList.value.splice(0, skuList.value.length, ...newList)
   emit('update:modelValue', skuList.value)
-}
-
-watch(skuList, (val) => {
-  emit('update:modelValue', val)
-}, { deep: true })
-
-// 从 modelValue 初始化
-if (props.modelValue && props.modelValue.length > 0) {
-  skuList.value = props.modelValue
 }
 </script>
 

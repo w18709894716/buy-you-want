@@ -3,6 +3,7 @@ CREATE DATABASE IF NOT EXISTS byw_user DEFAULT CHARACTER SET utf8mb4 COLLATE utf
 USE byw_user;
 
 -- 用户主表
+DROP TABLE IF EXISTS t_user;
 CREATE TABLE t_user (
     id              BIGINT PRIMARY KEY AUTO_INCREMENT,
     username        VARCHAR(50) NOT NULL UNIQUE,
@@ -22,6 +23,7 @@ CREATE TABLE t_user (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 收货地址
+DROP TABLE IF EXISTS t_user_address;
 CREATE TABLE t_user_address (
     id              BIGINT PRIMARY KEY AUTO_INCREMENT,
     user_id         BIGINT NOT NULL,
@@ -39,6 +41,7 @@ CREATE TABLE t_user_address (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 用户等级
+DROP TABLE IF EXISTS t_user_level;
 CREATE TABLE t_user_level (
     id              BIGINT PRIMARY KEY AUTO_INCREMENT,
     level_name      VARCHAR(50) NOT NULL,

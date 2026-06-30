@@ -1,5 +1,11 @@
 <template>
   <div class="max-w-7xl mx-auto px-4 py-6 relative">
+    <!-- 加载中 -->
+    <div v-if="loading" class="flex items-center justify-center py-20">
+      <span class="text-gray-400">加载中...</span>
+    </div>
+
+    <template v-else>
     <!-- Toast 通知 -->
     <Transition name="toast">
       <div
@@ -61,8 +67,8 @@
           <div class="bg-red-50 rounded-lg p-4 mt-4">
             <div class="flex items-baseline gap-3">
               <span class="text-sm text-gray-500">促销价</span>
-              <span class="text-3xl font-bold text-primary">¥{{ product.price.toFixed(2) }}</span>
-              <span class="text-gray-400 line-through text-sm">¥{{ product.originalPrice.toFixed(2) }}</span>
+              <span class="text-3xl font-bold text-primary">¥{{ product.price ? product.price.toFixed(2) : '0.00' }}</span>
+              <span v-if="product.originalPrice" class="text-gray-400 line-through text-sm">¥{{ product.originalPrice.toFixed(2) }}</span>
             </div>
             <div class="mt-2 flex gap-2">
               <span class="text-xs bg-primary text-white px-2 py-0.5 rounded">满减</span>
@@ -198,10 +204,12 @@
         </div>
       </div>
     </div>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
+import { get } from '~/utils/request'
 import { useCartStore } from '~/stores/cart'
 
 const route = useRoute()
@@ -211,66 +219,113 @@ const productId = computed(() => Number(route.params.id))
 const currentImageIndex = ref(0)
 const quantity = ref(1)
 const activeTab = ref('detail')
-const skuSelectorRef = ref()
 const selectedSpecs = ref<Record<string, string>>({})
+const loading = ref(true)
 
 const detailTabs = [
   { label: '商品详情', value: 'detail' },
   { label: '用户评价', value: 'reviews' },
 ]
 
-// 占位商品数据
 const product = reactive({
-  id: productId.value,
-  title: 'Apple iPhone 15 Pro Max 256GB 原色钛金属 A17 Pro芯片 4800万像素主摄',
-  subtitle: '【限时优惠】钛金属设计 | A17 Pro芯片 | 4800万像素专业级相机系统',
-  price: 9999,
-  originalPrice: 10999,
-  stock: 256,
-  salesCount: 58234,
-  reviewCount: 12860,
-  rating: 4.8,
-  shopName: 'Apple官方旗舰店',
-  images: [
-    'https://via.placeholder.com/600x600?text=iPhone+15+Pro+Max+1',
-    'https://via.placeholder.com/600x600?text=iPhone+15+Pro+Max+2',
-    'https://via.placeholder.com/600x600?text=iPhone+15+Pro+Max+3',
-    'https://via.placeholder.com/600x600?text=iPhone+15+Pro+Max+4',
-  ],
-  description: 'iPhone 15 Pro Max。采用航空级钛金属设计，搭载 A17 Pro 芯片，配备 4800 万像素主摄系统和 5 倍光学变焦长焦镜头。支持 USB 3 高速传输，Action Button 自定义按键，全天候电池续航。6.7 英寸超视网膜 XDR 显示屏，ProMotion 自适应刷新率技术，最高 2000 尼特峰值亮度。',
-  specs: {
-    '品牌': 'Apple',
-    '型号': 'iPhone 15 Pro Max',
-    '存储容量': '256GB',
-    '屏幕尺寸': '6.7英寸',
-    '芯片': 'A17 Pro',
-    '主摄像头': '4800万像素',
-    '电池类型': '不可拆卸式锂离子电池',
-    '网络类型': '5G全网通',
-    '操作系统': 'iOS 17',
-    '重量': '221g',
-  },
+  id: 0,
+  title: '',
+  subtitle: '',
+  price: 0,
+  originalPrice: 0,
+  stock: 0,
+  salesCount: 0,
+  reviewCount: 0,
+  rating: 0,
+  shopName: '',
+  images: [] as string[],
+  description: '',
+  specs: {} as Record<string, string>,
 })
 
-const specGroups = [
-  { name: '颜色', options: ['原色钛金属', '蓝色钛金属', '白色钛金属', '黑色钛金属'] },
-  { name: '存储容量', options: ['256GB', '512GB', '1TB'] },
-]
+const specGroups = ref<any[]>([])
+const skuList = ref<any[]>([])
+const reviews = ref<any[]>([])
 
-const reviews = [
-  { id: 1, username: '张***明', date: '2026-06-10', rating: 5, content: '手机质量非常好，拍照效果惊艳！钛金属手感一流，电池续航也很给力。物流速度很快，第二天就到了。', images: ['https://via.placeholder.com/100x100?text=评价1', 'https://via.placeholder.com/100x100?text=评价2'] },
-  { id: 2, username: '李***华', date: '2026-06-08', rating: 5, content: '从14 Pro升级过来，提升明显。A17 Pro芯片性能强劲，玩原神完全无压力。5倍光学变焦拍远处的景物非常清晰。' },
-  { id: 3, username: '王***', date: '2026-06-05', rating: 4, content: '整体不错，就是价格有点贵。钛金属质感确实好，比不锈钢轻了不少。Action Button很方便，设置成静音开关。' },
-]
+// 从接口加载商品详情
+const fetchProduct = async () => {
+  try {
+    loading.value = true
+    const data: any = await get(`/product/${productId.value}`)
+    if (!data) return
+
+    product.id = data.id
+    product.title = data.name || ''
+    product.subtitle = data.subtitle || ''
+    product.price = data.minPrice || 0
+    product.originalPrice = data.minPrice ? Math.round(data.minPrice * 1.2 * 100) / 100 : 0
+    product.salesCount = data.salesCount || 0
+    product.reviewCount = 0
+    product.rating = 0
+    product.shopName = ''
+    product.description = data.detailHtml || ''
+
+    // 图片列表
+    const imgs: string[] = []
+    if (data.mainImage) imgs.push(data.mainImage)
+    if (data.subImages) {
+      data.subImages.split(',').forEach((url: string) => {
+        if (url.trim()) imgs.push(url.trim())
+      })
+    }
+    product.images = imgs.length ? imgs : ['https://via.placeholder.com/600x600?text=暂无图片']
+
+    // 从 SKU 构建规格组和 SKU 列表
+    skuList.value = data.skus || []
+    const groupMap: Record<string, Set<string>> = {}
+    for (const sku of skuList.value) {
+      if (sku.specData) {
+        const specData = typeof sku.specData === 'string' ? JSON.parse(sku.specData) : sku.specData
+        for (const [key, val] of Object.entries(specData)) {
+          if (!groupMap[key]) groupMap[key] = new Set()
+          groupMap[key].add(val as string)
+        }
+      }
+    }
+    specGroups.value = Object.entries(groupMap).map(([name, options]) => ({
+      name,
+      options: Array.from(options),
+    }))
+
+    // 规格参数展示
+    const specs: Record<string, string> = {}
+    if (specGroups.value.length > 0 && skuList.value.length > 0) {
+      const firstSku = skuList.value[0]
+      const specData = typeof firstSku.specData === 'string' ? JSON.parse(firstSku.specData) : firstSku.specData
+      for (const [key, val] of Object.entries(specData)) {
+        specs[key] = val as string
+      }
+    }
+    product.specs = specs
+  } catch (e) {
+    console.error('获取商品详情失败:', e)
+  } finally {
+    loading.value = false
+  }
+}
 
 function onSpecChange(specs: Record<string, string>) {
   selectedSpecs.value = specs
+  // 根据选中规格匹配 SKU，更新价格和库存
+  const matched = skuList.value.find((sku: any) => {
+    const specData = typeof sku.specData === 'string' ? JSON.parse(sku.specData) : sku.specData
+    return Object.entries(specs).every(([k, v]) => specData[k] === v)
+  })
+  if (matched) {
+    product.price = matched.price || product.price
+    product.stock = matched.stock || 0
+  }
 }
 
 // 数量边界约束
 function clampQuantity() {
   if (quantity.value < 1) quantity.value = 1
-  if (quantity.value > product.stock) quantity.value = product.stock
+  if (product.stock > 0 && quantity.value > product.stock) quantity.value = product.stock
 }
 
 // Toast 通知
@@ -286,20 +341,16 @@ function showToast(message: string, type: 'success' | 'error' = 'success') {
 }
 
 async function handleAddToCart() {
-  // 校验规格是否已选择
-  if (specGroups.length > 0 && Object.keys(selectedSpecs.value).length < specGroups.length) {
-    const missingGroups = specGroups.filter((_, i) => !selectedSpecs.value[specGroups[i].name])
-    showToast(`请选择${missingGroups.map(g => g.name).join('、')}`, 'error')
+  if (specGroups.value.length > 0 && Object.keys(selectedSpecs.value).length < specGroups.value.length) {
+    const missingGroups = specGroups.value.filter((g: any) => !selectedSpecs.value[g.name])
+    showToast(`请选择${missingGroups.map((g: any) => g.name).join('、')}`, 'error')
     return
   }
-
-  // 校验库存
-  if (quantity.value > product.stock) {
+  if (product.stock > 0 && quantity.value > product.stock) {
     showToast(`库存不足，当前库存 ${product.stock} 件`, 'error')
     quantity.value = product.stock
     return
   }
-
   const specsStr = Object.entries(selectedSpecs.value).map(([k, v]) => `${k}:${v}`).join(' ')
   try {
     await cartStore.addToCart(productId.value, quantity.value, specsStr)
@@ -316,6 +367,18 @@ function handleBuyNow() {
     }
   })
 }
+
+// 路由参数变化时重新加载（SPA 内切换商品）
+watch(() => route.params.id, () => {
+  currentImageIndex.value = 0
+  quantity.value = 1
+  selectedSpecs.value = {}
+  fetchProduct()
+})
+
+onMounted(() => {
+  fetchProduct()
+})
 </script>
 
 <style scoped>

@@ -1,6 +1,7 @@
 CREATE DATABASE IF NOT EXISTS byw_cart DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 USE byw_cart;
 
+DROP TABLE IF EXISTS t_cart_item;
 CREATE TABLE t_cart_item (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     user_id BIGINT NOT NULL,

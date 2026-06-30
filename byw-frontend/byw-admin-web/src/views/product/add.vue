@@ -35,15 +35,19 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-row :gutter="24">
+          <el-col :span="24">
+            <el-form-item label="副标题" prop="subtitle">
+              <el-input v-model="formData.subtitle" placeholder="请输入商品副标题" />
+            </el-form-item>
+          </el-col>
+        </el-row>
 
         <el-row :gutter="24">
           <el-col :span="12">
             <el-form-item label="品牌" prop="brandId">
               <el-select v-model="formData.brandId" placeholder="请选择品牌" style="width:100%">
-                <el-option label="Apple" :value="1" />
-                <el-option label="Sony" :value="2" />
-                <el-option label="Nike" :value="3" />
-                <el-option label="小米" :value="4" />
+                <el-option v-for="brand in brandOptions" :key="brand.id" :label="brand.name" :value="brand.id" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -51,7 +55,7 @@
             <el-form-item label="商品状态" prop="status">
               <el-radio-group v-model="formData.status">
                 <el-radio :value="1">上架</el-radio>
-                <el-radio :value="0">下架</el-radio>
+                <el-radio :value="2">下架</el-radio>
               </el-radio-group>
             </el-form-item>
           </el-col>
@@ -72,7 +76,7 @@
         <!-- SKU 规格 -->
         <el-divider content-position="left">SKU 规格</el-divider>
         <el-form-item label="规格配置">
-          <SkuForm v-model="formData.skus" />
+          <SkuForm ref="skuFormRef" v-model="formData.skus" />
         </el-form-item>
 
         <!-- 提交按钮 -->
@@ -88,7 +92,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, FormInstance } from 'element-plus'
 import request from '../../utils/request'
@@ -99,12 +103,16 @@ import SkuForm from '../../components/SkuForm.vue'
 const route = useRoute()
 const router = useRouter()
 const formRef = ref<FormInstance>()
+const skuFormRef = ref<InstanceType<typeof SkuForm>>()
 const submitting = ref(false)
+const loading = ref(false)
+const specNames = ref<string[]>([])
 
 const isEdit = computed(() => !!route.params.id)
 
 const formData = reactive({
   name: '',
+  subtitle: '',
   categoryId: [] as number[],
   brandId: undefined as number | undefined,
   status: 1,
@@ -119,20 +127,53 @@ const rules = {
   brandId: [{ required: true, message: '请选择品牌', trigger: 'change' }]
 }
 
-const categoryOptions = [
-  { id: 1, name: '数码电子', children: [
-    { id: 11, name: '手机' }, { id: 12, name: '耳机' }, { id: 13, name: '电脑' }
-  ]},
-  { id: 2, name: '服装鞋帽', children: [
-    { id: 21, name: '运动鞋' }, { id: 22, name: 'T恤' }, { id: 23, name: '外套' }
-  ]},
-  { id: 3, name: '食品饮料', children: [
-    { id: 31, name: '零食' }, { id: 32, name: '饮料' }
-  ]},
-  { id: 4, name: '家居家装', children: [
-    { id: 41, name: '家具' }, { id: 42, name: '装饰' }
-  ]}
-]
+const categoryOptions = ref<any[]>([])
+const brandOptions = ref<any[]>([])
+
+const buildTree = (list: any[]): any[] => {
+  const map: Record<number, any> = {}
+  const roots: any[] = []
+  list.forEach(item => { item.children = []; map[item.id] = item })
+  list.forEach(item => {
+    if (item.parentId && item.parentId !== 0 && map[item.parentId]) {
+      map[item.parentId].children.push(item)
+    } else {
+      roots.push(item)
+    }
+  })
+  return roots
+}
+
+const loadCategories = async () => {
+  try {
+    const data: any = await request.get('/admin/product/category/tree')
+    categoryOptions.value = buildTree(data || [])
+  } catch (e: any) {
+    if (!e._handled) ElMessage.error(e.message || '获取分类失败')
+  }
+}
+
+const loadBrands = async () => {
+  try {
+    const data: any = await request.get('/admin/product/brand/list')
+    brandOptions.value = data || []
+  } catch (e: any) {
+    if (!e._handled) ElMessage.error(e.message || '获取品牌失败')
+  }
+}
+
+// 在分类树中查找完整路径
+const findCategoryPath = (tree: any[], targetId: number, path: number[] = []): number[] | null => {
+  for (const node of tree) {
+    const currentPath = [...path, node.id]
+    if (node.id === targetId) return currentPath
+    if (node.children && node.children.length > 0) {
+      const result = findCategoryPath(node.children, targetId, currentPath)
+      if (result) return result
+    }
+  }
+  return null
+}
 
 // 编辑模式加载数据
 const loadProduct = async () => {
@@ -140,9 +181,51 @@ const loadProduct = async () => {
   loading.value = true
   try {
     const data: any = await request.get(`/admin/product/${route.params.id}`)
-    Object.assign(formData, data)
+    // 转换 categoryId 为完整路径（cascader 需要 [parentId, childId]）
+    const path = findCategoryPath(categoryOptions.value, data.categoryId)
+    formData.categoryId = path || (data.categoryId ? [data.categoryId] : [])
+    formData.name = data.name || ''
+    formData.subtitle = data.subtitle || ''
+    formData.brandId = data.brandId
+    formData.status = data.status ?? 1
+    // 转换图片：mainImage + subImages -> images 数组
+    const images: string[] = []
+    if (data.mainImage) images.push(data.mainImage)
+    if (data.subImages) {
+      data.subImages.split(',').forEach((s: string) => s.trim() && images.push(s.trim()))
+    }
+    formData.images = images
+    formData.description = data.detailHtml || ''
+    // 加载 SKU
+    if (data.skus && data.skus.length > 0) {
+      // 从第一个 SKU 的 specData 提取规格组名称
+      let specNames: string[] = []
+      const skus = data.skus.map((sku: any) => {
+        let specs: string[] = []
+        try {
+          const parsed = JSON.parse(sku.specData || '{}')
+          if (specNames.length === 0) {
+            specNames = Object.keys(parsed)
+          }
+          specs = Object.values(parsed) as string[]
+        } catch (e) { /* ignore */ }
+        return {
+          specs,
+          price: sku.price || 0,
+          stock: sku.stock || 0,
+          skuCode: sku.skuCode || ''
+        }
+      })
+      formData.skus = skus
+      specNames.value = specNames
+      // 等 SkuForm 渲染后设置规格组名称
+      await nextTick()
+      skuFormRef.value?.setSpecNames(specNames)
+    } else {
+      formData.skus = []
+    }
   } catch (error: any) {
-    ElMessage.error(error?.message || '加载商品信息失败')
+    if (!error._handled) ElMessage.error(error?.message || '加载商品信息失败')
   } finally {
     loading.value = false
   }
@@ -154,23 +237,49 @@ const handleSubmit = async () => {
     if (!valid) return
     submitting.value = true
     try {
+      // 构建提交数据：categoryId 从数组取最后一个值
+      const payload = {
+        ...formData,
+        categoryId: Array.isArray(formData.categoryId)
+          ? formData.categoryId[formData.categoryId.length - 1]
+          : formData.categoryId,
+        // 图片：第一张为主图，其余为副图
+        mainImage: formData.images[0] || '',
+        subImages: formData.images.slice(1).join(','),
+        detailHtml: formData.description,
+        // SKU：从 SkuForm 获取数据，用实时规格组名称作 specData 的 key
+        skus: (() => {
+          const names = skuFormRef.value?.getSpecNames() || specNames.value
+          return (skuFormRef.value?.getData() || formData.skus).map(sku => ({
+            skuCode: sku.skuCode || '',
+            price: sku.price || 0,
+            stock: sku.stock || 0,
+            specData: JSON.stringify(
+              Object.fromEntries((sku.specs || []).map((v: string, i: number) => [names[i] || `spec${i + 1}`, v]))
+            )
+          }))
+        })()
+      }
       if (isEdit.value) {
-        await request.put(`/admin/product/${route.params.id}`, formData)
+        await request.put(`/admin/product/${route.params.id}`, payload)
         ElMessage.success('修改成功')
       } else {
-        await request.post('/admin/product', formData)
+        await request.post('/admin/product', payload)
         ElMessage.success('添加成功')
       }
       router.push('/product/list')
     } catch (error: any) {
-      ElMessage.error(error?.message || (isEdit.value ? '修改失败' : '添加失败'))
+      if (!error._handled) ElMessage.error(error?.message || (isEdit.value ? '修改失败' : '添加失败'))
     } finally {
       submitting.value = false
     }
   })
 }
 
-onMounted(loadProduct)
+onMounted(async () => {
+  await Promise.all([loadCategories(), loadBrands()])
+  await loadProduct()
+})
 </script>
 
 <style scoped lang="scss">

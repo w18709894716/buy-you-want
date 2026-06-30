@@ -1,5 +1,7 @@
 package com.byw.api.product;
 
+import com.byw.api.product.dto.BrandDTO;
+import com.byw.api.product.dto.CategoryDTO;
 import com.byw.api.product.dto.ProductDTO;
 import com.byw.api.product.dto.SkuDTO;
 import com.byw.api.product.dto.SkuStockDeductDTO;
@@ -46,6 +48,40 @@ public interface ProductFeignClient {
     @DeleteMapping("/feign/product/{productId}")
     R<Boolean> deleteProduct(@PathVariable("productId") Long productId);
 
+    @PutMapping("/feign/product/{productId}/status")
+    R<Void> toggleProductStatus(@PathVariable("productId") Long productId);
+
     @GetMapping("/feign/product/count")
     R<Long> countProducts();
+
+    // ========== 分类管理 ==========
+
+    @GetMapping("/feign/product/category/tree")
+    R<List<CategoryDTO>> getCategoryTree();
+
+    @PostMapping("/feign/product/category")
+    R<Void> createCategory(@RequestBody CategoryDTO dto);
+
+    @PutMapping("/feign/product/category/{categoryId}")
+    R<Void> updateCategory(@PathVariable("categoryId") Long categoryId, @RequestBody CategoryDTO dto);
+
+    @DeleteMapping("/feign/product/category/{categoryId}")
+    R<Void> deleteCategory(@PathVariable("categoryId") Long categoryId);
+
+    // ========== 品牌管理 ==========
+
+    @GetMapping("/feign/product/brand/list")
+    R<List<BrandDTO>> listBrands(@RequestParam(value = "name", required = false) String name);
+
+    @PostMapping("/feign/product/brand")
+    R<Void> createBrand(@RequestBody BrandDTO dto);
+
+    @PutMapping("/feign/product/brand/{brandId}")
+    R<Void> updateBrand(@PathVariable("brandId") Long brandId, @RequestBody BrandDTO dto);
+
+    @DeleteMapping("/feign/product/brand/{brandId}")
+    R<Void> deleteBrand(@PathVariable("brandId") Long brandId);
+
+    @PutMapping("/feign/product/brand/{brandId}/status")
+    R<Void> toggleBrandStatus(@PathVariable("brandId") Long brandId);
 }

@@ -7,17 +7,13 @@ import com.byw.product.service.CategoryService;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, Category> implements CategoryService {
 
     @Override
     public List<Category> getCategoryTree() {
-        List<Category> allCategories = baseMapper.selectList(null);
-        // Return root categories (parentId == 0), the frontend can build the tree
-        return allCategories.stream()
-                .filter(c -> c.getParentId() == null || c.getParentId() == 0)
-                .collect(Collectors.toList());
+        // 返回全部分类，由前端构建为树结构
+        return baseMapper.selectList(null);
     }
 }

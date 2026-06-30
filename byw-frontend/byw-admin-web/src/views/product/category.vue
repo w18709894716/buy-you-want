@@ -51,14 +51,16 @@
             <el-descriptions :column="2" border>
               <el-descriptions-item label="分类ID">{{ currentNode.id }}</el-descriptions-item>
               <el-descriptions-item label="分类名称">{{ currentNode.name }}</el-descriptions-item>
-              <el-descriptions-item label="排序">{{ currentNode.sort || 0 }}</el-descriptions-item>
+              <el-descriptions-item label="排序">{{ currentNode.sortOrder || 0 }}</el-descriptions-item>
               <el-descriptions-item label="状态">
-                <el-tag type="success">启用</el-tag>
+                <el-tag :type="currentNode.isShow === 1 ? 'success' : 'danger'">
+                  {{ currentNode.isShow === 1 ? '启用' : '禁用' }}
+                </el-tag>
               </el-descriptions-item>
               <el-descriptions-item label="子分类数">
                 {{ currentNode.children?.length || 0 }}
               </el-descriptions-item>
-              <el-descriptions-item label="创建时间">2025-01-01 00:00:00</el-descriptions-item>
+              <el-descriptions-item label="创建时间">{{ currentNode.createdAt }}</el-descriptions-item>
             </el-descriptions>
           </div>
           <el-empty v-else description="请在左侧选择一个分类" />
@@ -101,10 +103,31 @@ const treeData = ref<any[]>([])
 const fetchCategoryTree = async () => {
   try {
     const data: any = await request.get('/admin/product/category/tree')
-    treeData.value = data || []
+    flatList.value = data || []
+    treeData.value = buildTree(flatList.value)
   } catch (e: any) {
-    ElMessage.error(e.message || '获取分类列表失败')
+    if (!e._handled) ElMessage.error(e.message || '获取分类列表失败')
   }
+}
+
+const buildTree = (list: any[]): any[] => {
+  const map: Record<number, any> = {}
+  const roots: any[] = []
+  list.forEach(item => { item.children = []; map[item.id] = item })
+  list.forEach(item => {
+    if (item.parentId && item.parentId !== 0 && map[item.parentId]) {
+      map[item.parentId].children.push(item)
+    } else {
+      roots.push(item)
+    }
+  })
+  return roots
+}
+
+const flatList = ref<any[]>([])
+
+const findNodeById = (id: number): any | null => {
+  return flatList.value.find(item => item.id === id) || null
 }
 
 const currentNode = ref<any>(null)
@@ -133,10 +156,11 @@ const handleAdd = (parent: any) => {
 }
 
 const handleEdit = (data: any) => {
-  parentNode.value = null
+  // 根据 parentId 找到上级分类并展示
+  parentNode.value = data.parentId ? findNodeById(data.parentId) : null
   dialogType.value = 'edit'
   dialogForm.name = data.name
-  dialogForm.sort = data.sort || 0
+  dialogForm.sort = data.sortOrder || 0
   currentNode.value = data
   dialogVisible.value = true
 }
@@ -149,7 +173,7 @@ const handleDelete = async (data: any) => {
     fetchCategoryTree()
     if (currentNode.value?.id === data.id) currentNode.value = null
   } catch (e: any) {
-    ElMessage.error(e.message || '删除失败')
+    if (!e._handled) ElMessage.error(e.message || '删除失败')
   }
 }
 
@@ -173,7 +197,7 @@ const submitForm = async () => {
       dialogVisible.value = false
       fetchCategoryTree()
     } catch (e: any) {
-      ElMessage.error(e.message || '操作失败')
+      if (!e._handled) ElMessage.error(e.message || '操作失败')
     }
   })
 }

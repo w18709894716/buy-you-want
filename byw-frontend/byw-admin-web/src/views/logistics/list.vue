@@ -122,7 +122,7 @@ const fetchData = async () => {
     tableData.value = data.list || []
     total.value = data.total || 0
   } catch (e: any) {
-    ElMessage.error(e.message || '获取物流列表失败')
+    if (!e._handled) ElMessage.error(e.message || '获取物流列表失败')
   } finally {
     loading.value = false
   }
@@ -145,7 +145,7 @@ const showTracking = async (row: any) => {
       info: item.description
     }))
   } catch (e: any) {
-    ElMessage.error(e.message || '获取物流轨迹失败')
+    if (!e._handled) ElMessage.error(e.message || '获取物流轨迹失败')
     trackingList.value = []
   }
   trackingVisible.value = true

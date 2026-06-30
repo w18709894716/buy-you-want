@@ -40,16 +40,36 @@
 
           <!-- 分类筛选 -->
           <h3 class="font-medium text-gray-800 mb-3">商品分类</h3>
-          <div class="space-y-2">
-            <NuxtLink
-              v-for="cat in filterCategories"
-              :key="cat"
-              :to="`/search?keyword=${keyword}&category=${cat}`"
-              class="block text-sm text-gray-600 hover:text-primary py-1"
-              :class="{ 'text-primary font-medium': category === cat }"
-            >
-              {{ cat }}
-            </NuxtLink>
+          <div class="space-y-1">
+            <template v-for="cat in filterCategories" :key="cat.id">
+              <NuxtLink
+                :to="`/search?keyword=${keyword}&category=${cat.name}`"
+                class="block text-sm text-gray-600 hover:text-primary py-1"
+                :class="{ 'text-primary font-medium': category === cat.name }"
+              >
+                {{ cat.name }}
+              </NuxtLink>
+              <template v-if="cat.children && cat.children.length">
+                <template v-for="sub in cat.children" :key="sub.id">
+                  <NuxtLink
+                    :to="`/search?keyword=${keyword}&category=${sub.name}`"
+                    class="block text-sm text-gray-500 hover:text-primary py-0.5 pl-4"
+                    :class="{ 'text-primary font-medium': category === sub.name }"
+                  >
+                    {{ sub.name }}
+                  </NuxtLink>
+                  <NuxtLink
+                    v-for="third in sub.children"
+                    :key="third.id"
+                    :to="`/search?keyword=${keyword}&category=${third.name}`"
+                    class="block text-xs text-gray-400 hover:text-primary py-0.5 pl-8"
+                    :class="{ 'text-primary font-medium': category === third.name }"
+                  >
+                    {{ third.name }}
+                  </NuxtLink>
+                </template>
+              </template>
+            </template>
           </div>
         </div>
       </aside>
@@ -148,7 +168,7 @@ const priceRanges = [
   { label: '5000+', min: 5000, max: 0 },
 ]
 
-const filterCategories = ref<string[]>([])
+const filterCategories = ref<any[]>([])
 
 // 商品列表从接口获取
 const products = ref<any[]>([])
@@ -193,8 +213,8 @@ const fetchProducts = async () => {
 
 const fetchCategories = async () => {
   try {
-    const data = await get('/product/category/list')
-    filterCategories.value = (data || []).map((c: any) => c.name)
+    const data = await get('/product/category/tree')
+    filterCategories.value = data || []
   } catch (e) {
     console.error('获取分类失败:', e)
   }
@@ -222,6 +242,12 @@ function selectPriceRange(range: { label: string; min: number; max: number }) {
 
 onMounted(() => {
   fetchCategories()
+  fetchProducts()
+})
+
+// 路由查询参数变化时重新查询（分类切换、关键词变化等）
+watch(() => route.query.category, () => {
+  currentPage.value = 1
   fetchProducts()
 })
 </script>

@@ -25,20 +25,21 @@
         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 sm:gap-6">
           <div
             v-for="category in categoryTree"
-            :key="category.name"
+            :key="category.id"
             class="group relative"
             @mouseenter="hoveredCategory = category.name"
             @mouseleave="hoveredCategory = ''"
           >
             <div class="flex items-center gap-2 cursor-pointer text-gray-700 hover:text-primary transition-colors">
-              <span class="text-2xl">{{ category.icon }}</span>
+              <img v-if="category.icon && category.icon.startsWith('http')" :src="category.icon" class="w-8 h-8 object-contain" alt="" />
+              <span v-else class="text-2xl">{{ category.icon }}</span>
               <span class="font-medium">{{ category.name }}</span>
             </div>
             <!-- 二级分类 -->
-            <div class="mt-2 flex flex-wrap gap-2">
+            <div v-if="category.children && category.children.length" class="mt-2 flex flex-wrap gap-2">
               <NuxtLink
                 v-for="sub in category.children"
-                :key="sub.name"
+                :key="sub.id"
                 :to="`/search?category=${sub.name}`"
                 class="text-xs text-gray-500 hover:text-primary"
               >
@@ -47,19 +48,21 @@
             </div>
             <!-- 三级分类弹出 -->
             <div
-              v-if="hoveredCategory === category.name"
-              class="absolute left-0 top-full mt-1 z-40 bg-white rounded-lg shadow-xl border p-4 w-64 hidden group-hover:block"
+              v-show="hoveredCategory === category.name && category.children && category.children.length"
+              class="absolute left-0 top-full z-40 bg-white rounded-lg shadow-xl border p-4 w-64 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150"
             >
-              <div v-for="sub in category.children" :key="sub.name" class="mb-3">
+              <!-- 透明桥接，防止鼠标移出时弹出层消失 -->
+              <div class="absolute -top-2 left-0 right-0 h-2"></div>
+              <div v-for="sub in category.children" :key="sub.id" class="mb-3">
                 <div class="text-sm font-medium text-gray-800 mb-1">{{ sub.name }}</div>
-                <div class="flex flex-wrap gap-1">
+                <div v-if="sub.children && sub.children.length" class="flex flex-wrap gap-1">
                   <NuxtLink
                     v-for="third in sub.children"
-                    :key="third"
-                    :to="`/search?category=${third}`"
+                    :key="third.id"
+                    :to="`/search?category=${third.name}`"
                     class="text-xs text-gray-500 hover:text-primary bg-gray-50 px-2 py-0.5 rounded"
                   >
-                    {{ third }}
+                    {{ third.name }}
                   </NuxtLink>
                 </div>
               </div>
@@ -154,10 +157,8 @@ const fetchProducts = async () => {
       id: p.id,
       title: p.name,
       image: p.mainImage,
-      price: p.price || p.minPrice,
-      originalPrice: p.originalPrice,
-      salesCount: p.salesCount,
-      promotion: p.promotion
+      price: p.minPrice,
+      salesCount: p.salesCount
     }))
   } catch (e) {
     console.error('获取热门商品失败:', e)
@@ -170,10 +171,8 @@ const fetchProducts = async () => {
       id: p.id,
       title: p.name,
       image: p.mainImage,
-      price: p.price || p.minPrice,
-      originalPrice: p.originalPrice,
-      salesCount: p.salesCount,
-      promotion: p.promotion
+      price: p.minPrice,
+      salesCount: p.salesCount
     }))
   } catch (e) {
     console.error('获取新品失败:', e)

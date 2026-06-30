@@ -15,9 +15,13 @@ public class Brand implements Serializable {
 
     private String name;
 
+    private String firstLetter;
+
     private String logo;
 
     private Integer sortOrder;
+
+    private Integer status;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;

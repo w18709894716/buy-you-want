@@ -109,7 +109,7 @@ const fetchData = async () => {
     tableData.value = data.list || []
     total.value = data.total || 0
   } catch (error: any) {
-    ElMessage.error(error?.message || '获取用户列表失败')
+    if (!error._handled) ElMessage.error(error?.message || '获取用户列表失败')
   } finally {
     loading.value = false
   }
@@ -136,7 +136,7 @@ const toggleStatus = async (row: any) => {
     ElMessage.success(`${action}成功`)
     row.status = newStatus
   } catch (error: any) {
-    ElMessage.error(error?.message || `${action}失败`)
+    if (!error._handled) ElMessage.error(error?.message || `${action}失败`)
   }
 }
 

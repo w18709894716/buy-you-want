@@ -1,6 +1,7 @@
 CREATE DATABASE IF NOT EXISTS byw_promotion DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 USE byw_promotion;
 
+DROP TABLE IF EXISTS t_coupon;
 CREATE TABLE t_coupon (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(100) NOT NULL,
@@ -17,6 +18,7 @@ CREATE TABLE t_coupon (
     deleted TINYINT DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+DROP TABLE IF EXISTS t_coupon_record;
 CREATE TABLE t_coupon_record (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     coupon_id BIGINT NOT NULL,
@@ -29,6 +31,7 @@ CREATE TABLE t_coupon_record (
     INDEX idx_coupon_id (coupon_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+DROP TABLE IF EXISTS t_seckill_activity;
 CREATE TABLE t_seckill_activity (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(100) NOT NULL,
@@ -46,6 +49,7 @@ CREATE TABLE t_seckill_activity (
     INDEX idx_start_time (start_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+DROP TABLE IF EXISTS t_seckill_order;
 CREATE TABLE t_seckill_order (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     activity_id BIGINT NOT NULL,
@@ -56,6 +60,7 @@ CREATE TABLE t_seckill_order (
     UNIQUE KEY uk_activity_user (activity_id, user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+DROP TABLE IF EXISTS t_group_buy_activity;
 CREATE TABLE t_group_buy_activity (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(100) NOT NULL,

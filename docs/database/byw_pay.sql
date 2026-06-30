@@ -1,6 +1,7 @@
 CREATE DATABASE IF NOT EXISTS byw_pay DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 USE byw_pay;
 
+DROP TABLE IF EXISTS t_pay_order;
 CREATE TABLE t_pay_order (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     pay_no VARCHAR(64) NOT NULL UNIQUE,
@@ -19,6 +20,7 @@ CREATE TABLE t_pay_order (
     INDEX idx_user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+DROP TABLE IF EXISTS t_refund_record;
 CREATE TABLE t_refund_record (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     refund_no VARCHAR(64) NOT NULL UNIQUE,

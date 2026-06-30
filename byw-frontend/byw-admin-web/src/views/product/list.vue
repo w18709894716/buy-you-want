@@ -9,7 +9,7 @@
         <el-form-item label="状态">
           <el-select v-model="searchForm.status" placeholder="请选择" clearable>
             <el-option label="上架" :value="1" />
-            <el-option label="下架" :value="0" />
+            <el-option label="下架" :value="2" />
           </el-select>
         </el-form-item>
         <el-form-item label="分类">
@@ -45,7 +45,12 @@
         <el-table-column prop="subtitle" label="副标题" min-width="160" show-overflow-tooltip />
         <el-table-column prop="status" label="状态" width="90">
           <template #default="{ row }">
-            <el-tag :type="statusType(row.status)">
+            <el-tag 
+              :type="statusType(row.status)" 
+              style="cursor: pointer;"
+              @click="handleToggleStatus(row)"
+              :title="row.status === 1 ? '点击下架' : '点击上架'"
+            >
               {{ statusLabel(row.status) }}
             </el-tag>
           </template>
@@ -100,7 +105,6 @@ const searchForm = reactive({
 })
 
 const statusMap: Record<number, { label: string; type: string }> = {
-  0: { label: '草稿', type: 'info' },
   1: { label: '上架', type: 'success' },
   2: { label: '下架', type: 'warning' }
 }
@@ -116,7 +120,7 @@ const fetchData = async () => {
     tableData.value = data.list || []
     total.value = data.total || 0
   } catch (error: any) {
-    ElMessage.error(error?.message || '获取商品列表失败')
+    if (!error._handled) ElMessage.error(error?.message || '获取商品列表失败')
   } finally {
     loading.value = false
   }
@@ -145,7 +149,19 @@ const handleDelete = async (row: any) => {
     ElMessage.success('删除成功')
     fetchData()
   } catch (error: any) {
-    ElMessage.error(error?.message || '删除失败')
+    if (!error._handled) ElMessage.error(error?.message || '删除失败')
+  }
+}
+
+const handleToggleStatus = async (row: any) => {
+  const action = row.status === 1 ? '下架' : '上架'
+  await ElMessageBox.confirm(`确定要${action}该商品吗？`, '提示', { type: 'warning' })
+  try {
+    await request.put(`/admin/product/${row.id}/status`)
+    ElMessage.success(`${action}成功`)
+    fetchData()
+  } catch (error: any) {
+    if (!error._handled) ElMessage.error(error?.message || `${action}失败`)
   }
 }
 

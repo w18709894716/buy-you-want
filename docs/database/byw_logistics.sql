@@ -1,6 +1,7 @@
 CREATE DATABASE IF NOT EXISTS byw_logistics DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 USE byw_logistics;
 
+DROP TABLE IF EXISTS t_logistics_order;
 CREATE TABLE t_logistics_order (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     order_no VARCHAR(64) NOT NULL,
@@ -21,6 +22,7 @@ CREATE TABLE t_logistics_order (
     INDEX idx_tracking_no (tracking_no)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+DROP TABLE IF EXISTS t_logistics_trace;
 CREATE TABLE t_logistics_trace (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     logistics_id BIGINT NOT NULL,

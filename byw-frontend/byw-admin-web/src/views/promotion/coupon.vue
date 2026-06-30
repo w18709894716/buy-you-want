@@ -117,7 +117,7 @@ const fetchData = async () => {
     const data: any = await request.get('/admin/promotion/coupon/list')
     tableData.value = data || []
   } catch (e: any) {
-    ElMessage.error(e.message || '获取优惠券列表失败')
+    if (!e._handled) ElMessage.error(e.message || '获取优惠券列表失败')
   } finally {
     loading.value = false
   }
@@ -171,7 +171,7 @@ const handleDelete = async (row: any) => {
     ElMessage.success('删除成功')
     fetchData()
   } catch (e: any) {
-    ElMessage.error(e.message || '删除失败')
+    if (!e._handled) ElMessage.error(e.message || '删除失败')
   }
 }
 
@@ -199,7 +199,7 @@ const submitForm = async () => {
       dialogVisible.value = false
       fetchData()
     } catch (e: any) {
-      ElMessage.error(e.message || '操作失败')
+      if (!e._handled) ElMessage.error(e.message || '操作失败')
     }
   })
 }

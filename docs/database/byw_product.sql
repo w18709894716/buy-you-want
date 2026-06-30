@@ -1,6 +1,7 @@
 CREATE DATABASE IF NOT EXISTS byw_product DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 USE byw_product;
 
+DROP TABLE IF EXISTS t_category;
 CREATE TABLE t_category (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(100) NOT NULL,
@@ -15,16 +16,20 @@ CREATE TABLE t_category (
     INDEX idx_parent_id (parent_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+DROP TABLE IF EXISTS t_brand;
 CREATE TABLE t_brand (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(100) NOT NULL,
+    first_letter VARCHAR(10),
     logo VARCHAR(500),
     sort_order INT DEFAULT 0,
+    status TINYINT DEFAULT 1 COMMENT '0禁用 1启用',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted TINYINT DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+DROP TABLE IF EXISTS t_product;
 CREATE TABLE t_product (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(200) NOT NULL,
@@ -44,10 +49,11 @@ CREATE TABLE t_product (
     INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+DROP TABLE IF EXISTS t_sku;
 CREATE TABLE t_sku (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     product_id BIGINT NOT NULL,
-    sku_code VARCHAR(100) UNIQUE,
+    sku_code VARCHAR(100),
     sku_name VARCHAR(200),
     spec_data JSON,
     price DECIMAL(10,2) NOT NULL,
@@ -60,7 +66,8 @@ CREATE TABLE t_sku (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted TINYINT DEFAULT 0,
-    INDEX idx_product_id (product_id)
+    INDEX idx_product_id (product_id),
+    UNIQUE KEY uk_product_sku_code (product_id, sku_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ========== 清空数据 ==========
@@ -102,18 +109,33 @@ INSERT INTO t_category (name, parent_id, level, sort_order, icon, is_show) VALUE
 ('饮料', 4, 2, 2, NULL, 1),
 -- 二级分类 - 家居家装
 ('家具', 5, 2, 1, NULL, 1),
-('装饰', 5, 2, 2, NULL, 1);
+('装饰', 5, 2, 2, NULL, 1),
+-- 二级分类 - 美妆护肤
+('面部护肤', 6, 2, 1, NULL, 1),
+('彩妆', 6, 2, 2, NULL, 1),
+('香水', 6, 2, 3, NULL, 1),
+('美容工具', 6, 2, 4, NULL, 1),
+-- 二级分类 - 运动户外
+('运动鞋', 7, 2, 1, NULL, 1),
+('运动服饰', 7, 2, 2, NULL, 1),
+('健身器材', 7, 2, 3, NULL, 1),
+('户外装备', 7, 2, 4, NULL, 1),
+-- 二级分类 - 母婴玩具
+('奶粉辅食', 8, 2, 1, NULL, 1),
+('纸尿裤', 8, 2, 2, NULL, 1),
+('童装童鞋', 8, 2, 3, NULL, 1),
+('玩具', 8, 2, 4, NULL, 1);
 
 -- 品牌
-INSERT INTO t_brand (name, logo, sort_order) VALUES
-('Apple', 'https://dummyimage.com/200x100/000/fff&text=Apple', 1),
-('华为', 'https://dummyimage.com/200x100/c70000/fff&text=HUAWEI', 2),
-('小米', 'https://dummyimage.com/200x100/ff6900/fff&text=Xiaomi', 3),
-('Nike', 'https://dummyimage.com/200x100/111/fff&text=Nike', 4),
-('Adidas', 'https://dummyimage.com/200x100/000/fff&text=Adidas', 5),
-('Sony', 'https://dummyimage.com/200x100/000/fff&text=Sony', 6),
-('联想', 'https://dummyimage.com/200x100/e60012/fff&text=Lenovo', 7),
-('戴尔', 'https://dummyimage.com/200x100/007db8/fff&text=Dell', 8);
+INSERT INTO t_brand (name, first_letter, logo, sort_order, status) VALUES
+('Apple', 'A', 'https://dummyimage.com/200x100/000/fff&text=Apple', 1, 1),
+('华为', 'H', 'https://dummyimage.com/200x100/c70000/fff&text=HUAWEI', 2, 1),
+('小米', 'X', 'https://dummyimage.com/200x100/ff6900/fff&text=Xiaomi', 3, 1),
+('Nike', 'N', 'https://dummyimage.com/200x100/111/fff&text=Nike', 4, 1),
+('Adidas', 'A', 'https://dummyimage.com/200x100/000/fff&text=Adidas', 5, 1),
+('Sony', 'S', 'https://dummyimage.com/200x100/000/fff&text=Sony', 6, 1),
+('联想', 'L', 'https://dummyimage.com/200x100/e60012/fff&text=Lenovo', 7, 1),
+('戴尔', 'D', 'https://dummyimage.com/200x100/007db8/fff&text=Dell', 8, 1);
 
 -- 商品
 INSERT INTO t_product (name, subtitle, category_id, brand_id, main_image, sub_images, detail_html, status, sales_count) VALUES

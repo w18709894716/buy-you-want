@@ -141,7 +141,7 @@ const toggleVisible = async (row: any) => {
     row.visible = !row.visible
     ElMessage.success(`${action}成功`)
   } catch (error: any) {
-    ElMessage.error(error?.message || `${action}失败`)
+    if (!error._handled) ElMessage.error(error?.message || `${action}失败`)
   }
 }
 
@@ -152,7 +152,7 @@ const handleDelete = async (row: any) => {
     ElMessage.success('删除成功')
     fetchData()
   } catch (error: any) {
-    ElMessage.error(error?.message || '删除失败')
+    if (!error._handled) ElMessage.error(error?.message || '删除失败')
   }
 }
 

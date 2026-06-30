@@ -28,15 +28,17 @@
         </el-table-column>
         <el-table-column prop="name" label="品牌名称" width="160" />
         <el-table-column prop="firstLetter" label="首字母" width="80" />
-        <el-table-column prop="sort" label="排序" width="80" />
-        <el-table-column prop="status" label="状态" width="90">
+        <el-table-column prop="sortOrder" label="排序" width="80" />
+        <el-table-column label="状态" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'danger'">
-              {{ row.status === 1 ? '启用' : '禁用' }}
-            </el-tag>
+            <el-switch
+              :model-value="row.status === 1"
+              @change="handleToggleStatus(row)"
+            />
           </template>
         </el-table-column>
         <el-table-column prop="productCount" label="商品数" width="90" />
+        <el-table-column prop="createdAt" label="创建时间" min-width="170" />
         <el-table-column label="操作" min-width="160" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" size="small" text @click="handleEdit(row)">编辑</el-button>
@@ -96,7 +98,7 @@ const fetchData = async () => {
     })
     tableData.value = data || []
   } catch (e: any) {
-    ElMessage.error(e.message || '获取品牌列表失败')
+    if (!e._handled) ElMessage.error(e.message || '获取品牌列表失败')
   } finally {
     loading.value = false
   }
@@ -141,22 +143,32 @@ const handleEdit = (row: any) => {
   editingId.value = row.id
   Object.assign(dialogForm, {
     name: row.name,
-    firstLetter: row.firstLetter,
+    firstLetter: row.firstLetter || '',
     logoList: row.logo ? [row.logo] : [],
-    sort: row.sort,
-    status: row.status
+    sort: row.sortOrder || 0,
+    status: row.status ?? 1
   })
   dialogVisible.value = true
 }
 
 const handleDelete = async (row: any) => {
-  await ElMessageBox.confirm(`确定要删除品牌"${row.name}"吗？`, '提示', { type: 'warning' })
+  await ElMessageBox.confirm(`确定要删除品牌“${row.name}”吗？`, '提示', { type: 'warning' })
   try {
     await request.delete(`/admin/product/brand/${row.id}`)
     ElMessage.success('删除成功')
     fetchData()
   } catch (e: any) {
-    ElMessage.error(e.message || '删除失败')
+    if (!e._handled) ElMessage.error(e.message || '删除失败')
+  }
+}
+
+const handleToggleStatus = async (row: any) => {
+  try {
+    await request.put(`/admin/product/brand/${row.id}/status`)
+    ElMessage.success('状态更新成功')
+    fetchData()
+  } catch (e: any) {
+    if (!e._handled) ElMessage.error(e.message || '状态更新失败')
   }
 }
 
@@ -167,8 +179,10 @@ const submitForm = async () => {
     try {
       const payload = {
         name: dialogForm.name,
+        firstLetter: dialogForm.firstLetter,
         logo: dialogForm.logoList[0] || '',
-        sortOrder: dialogForm.sort
+        sortOrder: dialogForm.sort,
+        status: dialogForm.status
       }
       if (dialogType.value === 'add') {
         await request.post('/admin/product/brand/create', payload)
@@ -180,7 +194,7 @@ const submitForm = async () => {
       dialogVisible.value = false
       fetchData()
     } catch (e: any) {
-      ElMessage.error(e.message || '操作失败')
+      if (!e._handled) ElMessage.error(e.message || '操作失败')
     }
   })
 }

@@ -42,7 +42,7 @@ request.interceptors.response.use(
       }
       // 其他错误
       ElMessage.error(res.message || '请求失败')
-      return Promise.reject(new Error(res.message || '请求失败'))
+      return Promise.reject(Object.assign(new Error(res.message || '请求失败'), { _handled: true }))
     }
     return res
   },
@@ -54,7 +54,8 @@ request.interceptors.response.use(
     } else {
       ElMessage.error(error.response?.data?.message || error.message || '网络异常')
     }
-    return Promise.reject(error)
+    const handledError = Object.assign(error, { _handled: true })
+    return Promise.reject(handledError)
   }
 )
 

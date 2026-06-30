@@ -1,6 +1,7 @@
 CREATE DATABASE IF NOT EXISTS byw_order DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 USE byw_order;
 
+DROP TABLE IF EXISTS t_order;
 CREATE TABLE t_order (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     order_no VARCHAR(64) NOT NULL UNIQUE,
@@ -28,6 +29,7 @@ CREATE TABLE t_order (
     INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+DROP TABLE IF EXISTS t_order_item;
 CREATE TABLE t_order_item (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     order_id BIGINT NOT NULL,
@@ -46,6 +48,7 @@ CREATE TABLE t_order_item (
     INDEX idx_order_no (order_no)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+DROP TABLE IF EXISTS t_order_status_log;
 CREATE TABLE t_order_status_log (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     order_id BIGINT NOT NULL,

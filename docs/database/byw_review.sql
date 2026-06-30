@@ -1,6 +1,7 @@
 CREATE DATABASE IF NOT EXISTS byw_review DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 USE byw_review;
 
+DROP TABLE IF EXISTS t_review;
 CREATE TABLE t_review (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     order_no VARCHAR(64) NOT NULL,
@@ -20,6 +21,7 @@ CREATE TABLE t_review (
     INDEX idx_user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+DROP TABLE IF EXISTS t_review_image;
 CREATE TABLE t_review_image (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     review_id BIGINT NOT NULL,

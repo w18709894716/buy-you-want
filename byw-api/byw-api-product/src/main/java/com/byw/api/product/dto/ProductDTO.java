@@ -5,6 +5,7 @@ import lombok.Data;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 public class ProductDTO implements Serializable {
@@ -15,7 +16,10 @@ public class ProductDTO implements Serializable {
     private Long brandId;
     private String mainImage;
     private String subImages;
+    private String detailHtml;
     private Integer status;
     private Integer salesCount;
+    private BigDecimal minPrice;
     private LocalDateTime createdAt;
+    private List<SkuDTO> skus;
 }

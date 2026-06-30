@@ -162,7 +162,7 @@ const fetchData = async () => {
     tableData.value = data.list || []
     total.value = data.total || 0
   } catch (error: any) {
-    ElMessage.error(error?.message || '获取订单列表失败')
+    if (!error._handled) ElMessage.error(error?.message || '获取订单列表失败')
   } finally {
     loading.value = false
   }
@@ -204,7 +204,7 @@ const submitShip = async () => {
       shippingOrder.value.status = 2
       fetchData()
     } catch (error: any) {
-      ElMessage.error(error?.message || '发货失败')
+      if (!error._handled) ElMessage.error(error?.message || '发货失败')
     }
     shipVisible.value = false
   })
