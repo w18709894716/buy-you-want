@@ -4,6 +4,7 @@ import com.byw.api.order.dto.OrderCreateDTO;
 import com.byw.api.order.dto.OrderDetailDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.byw.common.security.annotation.RequireLogin;
 import com.byw.common.security.context.UserContext;
 import com.byw.order.service.OrderService;
@@ -22,6 +23,7 @@ public class OrderController {
     private final OrderService orderService;
 
     @Operation(summary = "创建订单")
+    @SentinelResource(value = "order:create", fallback = "createOrderFallback")
     @PostMapping("/create")
     public R<String> create(@RequestBody OrderCreateDTO createDTO) {
         createDTO.setUserId(UserContext.getUserId());
@@ -36,6 +38,7 @@ public class OrderController {
     }
 
     @Operation(summary = "获取我的订单列表")
+    @SentinelResource(value = "order:list", fallback = "myOrdersFallback")
     @GetMapping("/my-orders")
     public R<PageResult<OrderDetailDTO>> myOrders(
             @RequestParam(required = false) Integer status,
@@ -57,5 +60,13 @@ public class OrderController {
     public R<Void> confirm(@PathVariable String orderNo) {
         orderService.confirmReceive(orderNo);
         return R.ok();
+    }
+
+    // ========== Sentinel fallback ==========
+    private R<String> createOrderFallback(OrderCreateDTO createDTO, Throwable ex) {
+        return R.fail("系统繁忙，请稍后再试");
+    }
+    private R<PageResult<OrderDetailDTO>> myOrdersFallback(Integer status, Integer pageNum, Integer pageSize, Throwable ex) {
+        return R.fail("系统繁忙，请稍后再试");
     }
 }

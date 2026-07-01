@@ -3,6 +3,7 @@ package com.byw.cart.controller;
 import com.byw.cart.entity.CartItem;
 import com.byw.cart.service.CartService;
 import com.byw.common.core.result.R;
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.byw.common.security.annotation.RequireLogin;
 import com.byw.common.security.context.UserContext;
 import io.swagger.v3.oas.annotations.Operation;
@@ -22,6 +23,7 @@ public class CartController {
     private final CartService cartService;
 
     @Operation(summary = "获取购物车列表")
+    @SentinelResource(value = "cart:list", fallback = "cartListFallback")
     @GetMapping("/list")
     public R<List<CartItem>> list() {
         Long userId = UserContext.getUserId();
@@ -29,6 +31,7 @@ public class CartController {
     }
 
     @Operation(summary = "添加商品到购物车")
+    @SentinelResource(value = "cart:add", fallback = "cartAddFallback")
     @PostMapping("/add")
     public R<Void> add(@RequestParam Long skuId, @RequestParam(defaultValue = "1") Integer quantity) {
         Long userId = UserContext.getUserId();
@@ -74,5 +77,13 @@ public class CartController {
         Long userId = UserContext.getUserId();
         cartService.selectAll(userId, selected);
         return R.ok();
+    }
+
+    // ========== Sentinel fallback ==========
+    private R<List<CartItem>> cartListFallback(Throwable ex) {
+        return R.fail("系统繁忙，请稍后再试");
+    }
+    private R<Void> cartAddFallback(Long skuId, Integer quantity, Throwable ex) {
+        return R.fail("系统繁忙，请稍后再试");
     }
 }

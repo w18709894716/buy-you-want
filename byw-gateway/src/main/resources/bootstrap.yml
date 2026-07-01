@@ -164,7 +164,7 @@ spring:
 
     sentinel:
       transport:
-        dashboard: ${SENTINEL_DASHBOARD:localhost:8080}
+        dashboard: ${SENTINEL_DASHBOARD:localhost:8858}
 
 byw:
   jwt:

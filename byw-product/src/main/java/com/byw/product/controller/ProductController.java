@@ -8,6 +8,7 @@ import com.byw.api.product.dto.ProductDTO;
 import com.byw.api.product.dto.SkuDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.byw.product.entity.Category;
 import com.byw.product.entity.Product;
 import com.byw.product.entity.Sku;
@@ -34,6 +35,7 @@ public class ProductController {
     private final SkuService skuService;
 
     /** 分类树 */
+    @SentinelResource(value = "category:tree", fallback = "categoryTreeFallback")
     @GetMapping("/category/tree")
     public R<List<CategoryDTO>> getCategoryTree() {
         List<Category> categories = categoryService.getCategoryTree();
@@ -73,6 +75,7 @@ public class ProductController {
     }
 
     /** 商品列表（分页 + 排序） */
+    @SentinelResource(value = "product:list", fallback = "productListFallback")
     @GetMapping("/list")
     public R<PageResult<ProductDTO>> getProductList(
             @RequestParam(defaultValue = "1") Integer pageNum,
@@ -138,6 +141,7 @@ public class ProductController {
     }
 
     /** 商品详情 */
+    @SentinelResource(value = "product:detail", fallback = "productDetailFallback")
     @GetMapping("/{productId}")
     public R<ProductDTO> getProductDetail(@PathVariable Long productId) {
         Product product = productService.getById(productId);
@@ -168,5 +172,16 @@ public class ProductController {
                 collectChildIds(c.getId(), allCats, result);
             }
         }
+    }
+
+    // ========== Sentinel fallback ==========
+    private R<List<CategoryDTO>> categoryTreeFallback(Throwable ex) {
+        return R.fail("系统繁忙，请稍后再试");
+    }
+    private R<PageResult<ProductDTO>> productListFallback(Integer pageNum, Integer pageSize, String sort, String category, Long brandId, String keyword, Throwable ex) {
+        return R.fail("系统繁忙，请稍后再试");
+    }
+    private R<ProductDTO> productDetailFallback(Long productId, Throwable ex) {
+        return R.fail("系统繁忙，请稍后再试");
     }
 }

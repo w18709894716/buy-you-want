@@ -1,6 +1,7 @@
 package com.byw.user.controller;
 
 import com.byw.common.core.result.R;
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.byw.common.security.annotation.RequireLogin;
 import com.byw.common.security.context.UserContext;
 import com.byw.user.entity.User;
@@ -19,6 +20,7 @@ public class UserController {
     private final UserService userService;
 
     @Operation(summary = "获取当前用户信息")
+    @SentinelResource(value = "user:info", fallback = "currentUserFallback")
     @GetMapping("/me")
     @RequireLogin
     public R<User> getCurrentUser() {
@@ -40,5 +42,10 @@ public class UserController {
         user.setPassword(null); // Prevent password update via this endpoint
         userService.updateById(user);
         return R.ok();
+    }
+
+    // ========== Sentinel fallback ==========
+    private R<User> currentUserFallback(Throwable ex) {
+        return R.fail("系统繁忙，请稍后再试");
     }
 }
