@@ -29,7 +29,7 @@ java -Dserver.port=8858 -jar sentinel-dashboard-1.8.8.jar
 
 ---
 
-## 3. 服务接入
+## 3. 服务接入与发现
 
 项目已配置 Sentinel，启动业务服务后，Dashboard 会自动发现服务。
 
@@ -48,22 +48,67 @@ spring:
 export SENTINEL_DASHBOARD=your-dashboard-host:port
 ```
 
+### 3.1 服务发现机制
+
+**重要**：Dashboard 不会自动显示所有服务，需要满足以下条件：
+
+1. **先启动 Dashboard**，再启动业务服务
+2. **至少访问一次接口**，Dashboard 才会显示该服务（Sentinel 按需上报）
+3. 服务启动后，Sentinel 日志位于 `C:\Users\{用户名}\logs\csp\`
+
+**操作步骤**：
+```bash
+# 1. 启动 Dashboard
+java -Dserver.port=8858 -jar sentinel-dashboard-1.8.8.jar
+
+# 2. 启动业务服务
+java -jar byw-product.jar
+
+# 3. 访问一次接口触发 Sentinel 资源
+curl http://localhost:8083/product/category/tree
+
+# 4. 刷新 Dashboard 页面
+```
+
+### 3.2 资源发现机制
+
+Dashboard 中会显示**所有 HTTP 请求**的资源，不仅限于 `@SentinelResource` 标注的接口。
+
+**两种资源方式**：
+
+| 方式 | 资源名格式 | 降级处理 | 适用场景 |
+|------|------------|----------|----------|
+| **自动埋点** | `GET:/user/me`（HTTP方法:URL路径） | 全局 `BlockExceptionHandler` | 简单限流，无需改代码 |
+| **@SentinelResource** | 自定义名称如 `user:info` | 注解指定的 fallback 方法 | 需要自定义降级逻辑 |
+
+**说明**：
+- 自动埋点由 `spring-cloud-starter-alibaba-sentinel` 自动完成，所有 HTTP 接口都会被监控
+- `@SentinelResource` 用于自定义资源名称和提供降级方法，是可选的
+- **两种方式都可以配置限流规则**，直接在 Dashboard 中选择资源名即可
+
 ---
 
 ## 4. 配置流控规则
 
 ### 4.1 通过 Dashboard 配置
 
-1. 登录 Dashboard
-2. 左侧菜单选择目标服务
+1. 登录 Dashboard（http://localhost:8858）
+2. 左侧菜单选择目标服务（需先触发请求才会显示）
 3. 点击「流控规则」->「新增规则」
 4. 配置参数：
-   - **资源名**：对应代码中 `@SentinelResource(value = "xxx")` 的值
+   - **资源名**：自动埋点为 `GET:/xxx`，或 `@SentinelResource` 的自定义名称
    - **阈值类型**：QPS 或 线程数
    - **单机阈值**：具体数值
    - **流控效果**：快速失败 / Warm Up / 排队等待
 
-### 4.2 已注册的资源
+**示例**：限制 `/user/me` 接口 QPS 为 100
+- 资源名：`GET:/user/me`
+- 阈值类型：QPS
+- 单机阈值：100
+
+### 4.2 已注册的资源（@SentinelResource）
+
+以下接口使用 `@SentinelResource` 注解定义了自定义资源名：
 
 | 模块 | 资源名 | 说明 |
 |------|--------|------|

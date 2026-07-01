@@ -8,7 +8,7 @@
 
 **三步启动项目：**
 
-1. **安装中间件** — [中间件安装指南](./start/middleware-setup.md)（Nacos / MySQL / Redis / Kafka / ES / MongoDB）
+1. **安装中间件** — [中间件安装指南](./start/middleware-setup.md)（Nacos / MySQL / Redis / Kafka / ES / MongoDB / Sentinel）
 2. **启动后端** — [后端启动指南](./start/backend-startup.md)（编译 → 建库 → 按顺序启动 11 个服务）
 3. **启动前端** — [前端启动指南](./start/frontend-startup.md)（管理端 :5174 / 用户端 :3000）
 
@@ -30,7 +30,7 @@
 | 文档 | 说明 |
 |------|------|
 | [环境要求](./start/prerequisites.md) | 必需软件版本、可选工具推荐 |
-| [中间件安装](./start/middleware-setup.md) | 6 个中间件的详细安装步骤（含踩坑记录） |
+| [中间件安装](./start/middleware-setup.md) | 7 个中间件的详细安装步骤（含踩坑记录） |
 | [后端启动](./start/backend-startup.md) | Maven 编译、数据库初始化、服务启动顺序 |
 | [前端启动](./start/frontend-startup.md) | 管理端 / 用户端的启动配置 |
 

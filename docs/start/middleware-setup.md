@@ -289,3 +289,43 @@ bin\seata-server.bat
 | `ConfigNotFoundException: service.vgroupMapping...` | `config.type` 配成了 `nacos`，去 Nacos 找 vgroup 映射但找不到 | 改为 `config.type: file` |
 | `no available service found in cluster 'default'` | Seata Server 未启动，或 Server/Client 的 Nacos 地址/namespace/group 不一致 | 启动 Server 并检查配置对齐 |
 | 启动后 Nacos 看不到 seata-server | Server 的 `registry.type` 没配成 `nacos` | 检查 `conf/application.yml` |
+
+---
+
+## Sentinel Dashboard 1.8.8（限流熔断控制台）
+
+### 下载
+
+- https://github.com/alibaba/Sentinel/releases/tag/1.8.8
+- 下载 `sentinel-dashboard-1.8.8.jar`
+
+### 启动
+
+```bash
+java -Dserver.port=8858 -jar sentinel-dashboard-1.8.8.jar
+```
+
+- 默认端口 **8858**（Sentinel 默认端口，避免与项目服务 8080-8090 冲突）
+- 访问地址：http://localhost:8858
+- 默认账号密码：`sentinel` / `sentinel`
+
+### 服务发现
+
+Dashboard 不会自动显示所有服务，需要满足以下条件：
+
+1. **先启动 Dashboard**，再启动业务服务
+2. **至少访问一次接口**，Dashboard 才会显示该服务（Sentinel 按需上报）
+3. Sentinel 日志位于 `C:\Users\{用户名}\logs\csp\`
+
+### 流控规则配置
+
+Dashboard 中会显示**所有 HTTP 请求**的资源（自动 URL 埋点），资源名格式为 `GET:/xxx`。不仅限于代码中 `@SentinelResource` 标注的接口，所有接口都可以配置限流规则。
+
+详细配置说明见 [Sentinel 配置指南](../guide/sentinel-setup.md)。
+
+### 验证
+
+1. 启动 Dashboard 并访问 http://localhost:8858
+2. 启动业务服务（如 byw-product）
+3. 访问一次业务接口（如 `curl http://localhost:8083/product/category/tree`）
+4. 刷新 Dashboard 页面，左侧应出现对应服务
