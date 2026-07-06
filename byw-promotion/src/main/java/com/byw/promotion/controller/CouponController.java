@@ -1,5 +1,6 @@
 package com.byw.promotion.controller;
 
+import com.byw.api.promotion.dto.UserCouponDTO;
 import com.byw.common.core.result.R;
 import com.byw.common.security.annotation.RequireLogin;
 import com.byw.common.security.context.UserContext;
@@ -32,5 +33,12 @@ public class CouponController {
     public R<Void> claim(@PathVariable Long couponId) {
         couponService.claimCoupon(UserContext.getUserId(), couponId);
         return R.ok();
+    }
+
+    @Operation(summary = "我的优惠券列表")
+    @GetMapping("/my-coupons")
+    @RequireLogin
+    public R<List<UserCouponDTO>> myCoupons(@RequestParam(value = "status", defaultValue = "0") Integer status) {
+        return R.ok(couponService.listUserCoupons(UserContext.getUserId(), status));
     }
 }

@@ -81,6 +81,13 @@
             <span v-else style="color: #909399; font-size: 12px;">{{ row.skuCode }}</span>
           </template>
         </el-table-column>
+        <el-table-column label="" width="60" align="center">
+          <template #default="{ $index }">
+            <el-button type="danger" size="small" text @click="removeSku($index)">
+              <el-icon><Delete /></el-icon>
+            </el-button>
+          </template>
+        </el-table-column>
       </el-table>
     </template>
   </div>
@@ -196,6 +203,12 @@ const removeSpecValue = (specIdx: number, valIdx: number) => {
   generateSkuTable()
 }
 
+// 删除 SKU 行
+const removeSku = (index: number) => {
+  skuList.value.splice(index, 1)
+  emit('update:modelValue', skuList.value)
+}
+
 // 笛卡尔积生成 SKU 表格
 const generateSkuTable = () => {
   const validSpecs = specs.value.filter(s => s.name && s.values.length > 0)
@@ -219,20 +232,28 @@ const generateSkuTable = () => {
   const valueArrays = validSpecs.map(s => s.values)
   const combinations = cartesian(valueArrays)
 
-  // 保留已有的 price/stock
+  // 保留已有的 price/stock（基于规格组合匹配）
   const oldMap = new Map<string, SkuItem>()
   skuList.value.forEach(sku => {
     oldMap.set(sku.specs.join('|'), sku)
   })
 
-  const newList = combinations.map(combo => {
+  // 只添加新的组合，不覆盖已删除的
+  const newList: SkuItem[] = []
+  combinations.forEach(combo => {
     const key = combo.join('|')
     const old = oldMap.get(key)
-    return {
-      specs: combo,
-      price: old?.price ?? 0,
-      stock: old?.stock ?? 0,
-      skuCode: old?.skuCode || (autoGenSkuCode.value ? generateSkuCode(combo) : '')
+    // 如果已存在则保留，否则新增
+    if (old) {
+      newList.push(old)
+    } else {
+      // 检查是否是新增的组合（不在旧数据中）
+      newList.push({
+        specs: combo,
+        price: 0,
+        stock: 0,
+        skuCode: autoGenSkuCode.value ? generateSkuCode(combo) : ''
+      })
     }
   })
 

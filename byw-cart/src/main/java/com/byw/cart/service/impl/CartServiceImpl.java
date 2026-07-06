@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.byw.api.product.ProductFeignClient;
 import com.byw.api.product.dto.SkuDTO;
+import com.byw.api.product.dto.ProductDTO;
 import com.byw.cart.entity.CartItem;
 import com.byw.cart.mapper.CartItemMapper;
 import com.byw.cart.service.CartService;
@@ -37,18 +38,43 @@ public class CartServiceImpl extends ServiceImpl<CartItemMapper, CartItem> imple
         }
         SkuDTO sku = skuResult.getData();
 
-        // 查询购物车中是否已存在该商品
-        CartItem existItem = getOne(new LambdaQueryWrapper<CartItem>()
-                .eq(CartItem::getUserId, userId)
-                .eq(CartItem::getSkuId, skuId));
+        // 获取商品信息（名称、主图）
+        String productName = null;
+        String image = sku.getImage();
+        try {
+            R<ProductDTO> productResult = productFeignClient.getProductById(sku.getProductId());
+            if (productResult.isSuccess() && productResult.getData() != null) {
+                productName = productResult.getData().getName();
+                if (image == null || image.isBlank()) {
+                    image = productResult.getData().getMainImage();
+                }
+            }
+        } catch (Exception e) {
+            log.warn("获取商品信息失败，productId={}: {}", sku.getProductId(), e.getMessage());
+        }
 
-        if (existItem != null) {
-            // 已存在则更新数量和价格
+        // 查询购物车中是否已存在该商品（包含已软删除的记录，避免唯一索引冲突）
+        CartItem existItem = baseMapper.selectByUserAndSkuIncludeDeleted(userId, skuId);
+
+        if (existItem != null && existItem.getDeleted() == 0) {
+            // 未删除：更新数量和价格
             existItem.setQuantity(existItem.getQuantity() + quantity);
             existItem.setPrice(sku.getPrice());
-            existItem.setProductImage(sku.getImage());
             existItem.setSkuName(sku.getSkuName());
+            existItem.setSpecData(sku.getSpecData());
+            if (productName != null) existItem.setProductName(productName);
+            if (image != null) existItem.setProductImage(image);
             updateById(existItem);
+        } else if (existItem != null) {
+            // 已软删除：恢复记录并更新
+            existItem.setQuantity(quantity);
+            existItem.setPrice(sku.getPrice());
+            existItem.setSkuName(sku.getSkuName());
+            existItem.setProductName(productName);
+            existItem.setSpecData(sku.getSpecData());
+            existItem.setProductImage(image);
+            existItem.setProductId(sku.getProductId());
+            baseMapper.restoreById(existItem);
         } else {
             // 不存在则新增
             CartItem cartItem = new CartItem();
@@ -56,14 +82,16 @@ public class CartServiceImpl extends ServiceImpl<CartItemMapper, CartItem> imple
             cartItem.setSkuId(skuId);
             cartItem.setProductId(sku.getProductId());
             cartItem.setSkuName(sku.getSkuName());
-            cartItem.setProductImage(sku.getImage());
+            cartItem.setProductName(productName);
+            cartItem.setSpecData(sku.getSpecData());
+            cartItem.setProductImage(image);
             cartItem.setQuantity(quantity);
             cartItem.setPrice(sku.getPrice());
             cartItem.setSelected(1);
             save(cartItem);
         }
 
-        // 更新Redis缓存中的购物车数量
+        // 更新Redis缓存中的购物车商品数量
         updateCartCountCache(userId);
     }
 
@@ -114,6 +142,65 @@ public class CartServiceImpl extends ServiceImpl<CartItemMapper, CartItem> imple
         update(new LambdaUpdateWrapper<CartItem>()
                 .eq(CartItem::getUserId, userId)
                 .set(CartItem::getSelected, selected));
+    }
+
+    @Override
+    public void changeSku(Long userId, Long oldSkuId, Long newSkuId) {
+        if (oldSkuId.equals(newSkuId)) return;
+
+        // 获取新 SKU 信息
+        R<SkuDTO> skuResult = productFeignClient.getSkuById(newSkuId);
+        if (!skuResult.isSuccess() || skuResult.getData() == null) {
+            throw new BusinessException("商品规格不存在");
+        }
+        SkuDTO newSku = skuResult.getData();
+
+        // 获取商品信息
+        String productName = null;
+        String image = newSku.getImage();
+        try {
+            R<ProductDTO> productResult = productFeignClient.getProductById(newSku.getProductId());
+            if (productResult.isSuccess() && productResult.getData() != null) {
+                productName = productResult.getData().getName();
+                if (image == null || image.isBlank()) {
+                    image = productResult.getData().getMainImage();
+                }
+            }
+        } catch (Exception e) {
+            log.warn("获取商品信息失败: {}", e.getMessage());
+        }
+
+        // 检查新 SKU 是否已在购物车中
+        CartItem existNew = baseMapper.selectByUserAndSkuIncludeDeleted(userId, newSkuId);
+        CartItem oldItem = getOne(new LambdaQueryWrapper<CartItem>()
+                .eq(CartItem::getUserId, userId)
+                .eq(CartItem::getSkuId, oldSkuId));
+
+        if (oldItem == null) {
+            throw new BusinessException("购物车中不存在该商品");
+        }
+
+        if (existNew != null && existNew.getDeleted() == 0) {
+            // 新 SKU 已存在：合并数量，删除旧记录
+            existNew.setQuantity(existNew.getQuantity() + oldItem.getQuantity());
+            updateById(existNew);
+            removeById(oldItem.getId());
+        } else {
+            // 若目标 SKU 有软删除残留，先硬删除避免唯一索引冲突
+            if (existNew != null) {
+                baseMapper.hardDeleteById(existNew.getId());
+            }
+            // 直接更新旧记录的 SKU 信息
+            oldItem.setSkuId(newSkuId);
+            oldItem.setSkuName(newSku.getSkuName());
+            oldItem.setSpecData(newSku.getSpecData());
+            oldItem.setPrice(newSku.getPrice());
+            oldItem.setProductId(newSku.getProductId());
+            if (productName != null) oldItem.setProductName(productName);
+            if (image != null) oldItem.setProductImage(image);
+            updateById(oldItem);
+        }
+        updateCartCountCache(userId);
     }
 
     /**

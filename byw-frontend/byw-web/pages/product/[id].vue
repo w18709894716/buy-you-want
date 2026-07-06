@@ -86,7 +86,7 @@
 
           <!-- SKU 选择器 -->
           <div class="mt-6">
-            <SkuSelector :spec-groups="specGroups" @change="onSpecChange" />
+            <SkuSelector v-if="specGroups.length > 0" :spec-groups="specGroups" :sku-list="skuListForSelector" @change="onSpecChange" />
           </div>
 
           <!-- 数量选择 -->
@@ -220,6 +220,7 @@ const currentImageIndex = ref(0)
 const quantity = ref(1)
 const activeTab = ref('detail')
 const selectedSpecs = ref<Record<string, string>>({})
+const matchedSkuId = ref<number>(0)
 const loading = ref(true)
 
 const detailTabs = [
@@ -246,6 +247,14 @@ const product = reactive({
 const specGroups = ref<any[]>([])
 const skuList = ref<any[]>([])
 const reviews = ref<any[]>([])
+
+// 为规格选择器转换 SKU 列表格式（解析 specData）
+const skuListForSelector = computed(() => {
+  return skuList.value.map((sku: any) => ({
+    id: sku.id,
+    specData: typeof sku.specData === 'string' ? JSON.parse(sku.specData) : sku.specData
+  }))
+})
 
 // 从接口加载商品详情
 const fetchProduct = async () => {
@@ -292,6 +301,11 @@ const fetchProduct = async () => {
       options: Array.from(options),
     }))
 
+    // 无规格商品默认选中第一个 SKU
+    if (specGroups.value.length === 0 && skuList.value.length > 0) {
+      matchedSkuId.value = skuList.value[0].id
+    }
+
     // 规格参数展示
     const specs: Record<string, string> = {}
     if (specGroups.value.length > 0 && skuList.value.length > 0) {
@@ -311,12 +325,13 @@ const fetchProduct = async () => {
 
 function onSpecChange(specs: Record<string, string>) {
   selectedSpecs.value = specs
-  // 根据选中规格匹配 SKU，更新价格和库存
+  // 根据选中规格匹配 SKU，更新价格、库存和 SKU ID
   const matched = skuList.value.find((sku: any) => {
     const specData = typeof sku.specData === 'string' ? JSON.parse(sku.specData) : sku.specData
     return Object.entries(specs).every(([k, v]) => specData[k] === v)
   })
   if (matched) {
+    matchedSkuId.value = matched.id
     product.price = matched.price || product.price
     product.stock = matched.stock || 0
   }
@@ -351,9 +366,8 @@ async function handleAddToCart() {
     quantity.value = product.stock
     return
   }
-  const specsStr = Object.entries(selectedSpecs.value).map(([k, v]) => `${k}:${v}`).join(' ')
   try {
-    await cartStore.addToCart(productId.value, quantity.value, specsStr)
+    await cartStore.addToCart(matchedSkuId.value, quantity.value)
     showToast('已添加到购物车！', 'success')
   } catch (error: any) {
     showToast(error?.message || '添加失败，请重试', 'error')
@@ -373,6 +387,7 @@ watch(() => route.params.id, () => {
   currentImageIndex.value = 0
   quantity.value = 1
   selectedSpecs.value = {}
+  matchedSkuId.value = 0
   fetchProduct()
 })
 

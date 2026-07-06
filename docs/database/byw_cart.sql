@@ -8,6 +8,8 @@ CREATE TABLE t_cart_item (
     sku_id BIGINT NOT NULL,
     product_id BIGINT NOT NULL,
     sku_name VARCHAR(200),
+    product_name VARCHAR(200),
+    spec_data VARCHAR(500),
     product_image VARCHAR(500),
     quantity INT NOT NULL DEFAULT 1,
     price DECIMAL(10,2),

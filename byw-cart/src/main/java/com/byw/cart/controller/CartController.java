@@ -2,6 +2,7 @@ package com.byw.cart.controller;
 
 import com.byw.cart.entity.CartItem;
 import com.byw.cart.service.CartService;
+import com.byw.common.core.exception.BusinessException;
 import com.byw.common.core.result.R;
 import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.byw.common.security.annotation.RequireLogin;
@@ -9,11 +10,13 @@ import com.byw.common.security.context.UserContext;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @Tag(name = "购物车", description = "购物车管理")
+@Slf4j
 @RestController
 @RequestMapping("/cart")
 @RequiredArgsConstructor
@@ -79,11 +82,27 @@ public class CartController {
         return R.ok();
     }
 
+    @Operation(summary = "购物车内切换规格")
+    @PutMapping("/change-sku")
+    public R<Void> changeSku(@RequestParam Long oldSkuId, @RequestParam Long newSkuId) {
+        Long userId = UserContext.getUserId();
+        cartService.changeSku(userId, oldSkuId, newSkuId);
+        return R.ok();
+    }
+
     // ========== Sentinel fallback ==========
     private R<List<CartItem>> cartListFallback(Throwable ex) {
+        log.error("[cart:list] 触发 fallback，异常: {}", ex.getMessage(), ex);
+        if (ex instanceof BusinessException) {
+            return R.fail(ex.getMessage());
+        }
         return R.fail("系统繁忙，请稍后再试");
     }
     private R<Void> cartAddFallback(Long skuId, Integer quantity, Throwable ex) {
+        log.error("[cart:add] 触发 fallback，skuId={}, 异常: {}", skuId, ex.getMessage(), ex);
+        if (ex instanceof BusinessException) {
+            return R.fail(ex.getMessage());
+        }
         return R.fail("系统繁忙，请稍后再试");
     }
 }

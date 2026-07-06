@@ -2,6 +2,7 @@ package com.byw.order.controller;
 
 import com.byw.api.order.dto.OrderCreateDTO;
 import com.byw.api.order.dto.OrderDetailDTO;
+import com.byw.common.core.exception.BusinessException;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
 import com.alibaba.csp.sentinel.annotation.SentinelResource;
@@ -11,9 +12,11 @@ import com.byw.order.service.OrderService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 @Tag(name = "订单", description = "订单管理")
+@Slf4j
 @RestController
 @RequestMapping("/order")
 @RequiredArgsConstructor
@@ -62,11 +65,27 @@ public class OrderController {
         return R.ok();
     }
 
+    @Operation(summary = "支付订单（模拟）")
+    @PostMapping("/pay/{orderNo}")
+    public R<Void> pay(@PathVariable String orderNo) {
+        // TODO: 接入真实支付流程
+        orderService.updateStatus(orderNo, 1);
+        return R.ok();
+    }
+
     // ========== Sentinel fallback ==========
     private R<String> createOrderFallback(OrderCreateDTO createDTO, Throwable ex) {
+        log.error("[order:create] 触发 fallback，userId={}, 异常: {}", createDTO.getUserId(), ex.getMessage(), ex);
+        if (ex instanceof BusinessException) {
+            return R.fail(ex.getMessage());
+        }
         return R.fail("系统繁忙，请稍后再试");
     }
     private R<PageResult<OrderDetailDTO>> myOrdersFallback(Integer status, Integer pageNum, Integer pageSize, Throwable ex) {
+        log.error("[order:list] 触发 fallback，异常: {}", ex.getMessage(), ex);
+        if (ex instanceof BusinessException) {
+            return R.fail(ex.getMessage());
+        }
         return R.fail("系统繁忙，请稍后再试");
     }
 }

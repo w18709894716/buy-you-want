@@ -2,6 +2,7 @@ package com.byw.promotion.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.byw.api.promotion.dto.CouponDTO;
+import com.byw.api.promotion.dto.UserCouponDTO;
 import com.byw.common.core.exception.BusinessException;
 import com.byw.common.redis.util.RedisUtil;
 import com.byw.promotion.entity.Coupon;
@@ -146,6 +147,36 @@ public class CouponServiceImpl implements CouponService {
         CouponDTO dto = new CouponDTO();
         BeanUtils.copyProperties(coupon, dto);
         return dto;
+    }
+
+    @Override
+    public List<UserCouponDTO> listUserCoupons(Long userId, Integer status) {
+        // 查询用户的优惠券领取记录
+        List<CouponRecord> records = couponRecordMapper.selectList(
+                new LambdaQueryWrapper<CouponRecord>()
+                        .eq(CouponRecord::getUserId, userId)
+                        .eq(CouponRecord::getStatus, status)
+                        .orderByDesc(CouponRecord::getCreatedAt));
+        if (records.isEmpty()) {
+            return List.of();
+        }
+        // 查询优惠券模板详情
+        List<UserCouponDTO> result = new java.util.ArrayList<>();
+        for (CouponRecord record : records) {
+            Coupon coupon = couponMapper.selectById(record.getCouponId());
+            if (coupon == null) continue;
+            UserCouponDTO dto = new UserCouponDTO();
+            dto.setRecordId(record.getId());
+            dto.setCouponId(coupon.getId());
+            dto.setName(coupon.getName());
+            dto.setType(coupon.getType());
+            dto.setDiscountValue(coupon.getDiscountValue());
+            dto.setMinAmount(coupon.getMinAmount());
+            dto.setStartTime(coupon.getStartTime());
+            dto.setEndTime(coupon.getEndTime());
+            result.add(dto);
+        }
+        return result;
     }
 
     // ==================== 私有方法 ====================

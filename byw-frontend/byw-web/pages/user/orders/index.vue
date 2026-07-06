@@ -62,7 +62,7 @@
               <!-- 订单头部 -->
               <div class="flex flex-wrap items-center justify-between text-sm text-gray-500 mb-3 pb-3 border-b border-gray-100 gap-2">
                 <div class="flex items-center gap-2 sm:gap-4 flex-wrap">
-                  <span>订单号：{{ order.id }}</span>
+                  <span>订单号：{{ order.orderNo || order.id }}</span>
                   <span>{{ order.date }}</span>
                 </div>
                 <span :class="order.statusClass" class="font-medium">{{ order.statusText }}</span>
@@ -93,31 +93,36 @@
                 </div>
                 <div class="flex flex-wrap gap-2">
                   <button
-                    v-if="order.status === 'pending_pay'"
+                    v-if="order.status === 0"
                     class="px-4 py-1.5 bg-primary text-white text-sm rounded hover:bg-primary-600 transition-colors"
+                    @click="handlePay(order)"
                   >
                     立即付款
                   </button>
                   <button
-                    v-if="order.status === 'pending_receive'"
+                    v-if="order.status === 2"
                     class="px-4 py-1.5 bg-primary text-white text-sm rounded hover:bg-primary-600 transition-colors"
+                    @click="handleConfirmReceive(order)"
                   >
                     确认收货
                   </button>
                   <button
-                    v-if="order.status === 'completed'"
+                    v-if="order.status === 3"
                     class="px-4 py-1.5 border border-primary text-primary text-sm rounded hover:bg-primary-50 transition-colors"
+                    @click="handleReview(order)"
                   >
                     去评价
                   </button>
                   <button
                     class="px-4 py-1.5 border border-gray-300 text-gray-600 text-sm rounded hover:bg-gray-50 transition-colors"
+                    @click="viewOrderDetail(order)"
                   >
                     查看详情
                   </button>
                   <button
-                    v-if="order.status === 'pending_pay'"
+                    v-if="order.status === 0"
                     class="px-4 py-1.5 border border-gray-300 text-gray-500 text-sm rounded hover:bg-gray-50 transition-colors"
+                    @click="handleCancelOrder(order)"
                   >
                     取消订单
                   </button>
@@ -157,12 +162,35 @@
         </div>
       </div>
     </div>
+
+    <!-- 确认弹窗 -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="confirmDialog" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div class="fixed inset-0 bg-black/40" @click="confirmDialog = null" />
+          <div class="relative bg-white rounded-lg shadow-xl w-full max-w-sm p-6">
+            <h3 class="text-base font-medium text-gray-800 mb-2">{{ confirmDialog.title }}</h3>
+            <p class="text-sm text-gray-500 mb-5">{{ confirmDialog.message }}</p>
+            <div class="flex justify-end gap-3">
+              <button
+                class="px-4 h-9 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                @click="confirmDialog = null"
+              >取消</button>
+              <button
+                class="px-4 h-9 text-sm text-white bg-primary rounded-lg hover:bg-primary-600 transition-colors"
+                @click="confirmDialog.onConfirm()"
+              >确定</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useUserStore } from '~/stores/user'
-import { get } from '~/utils/request'
+import { get, post } from '~/utils/request'
 
 definePageMeta({ middleware: ['auth'] })
 
@@ -215,13 +243,14 @@ const orders = ref<any[]>([])
 
 const fetchOrders = async () => {
   try {
-    const data = await get('/order/list', {
+    const data = await get('/order/my-orders', {
       pageNum: currentPage.value,
       pageSize: 10,
       status: activeTab.value === 'all' ? undefined : activeTab.value
     })
     orders.value = (data?.list || []).map((o: any) => ({
-      id: o.orderNo || o.id,
+      id: o.id,
+      orderNo: o.orderNo,
       date: o.createdAt,
       status: o.status,
       statusText: statusTextMap[o.status] || '未知',
@@ -257,6 +286,58 @@ function switchTab(tab: string) {
   activeTab.value = tab
   currentPage.value = 1
   fetchOrders()
+}
+
+/** 查看订单详情 */
+function viewOrderDetail(order: any) {
+  navigateTo(`/user/orders/${order.orderNo || order.id}`)
+}
+
+/** 立即付款 */
+function handlePay(order: any) {
+  // TODO: 接入支付流程
+  alert(`订单 ${order.orderNo || order.id} 进入支付流程`)
+}
+
+const confirmDialog = ref<{ title: string; message: string; onConfirm: () => void } | null>(null)
+
+/** 确认收货 */
+function handleConfirmReceive(order: any) {
+  confirmDialog.value = {
+    title: '确认收货',
+    message: '确认已收到该商品？',
+    onConfirm: async () => {
+      confirmDialog.value = null
+      try {
+        await post(`/order/confirm/${order.orderNo || order.id}`)
+        fetchOrders()
+      } catch (e) {
+        console.error('确认收货失败:', e)
+      }
+    }
+  }
+}
+
+/** 去评价 */
+function handleReview(order: any) {
+  navigateTo(`/user/reviews?orderNo=${order.orderNo || order.id}`)
+}
+
+/** 取消订单 */
+function handleCancelOrder(order: any) {
+  confirmDialog.value = {
+    title: '取消订单',
+    message: '确定要取消该订单吗？',
+    onConfirm: async () => {
+      confirmDialog.value = null
+      try {
+        await post(`/order/cancel/${order.orderNo || order.id}`, null, { params: { reason: '用户主动取消' } })
+        fetchOrders()
+      } catch (e) {
+        console.error('取消订单失败:', e)
+      }
+    }
+  }
 }
 
 onMounted(() => {

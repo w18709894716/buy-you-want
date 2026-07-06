@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byw.api.promotion.PromotionFeignClient;
 import com.byw.api.promotion.dto.CouponDTO;
+import com.byw.api.promotion.dto.UserCouponDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
 import com.byw.promotion.entity.Coupon;
@@ -51,6 +52,13 @@ public class PromotionFeignImpl implements PromotionFeignClient {
     @GetMapping("/coupon/{couponId}")
     public R<CouponDTO> getCouponById(@PathVariable("couponId") Long couponId) {
         return R.ok(couponService.getCouponById(couponId));
+    }
+
+    @Override
+    @GetMapping("/coupon/user-coupons")
+    public R<List<UserCouponDTO>> listUserCoupons(@RequestParam("userId") Long userId,
+                                                   @RequestParam(value = "status", defaultValue = "0") Integer status) {
+        return R.ok(couponService.listUserCoupons(userId, status));
     }
 
     @Override

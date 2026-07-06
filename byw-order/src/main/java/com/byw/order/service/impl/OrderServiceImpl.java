@@ -8,6 +8,8 @@ import com.byw.api.order.dto.OrderDetailDTO;
 import com.byw.api.product.ProductFeignClient;
 import com.byw.api.product.dto.SkuStockDeductDTO;
 import com.byw.api.promotion.PromotionFeignClient;
+import com.byw.api.user.UserFeignClient;
+import com.byw.api.user.dto.AddressDTO;
 import com.byw.common.core.exception.BusinessException;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
@@ -43,6 +45,7 @@ public class OrderServiceImpl implements OrderService {
     private final ProductFeignClient productFeignClient;
     private final CartFeignClient cartFeignClient;
     private final PromotionFeignClient promotionFeignClient;
+    private final UserFeignClient userFeignClient;
     private final OrderEventProducer orderEventProducer;
 
     /** 雪花ID计数器，用于生成唯一订单号 */
@@ -101,6 +104,26 @@ public class OrderServiceImpl implements OrderService {
         order.setCouponId(createDTO.getCouponId());
         order.setStatus(0); // 待付款
         order.setRemark(createDTO.getRemark());
+
+        // 解析收货地址
+        if (createDTO.getAddressId() != null) {
+            try {
+                R<AddressDTO> addrResult = userFeignClient.getAddressById(createDTO.getAddressId());
+                if (addrResult.isSuccess() && addrResult.getData() != null) {
+                    AddressDTO addr = addrResult.getData();
+                    order.setReceiverName(addr.getReceiverName());
+                    order.setReceiverPhone(addr.getReceiverPhone());
+                    order.setReceiverAddress(
+                            (addr.getProvince() != null ? addr.getProvince() : "") +
+                            (addr.getCity() != null ? addr.getCity() : "") +
+                            (addr.getDistrict() != null ? addr.getDistrict() : "") +
+                            (addr.getDetailAddress() != null ? addr.getDetailAddress() : ""));
+                }
+            } catch (Exception e) {
+                log.warn("获取收货地址失败，addressId={}: {}", createDTO.getAddressId(), e.getMessage());
+            }
+        }
+
         orderMapper.insert(order);
 
         // 6. 设置orderId并批量插入订单项
@@ -115,7 +138,9 @@ public class OrderServiceImpl implements OrderService {
                 .collect(Collectors.toList());
         R<Boolean> stockResult = productFeignClient.deductStock(deductList);
         if (!stockResult.isSuccess()) {
-            throw new BusinessException("库存扣减失败");
+            // 使用商品服务返回的具体错误信息（如“库存不足”）
+            String msg = stockResult.getMessage() != null ? stockResult.getMessage() : "库存扣减失败";
+            throw new BusinessException(msg);
         }
 
         // 8. 清除购物车中已下单商品

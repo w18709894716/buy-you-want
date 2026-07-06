@@ -25,9 +25,12 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @RestController
 @RequestMapping("/feign/product")
@@ -39,6 +42,7 @@ public class ProductFeignImpl implements ProductFeignClient {
     private final SkuMapper skuMapper;
     private final CategoryService categoryService;
     private final BrandService brandService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
     @GetMapping("/{productId}")
@@ -84,19 +88,31 @@ public class ProductFeignImpl implements ProductFeignClient {
     @Override
     @PostMapping("/sku/deduct-stock")
     public R<Boolean> deductStock(@RequestBody List<SkuStockDeductDTO> deductList) {
-        return R.ok(skuService.deductStock(deductList));
+        try {
+            return R.ok(skuService.deductStock(deductList));
+        } catch (Exception e) {
+            return R.fail(e.getMessage());
+        }
     }
 
     @Override
     @PostMapping("/sku/release-stock")
     public R<Boolean> releaseStock(@RequestBody List<SkuStockDeductDTO> deductList) {
-        return R.ok(skuService.releaseStock(deductList));
+        try {
+            return R.ok(skuService.releaseStock(deductList));
+        } catch (Exception e) {
+            return R.fail(e.getMessage());
+        }
     }
 
     @Override
     @PostMapping("/sku/lock-stock")
     public R<Boolean> lockStock(@RequestBody List<SkuStockDeductDTO> deductList) {
-        return R.ok(skuService.lockStock(deductList));
+        try {
+            return R.ok(skuService.lockStock(deductList));
+        } catch (Exception e) {
+            return R.fail(e.getMessage());
+        }
     }
 
     @Override
@@ -150,6 +166,28 @@ public class ProductFeignImpl implements ProductFeignClient {
     private void updateSkus(Long productId, List<SkuDTO> skuDTOs) {
         if (skuDTOs == null || skuDTOs.isEmpty()) return;
 
+        // 收集前端传来的所有 SKU 编码
+        Set<String> incomingCodes = new HashSet<>();
+        for (int i = 0; i < skuDTOs.size(); i++) {
+            SkuDTO dto = skuDTOs.get(i);
+            String skuCode = dto.getSkuCode();
+            if (skuCode == null || skuCode.isBlank()) {
+                skuCode = "SKU-" + productId + "-" + (i + 1);
+            }
+            incomingCodes.add(skuCode);
+        }
+
+        // 查询当前商品所有未删除的 SKU
+        List<Sku> existingSkus = skuService.list(new LambdaQueryWrapper<Sku>()
+                .eq(Sku::getProductId, productId));
+
+        // 删除不在前端列表中的 SKU（软删除）
+        for (Sku existingSku : existingSkus) {
+            if (!incomingCodes.contains(existingSku.getSkuCode())) {
+                skuService.removeById(existingSku.getId());
+            }
+        }
+
         List<Sku> toInsert = new ArrayList<>();
         List<Sku> toUpdate = new ArrayList<>();
 
@@ -168,20 +206,23 @@ public class ProductFeignImpl implements ProductFeignClient {
             if (existing != null) {
                 // 已有：更新属性
                 existing.setSpecData(dto.getSpecData());
+                existing.setSkuName(buildSkuName(dto.getSpecData()));
                 existing.setPrice(dto.getPrice());
                 existing.setCostPrice(dto.getCostPrice());
                 existing.setStock(dto.getStock());
+                if (dto.getImage() != null) existing.setImage(dto.getImage());
                 toUpdate.add(existing);
             } else {
                 // 没有：新增
                 Sku sku = new Sku();
                 sku.setProductId(productId);
                 sku.setSkuCode(skuCode);
-                sku.setSkuName("SKU " + (i + 1));
+                sku.setSkuName(buildSkuName(dto.getSpecData()));
                 sku.setSpecData(dto.getSpecData());
                 sku.setPrice(dto.getPrice());
                 sku.setCostPrice(dto.getCostPrice());
                 sku.setStock(dto.getStock());
+                sku.setImage(dto.getImage());
                 sku.setStatus(1);
                 toInsert.add(sku);
             }
@@ -210,21 +251,33 @@ public class ProductFeignImpl implements ProductFeignClient {
             SkuDTO dto = skuDTOs.get(i);
             Sku sku = new Sku();
             sku.setProductId(productId);
-            // SKU 编码为空时自动生成
             String skuCode = dto.getSkuCode();
             if (skuCode == null || skuCode.isBlank()) {
                 skuCode = "SKU-" + productId + "-" + (i + 1);
             }
             sku.setSkuCode(skuCode);
-            sku.setSkuName("SKU " + (i + 1));
+            sku.setSkuName(buildSkuName(dto.getSpecData()));
             sku.setSpecData(dto.getSpecData());
             sku.setPrice(dto.getPrice());
             sku.setCostPrice(dto.getCostPrice());
             sku.setStock(dto.getStock());
+            sku.setImage(dto.getImage());
             sku.setStatus(1);
             skuList.add(sku);
         }
         skuService.saveBatch(skuList);
+    }
+
+    /** 从 specData 生成 SKU 名称，如 {"颜色":"红色","存储":"256GB"} → "红色 256GB" */
+    private String buildSkuName(String specData) {
+        if (specData == null || specData.isBlank()) return "默认规格";
+        try {
+            java.util.Map<String, String> specs = objectMapper.readValue(
+                    specData, new TypeReference<java.util.Map<String, String>>() {});
+            return String.join(" ", specs.values());
+        } catch (Exception e) {
+            return "默认规格";
+        }
     }
 
     @Override

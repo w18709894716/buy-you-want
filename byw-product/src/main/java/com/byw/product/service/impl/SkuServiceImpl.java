@@ -21,14 +21,22 @@ public class SkuServiceImpl extends ServiceImpl<SkuMapper, Sku> implements SkuSe
     @Transactional(rollbackFor = Exception.class)
     public Boolean deductStock(List<SkuStockDeductDTO> deductList) {
         for (SkuStockDeductDTO dto : deductList) {
-            // stock >= quantity then deduct: stock - quantity, lockStock unchanged
+            // 查询当前库存
+            Sku sku = baseMapper.selectById(dto.getSkuId());
+            if (sku == null) {
+                throw new BusinessException("商品不存在");
+            }
+            if (sku.getStock() < dto.getQuantity()) {
+                throw new BusinessException("库存不足");
+            }
+            // 乐观锁扣减：stock >= quantity then deduct
             LambdaUpdateWrapper<Sku> wrapper = new LambdaUpdateWrapper<>();
             wrapper.eq(Sku::getId, dto.getSkuId())
                     .ge(Sku::getStock, dto.getQuantity())
                     .setSql("stock = stock - " + dto.getQuantity());
             int rows = baseMapper.update(null, wrapper);
             if (rows == 0) {
-                throw new BusinessException("库存不足，SKU ID: " + dto.getSkuId());
+                throw new BusinessException("商品库存不足，请减少购买数量");
             }
         }
         return true;

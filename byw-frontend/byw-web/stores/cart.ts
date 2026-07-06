@@ -2,12 +2,13 @@ import { defineStore } from 'pinia'
 
 interface CartItem {
   cartId: number
+  skuId: number
   productId: number
   productName: string
   image: string
   price: number
   quantity: number
-  skuSpecs: string
+  specData: string
   checked: boolean
 }
 
@@ -53,8 +54,18 @@ export const useCartStore = defineStore('cart', {
     /** 获取购物车列表 */
     async getCartList() {
       try {
-        const data = await get<CartItem[]>('/cart/list')
-        this.items = data.map(item => ({ ...item, checked: true }))
+        const data = await get<any[]>('/cart/list')
+        this.items = data.map(item => ({
+          cartId: item.id,
+          skuId: item.skuId,
+          productId: item.productId,
+          productName: item.productName || item.skuName,
+          image: item.productImage,
+          price: item.price,
+          quantity: item.quantity,
+          specData: item.specData || '',
+          checked: item.selected === 1,
+        }))
       } catch {
         // 未登录时使用本地缓存
         const cached = localStorage.getItem('byw_cart')
@@ -65,25 +76,27 @@ export const useCartStore = defineStore('cart', {
     },
 
     /** 添加商品到购物车 */
-    async addToCart(productId: number, quantity: number, skuSpecs: string = '') {
-      await post('/cart/add', null, { params: { skuId: productId, quantity } })
+    async addToCart(skuId: number, quantity: number) {
+      await post('/cart/add', null, { params: { skuId, quantity } })
       await this.getCartList()
     },
 
     /** 删除购物车商品 */
     async removeItem(cartId: number) {
+      const item = this.items.find(i => i.cartId === cartId)
+      if (!item) return
       try {
-        await del(`/cart/${cartId}`)
+        await del(`/cart/${item.skuId}`)
       } catch {
         // ignore
       }
-      this.items = this.items.filter(item => item.cartId !== cartId)
+      this.items = this.items.filter(i => i.cartId !== cartId)
       this.saveLocal()
     },
 
     /** 更新商品数量 */
     async updateQuantity(cartId: number, quantity: number) {
-      const item = this.items.find(item => item.cartId === cartId)
+      const item = this.items.find(i => i.cartId === cartId)
       if (!item) return
 
       if (quantity <= 0) {
@@ -92,7 +105,7 @@ export const useCartStore = defineStore('cart', {
       }
 
       try {
-        await put(`/cart/${cartId}`, { quantity })
+        await put('/cart/update', null, { params: { skuId: item.skuId, quantity } })
       } catch {
         // ignore
       }
@@ -112,6 +125,14 @@ export const useCartStore = defineStore('cart', {
       if (item) {
         item.checked = !item.checked
       }
+    },
+
+    /** 购物车内切换规格 */
+    async changeSku(cartId: number, newSkuId: number) {
+      const item = this.items.find(i => i.cartId === cartId)
+      if (!item) return
+      await put('/cart/change-sku', null, { params: { oldSkuId: item.skuId, newSkuId } })
+      await this.getCartList()
     },
 
     /** 保存到本地缓存 */

@@ -1,5 +1,6 @@
 package com.byw.api.user;
 
+import com.byw.api.user.dto.AddressDTO;
 import com.byw.api.user.dto.UserDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
@@ -45,4 +46,7 @@ public interface UserFeignClient {
 
     @GetMapping("/feign/user/count-today")
     R<Long> countTodayNewUsers();
+
+    @GetMapping("/feign/user/address/{addressId}")
+    R<AddressDTO> getAddressById(@PathVariable("addressId") Long addressId);
 }

@@ -21,6 +21,10 @@ public class CartItem {
 
     private String skuName;
 
+    private String productName;
+
+    private String specData;
+
     private String productImage;
 
     private Integer quantity;

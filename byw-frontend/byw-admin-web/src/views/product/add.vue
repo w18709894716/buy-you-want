@@ -198,15 +198,16 @@ const loadProduct = async () => {
     formData.description = data.detailHtml || ''
     // 加载 SKU
     if (data.skus && data.skus.length > 0) {
-      // 从第一个 SKU 的 specData 提取规格组名称
-      let specNames: string[] = []
+      // 从所有 SKU 的 specData 合并提取规格组名称（避免单个 SKU 数据不一致）
+      const specNameSet = new Set<string>()
       const skus = data.skus.map((sku: any) => {
         let specs: string[] = []
         try {
           const parsed = JSON.parse(sku.specData || '{}')
-          if (specNames.length === 0) {
-            specNames = Object.keys(parsed)
-          }
+          Object.keys(parsed).forEach(k => {
+            // 过滤掉脏数据 key（如 spec1、spec2）
+            if (k && !/^spec\d+$/.test(k)) specNameSet.add(k)
+          })
           specs = Object.values(parsed) as string[]
         } catch (e) { /* ignore */ }
         return {
@@ -216,6 +217,7 @@ const loadProduct = async () => {
           skuCode: sku.skuCode || ''
         }
       })
+      const specNames = [...specNameSet]
       formData.skus = skus
       specNames.value = specNames
       // 等 SkuForm 渲染后设置规格组名称
@@ -255,7 +257,7 @@ const handleSubmit = async () => {
             price: sku.price || 0,
             stock: sku.stock || 0,
             specData: JSON.stringify(
-              Object.fromEntries((sku.specs || []).map((v: string, i: number) => [names[i] || `spec${i + 1}`, v]))
+              Object.fromEntries((sku.specs || []).map((v: string, i: number) => [names[i] || `规格${i + 1}`, v]))
             )
           }))
         })()
@@ -267,7 +269,9 @@ const handleSubmit = async () => {
         await request.post('/admin/product', payload)
         ElMessage.success('添加成功')
       }
-      router.push('/product/list')
+      // 保持当前页码（编辑场景）
+      const returnPage = route.query.page
+      router.push(returnPage ? { path: '/product/list', query: { page: returnPage } } : '/product/list')
     } catch (error: any) {
       if (!error._handled) ElMessage.error(error?.message || (isEdit.value ? '修改失败' : '添加失败'))
     } finally {

@@ -1,6 +1,7 @@
 package com.byw.api.promotion;
 
 import com.byw.api.promotion.dto.CouponDTO;
+import com.byw.api.promotion.dto.UserCouponDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
 import lombok.Data;
@@ -25,6 +26,10 @@ public interface PromotionFeignClient {
 
     @GetMapping("/feign/promotion/coupon/{couponId}")
     R<CouponDTO> getCouponById(@PathVariable("couponId") Long couponId);
+
+    @GetMapping("/feign/promotion/coupon/user-coupons")
+    R<List<UserCouponDTO>> listUserCoupons(@RequestParam("userId") Long userId,
+                                           @RequestParam(value = "status", defaultValue = "0") Integer status);
 
     // ========== 管理后台接口 ==========
 

@@ -87,13 +87,14 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../../utils/request'
 
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
-const page = ref(1)
+const page = ref(Number(route.query.page) || 1)
 const pageSize = ref(10)
 const total = ref(0)
 const tableData = ref<any[]>([])
@@ -139,7 +140,7 @@ const resetSearch = () => {
 }
 
 const handleEdit = (row: any) => {
-  router.push(`/product/add/${row.id}`)
+  router.push({ path: `/product/add/${row.id}`, query: { page: page.value } })
 }
 
 const handleDelete = async (row: any) => {

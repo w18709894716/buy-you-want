@@ -69,7 +69,12 @@
               <NuxtLink :to="`/product/${item.productId}`" class="text-sm text-gray-800 hover:text-primary line-clamp-2">
                 {{ item.productName }}
               </NuxtLink>
-              <div v-if="item.skuSpecs" class="text-xs text-gray-400 mt-1">{{ item.skuSpecs }}</div>
+              <!-- 已选规格展示 + 更换按钮 -->
+              <div v-if="parseSpecs(item.specData).length > 0" class="flex items-center gap-2 mt-1">
+                <span class="text-xs text-gray-400">已选：</span>
+                <span class="text-xs text-gray-600">{{ parseSpecs(item.specData).join(' / ') }}</span>
+                <button class="text-xs text-primary hover:text-primary-600" @click="openSpecSwitcher(item)">更换</button>
+              </div>
 
               <!-- 移动端：价格和数量 -->
               <div class="flex items-center justify-between mt-2 lg:hidden">
@@ -167,6 +172,80 @@
         </div>
       </div>
     </div>
+    <!-- 删除确认弹窗 -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="removeTarget" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div class="fixed inset-0 bg-black/40" @click="removeTarget = null" />
+          <div class="relative bg-white rounded-lg shadow-xl w-full max-w-sm p-6">
+            <h3 class="text-base font-medium text-gray-800 mb-2">确认删除</h3>
+            <p class="text-sm text-gray-500 mb-5">确定要从购物车中删除该商品吗？</p>
+            <div class="flex justify-end gap-3">
+              <button
+                class="px-4 h-9 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                @click="removeTarget = null"
+              >取消</button>
+              <button
+                class="px-4 h-9 text-sm text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors"
+                @click="confirmRemove"
+              >删除</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 规格切换弹窗 -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="specSwitcherTarget" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div class="fixed inset-0 bg-black/40" @click="specSwitcherTarget = null" />
+          <div class="relative bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <h3 class="text-base font-medium text-gray-800 mb-4">选择规格</h3>
+            <!-- 当前商品图片+名称 -->
+            <div class="flex items-center gap-3 mb-4 p-3 bg-gray-50 rounded-lg">
+              <img :src="specSwitcherTarget.image || 'https://via.placeholder.com/60x60?text=商品'" class="w-14 h-14 object-cover rounded" />
+              <div>
+                <div class="text-sm text-gray-800">{{ specSwitcherTarget.productName }}</div>
+                <div class="text-sm text-primary font-bold mt-1">¥{{ specSwitcherPrice.toFixed(2) }}</div>
+              </div>
+            </div>
+            <!-- 规格选择器 -->
+            <div v-if="specSwitcherSkus.length > 0" class="space-y-4">
+              <div v-for="(group, gIdx) in specSwitcherGroups" :key="group.name">
+                <div class="text-sm text-gray-600 mb-2">{{ group.name }}</div>
+                <div class="flex flex-wrap gap-2">
+                  <button
+                    v-for="option in group.options"
+                    :key="option"
+                    :class="[
+                      'px-3 py-1.5 border rounded text-sm transition-all',
+                      specSwitcherSelected[gIdx] === option
+                        ? 'border-primary bg-primary-50 text-primary'
+                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                    ]"
+                    @click="specSwitcherSelected[gIdx] = option"
+                  >{{ option }}</button>
+                </div>
+              </div>
+            </div>
+            <div v-else class="text-sm text-gray-400 py-4 text-center">该商品无可选规格</div>
+            <!-- 操作按钮 -->
+            <div class="flex justify-end gap-3 mt-6">
+              <button
+                class="px-4 h-9 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                @click="specSwitcherTarget = null"
+              >取消</button>
+              <button
+                class="px-4 h-9 text-sm text-white bg-primary rounded-lg hover:bg-primary-600 transition-colors disabled:opacity-50"
+                :disabled="!canConfirmSpec"
+                @click="confirmChangeSku"
+              >确定</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -176,14 +255,116 @@ import { useCartStore } from '~/stores/cart'
 definePageMeta({ middleware: ['auth'] })
 
 const cartStore = useCartStore()
+const removeTarget = ref<number | null>(null)
 
 onMounted(() => {
   cartStore.getCartList()
 })
 
 function handleRemove(cartId: number) {
-  if (confirm('确定要删除这个商品吗？')) {
-    cartStore.removeItem(cartId)
+  removeTarget.value = cartId
+}
+
+function confirmRemove() {
+  if (removeTarget.value != null) {
+    cartStore.removeItem(removeTarget.value)
+  }
+  removeTarget.value = null
+}
+
+/** 解析 specData JSON 为可读数组 */
+function parseSpecs(specData: string): string[] {
+  if (!specData) return []
+  try {
+    const obj = typeof specData === 'string' ? JSON.parse(specData) : specData
+    return Object.values(obj).map(String)
+  } catch {
+    return []
+  }
+}
+
+// ========== 规格切换弹窗 ==========
+interface CartItemLike { cartId: number; productId: number; skuId: number; specData: string; productName: string; image: string; price: number }
+
+const specSwitcherTarget = ref<CartItemLike | null>(null)
+const specSwitcherSkus = ref<any[]>([])
+const specSwitcherGroups = ref<{ name: string; options: string[] }[]>([])
+const specSwitcherSelected = ref<Record<number, string>>({})
+
+async function openSpecSwitcher(item: CartItemLike) {
+  specSwitcherTarget.value = item
+  specSwitcherSelected.value = {}
+  specSwitcherSkus.value = []
+  specSwitcherGroups.value = []
+
+  try {
+    const data: any = await get(`/product/${item.productId}`)
+    if (!data?.skus) return
+    specSwitcherSkus.value = data.skus
+
+    // 构建规格组
+    const groupMap: Record<string, Set<string>> = {}
+    for (const sku of data.skus) {
+      if (sku.specData) {
+        const sd = typeof sku.specData === 'string' ? JSON.parse(sku.specData) : sku.specData
+        for (const [k, v] of Object.entries(sd)) {
+          if (!groupMap[k]) groupMap[k] = new Set()
+          groupMap[k].add(v as string)
+        }
+      }
+    }
+    specSwitcherGroups.value = Object.entries(groupMap).map(([name, options]) => ({ name, options: Array.from(options) }))
+
+    // 预选当前规格
+    if (item.specData) {
+      const currentSpecs = typeof item.specData === 'string' ? JSON.parse(item.specData) : item.specData
+      specSwitcherGroups.value.forEach((group, idx) => {
+        if (currentSpecs[group.name]) {
+          specSwitcherSelected.value[idx] = currentSpecs[group.name]
+        }
+      })
+    }
+  } catch (e) {
+    console.error('加载商品规格失败', e)
+  }
+}
+
+/** 规格弹窗实时价格（跟随选中 SKU 变化） */
+const specSwitcherPrice = computed(() => {
+  const matched = findMatchedSku()
+  return matched ? matched.price : specSwitcherTarget.value?.price ?? 0
+})
+
+/** 根据已选规格匹配 SKU */
+const canConfirmSpec = computed(() => {
+  if (specSwitcherGroups.value.length === 0) return false
+  const allSelected = specSwitcherGroups.value.every((_, idx) => specSwitcherSelected.value[idx])
+  if (!allSelected) return false
+  const matched = findMatchedSku()
+  return matched && matched.id !== specSwitcherTarget.value?.skuId
+})
+
+function findMatchedSku(): any | null {
+  const selected: Record<string, string> = {}
+  specSwitcherGroups.value.forEach((group, idx) => {
+    if (specSwitcherSelected.value[idx]) {
+      selected[group.name] = specSwitcherSelected.value[idx]
+    }
+  })
+  return specSwitcherSkus.value.find((sku: any) => {
+    const sd = typeof sku.specData === 'string' ? JSON.parse(sku.specData) : sku.specData
+    return Object.entries(selected).every(([k, v]) => sd[k] === v)
+  }) || null
+}
+
+async function confirmChangeSku() {
+  const matched = findMatchedSku()
+  if (!matched || !specSwitcherTarget.value) return
+  try {
+    await cartStore.changeSku(specSwitcherTarget.value.cartId, matched.id)
+    specSwitcherTarget.value = null
+  } catch (e) {
+    console.error('切换规格失败', e)
   }
 }
 
@@ -192,3 +373,14 @@ function handleCheckout() {
   navigateTo('/checkout')
 }
 </script>
+
+<style scoped>
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity 0.2s ease;
+}
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+</style>

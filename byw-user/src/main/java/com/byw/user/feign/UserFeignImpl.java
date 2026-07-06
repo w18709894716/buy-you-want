@@ -4,10 +4,13 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byw.api.user.UserFeignClient;
+import com.byw.api.user.dto.AddressDTO;
 import com.byw.api.user.dto.UserDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
 import com.byw.user.entity.User;
+import com.byw.user.entity.UserAddress;
+import com.byw.user.mapper.UserAddressMapper;
 import com.byw.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
@@ -25,6 +28,7 @@ import java.util.stream.Collectors;
 public class UserFeignImpl implements UserFeignClient {
 
     private final UserService userService;
+    private final UserAddressMapper userAddressMapper;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     @GetMapping("/{userId}")
@@ -126,5 +130,15 @@ public class UserFeignImpl implements UserFeignClient {
         long count = userService.count(new LambdaQueryWrapper<User>()
                 .ge(User::getCreatedAt, todayStart));
         return R.ok(count);
+    }
+
+    @Override
+    @GetMapping("/address/{addressId}")
+    public R<AddressDTO> getAddressById(@PathVariable("addressId") Long addressId) {
+        UserAddress address = userAddressMapper.selectById(addressId);
+        if (address == null) return R.fail("地址不存在");
+        AddressDTO dto = new AddressDTO();
+        BeanUtils.copyProperties(address, dto);
+        return R.ok(dto);
     }
 }

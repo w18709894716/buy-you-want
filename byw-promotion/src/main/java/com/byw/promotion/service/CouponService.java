@@ -1,6 +1,7 @@
 package com.byw.promotion.service;
 
 import com.byw.api.promotion.dto.CouponDTO;
+import com.byw.api.promotion.dto.UserCouponDTO;
 import com.byw.promotion.entity.Coupon;
 
 import java.math.BigDecimal;
@@ -33,4 +34,9 @@ public interface CouponService {
      * 根据ID获取优惠券
      */
     CouponDTO getCouponById(Long couponId);
+
+    /**
+     * 获取用户持有的可用优惠券
+     */
+    List<UserCouponDTO> listUserCoupons(Long userId, Integer status);
 }

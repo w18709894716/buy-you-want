@@ -41,4 +41,9 @@ public interface CartService extends IService<CartItem> {
      * 全选/取消全选
      */
     void selectAll(Long userId, Integer selected);
+
+    /**
+     * 购物车内切换规格（更换 SKU）
+     */
+    void changeSku(Long userId, Long oldSkuId, Long newSkuId);
 }
