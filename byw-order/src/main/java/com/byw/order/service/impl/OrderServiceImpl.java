@@ -152,8 +152,11 @@ public class OrderServiceImpl implements OrderService {
         // 9. 保存状态日志
         saveStatusLog(order.getId(), null, 0, "系统", "创建订单");
 
-        // 10. 发送订单创建Kafka消息
+        // 10. 发送订单创建RocketMQ消息
         orderEventProducer.sendOrderCreateEvent(orderNo, userId);
+
+        // 11. 发送15分钟延迟消息，超时未支付自动取消
+        orderEventProducer.sendOrderTimeoutCancelEvent(orderNo);
 
         log.info("订单创建成功: orderNo={}, userId={}", orderNo, userId);
         return orderNo;
@@ -190,6 +193,12 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void cancelOrder(String orderNo, String reason) {
+        cancelOrder(orderNo, reason, "用户");
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void cancelOrder(String orderNo, String reason, String operator) {
         Order order = getOrderByNo(orderNo);
 
         // 只有待付款和待发货状态可以取消
@@ -217,12 +226,12 @@ public class OrderServiceImpl implements OrderService {
         }
 
         // 保存状态日志
-        saveStatusLog(order.getId(), fromStatus, 4, "用户", reason);
+        saveStatusLog(order.getId(), fromStatus, 4, operator, reason);
 
         // 发送状态变更事件
         orderEventProducer.sendOrderStatusChangeEvent(orderNo, fromStatus, 4);
 
-        log.info("订单取消成功: orderNo={}", orderNo);
+        log.info("订单取消成功: orderNo={}, operator={}", orderNo, operator);
     }
 
     @Override

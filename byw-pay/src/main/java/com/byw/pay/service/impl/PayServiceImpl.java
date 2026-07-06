@@ -93,10 +93,10 @@ public class PayServiceImpl implements PayService {
         }
         payOrderMapper.updateById(payOrder);
 
-        // 支付成功时发送Kafka消息通知订单服务
+        // 支付成功时发送RocketMQ消息通知订单服务
         if (payStatus == 1) {
             payEventProducer.sendPaymentResult(payOrder.getOrderNo(), payNo, payStatus);
-            log.info("支付成功，已发送Kafka通知: payNo={}, orderNo={}", payNo, payOrder.getOrderNo());
+            log.info("支付成功，已发送RocketMQ通知: payNo={}, orderNo={}", payNo, payOrder.getOrderNo());
         }
     }
 

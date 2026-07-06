@@ -3,7 +3,7 @@
 ## 前置条件
 
 - 必需中间件已启动（Nacos、MySQL、Redis）
-- 可选中间件按需启动（Kafka、Elasticsearch、MongoDB、Seata）
+- 可选中间件按需启动（RocketMQ、Elasticsearch、MongoDB、Seata）
 - JDK 17+ 已配置
 - Maven 3.8+ 已配置
 
@@ -69,12 +69,12 @@ Nacos + MySQL + Redis（必须启动的中间件底座）
     ├── byw-user（被 Auth 依赖，独立也可启动）
     │
     └── 以下服务可独立按需启动 ──────
-        ├── byw-product（需要 ES + Kafka）
+        ├── byw-product（需要 ES + RocketMQ）
         ├── byw-cart
         ├── byw-promotion
-        ├── byw-order ──→ Feign 调用 product / cart / promotion（需要 Kafka + Seata）
-        ├── byw-pay ──→ Kafka 通知 order
-        ├── byw-logistics（需要 Kafka）
+        ├── byw-order ──→ Feign 调用 product / cart / promotion（需要 RocketMQ + Seata）
+        ├── byw-pay ──→ RocketMQ 通知 order
+        ├── byw-logistics（需要 RocketMQ）
         ├── byw-review（需要 MongoDB）
         └── byw-admin（BFF，聚合调用各服务）
 ```
@@ -86,7 +86,7 @@ Nacos + MySQL + Redis（必须启动的中间件底座）
 | Nacos | **必须** | 服务注册中心，所有微服务依赖它 |
 | MySQL | **必须** | 各服务启动时建立数据库连接池 |
 | Redis | **必须** | 缓存、Token 存储、分布式锁等，几乎所有服务依赖 |
-| Kafka | 按需 | byw-order / byw-pay / byw-logistics / byw-product 使用 |
+| RocketMQ | 按需 | byw-order / byw-pay / byw-logistics / byw-product 使用 |
 | Elasticsearch | 按需 | 仅 byw-product 商品搜索使用 |
 | MongoDB | 按需 | 仅 byw-review 评价详情使用 |
 | Seata | 按需 | 仅 byw-order 分布式事务使用 |
@@ -97,10 +97,10 @@ Nacos + MySQL + Redis（必须启动的中间件底座）
 > Nacos + MySQL + Redis → gateway → auth → user
 
 **场景 2：测试商品浏览/搜索**
-> 场景 1 + product（+ ES + Kafka）
+> 场景 1 + product（+ ES + RocketMQ）
 
 **场景 3：测试完整下单流程**
-> 场景 2 + cart + promotion + order + pay（+ Kafka + Seata）
+> 场景 2 + cart + promotion + order + pay（+ RocketMQ + Seata）
 
 **场景 4：只开发管理后台某个模块**
 > Nacos + MySQL + Redis → gateway → auth → user → admin + 对应业务服务

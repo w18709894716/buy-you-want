@@ -40,7 +40,7 @@
         </dependency>
         <dependency>
             <groupId>com.byw</groupId>
-            <artifactId>byw-common-kafka</artifactId>
+            <artifactId>byw-common-rocketmq</artifactId>
         </dependency>
         <dependency>
             <groupId>com.byw</groupId>

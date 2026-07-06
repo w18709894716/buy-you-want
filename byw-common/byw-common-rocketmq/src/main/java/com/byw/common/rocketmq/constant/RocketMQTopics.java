@@ -1,6 +1,6 @@
-package com.byw.common.kafka.constant;
+package com.byw.common.rocketmq.constant;
 
-public class KafkaTopics {
+public class RocketMQTopics {
 
     // Order related
     public static final String ORDER_STATUS_CHANGE = "order-status-change";
@@ -22,5 +22,5 @@ public class KafkaTopics {
     // User behavior
     public static final String USER_BEHAVIOR = "user-behavior";
 
-    private KafkaTopics() {}
+    private RocketMQTopics() {}
 }

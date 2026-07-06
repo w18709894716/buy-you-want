@@ -10,7 +10,7 @@
 | Redis | 7.x | 分布式缓存 | https://github.com/tporadowski/redis/releases (Windows) |
 | Node.js | 18+（推荐 20 LTS） | 前端构建运行 | https://nodejs.org/ |
 | Nacos | 2.3.2 | 服务注册与配置中心 | https://github.com/alibaba/nacos/releases |
-| Kafka | 3.7.0 | 消息队列 | https://kafka.apache.org/downloads |
+| RocketMQ | 5.x | 消息队列 | https://rocketmq.apache.org/docs/quickStart/ |
 | Elasticsearch | 8.13.4 | 全文搜索引擎 | https://www.elastic.co/downloads/elasticsearch |
 | MongoDB | 7.0.9 | 文档数据库 | https://www.mongodb.com/try/download/community |
 

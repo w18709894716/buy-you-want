@@ -32,7 +32,7 @@ graph TB
         D1[Nacos 注册/配置中心]
         D2[Redis 7.x]
         D3[MySQL 8.0]
-        D4[Kafka 3.7.0]
+        D4[RocketMQ 5.x]
         D5[Elasticsearch 8.13]
         D6[MongoDB 7.0]
         D7[Seata 分布式事务]
@@ -62,11 +62,11 @@ graph TB
 | byw-user | 8082 | 用户 CRUD、收货地址、会员等级 | MySQL, Redis, Nacos |
 | byw-product | 8083 | 分类/品牌/SPU-SKU 管理、库存、ES 搜索 | MySQL, Redis, ES, Nacos |
 | byw-cart | 8084 | 购物车增删改查、结算 | MySQL, Redis, Nacos |
-| byw-order | 8085 | 订单创建、状态机、超时取消、Seata 事务 | MySQL, Redis, Kafka, Seata, Nacos |
-| byw-pay | 8086 | 支付策略、模拟回调、支付流水 | MySQL, Redis, Kafka, Nacos |
-| byw-logistics | 8087 | 发货管理、物流跟踪、状态更新 | MySQL, Kafka, Nacos |
+| byw-order | 8085 | 订单创建、状态机、超时取消、Seata 事务 | MySQL, Redis, RocketMQ, Seata, Nacos |
+| byw-pay | 8086 | 支付策略、模拟回调、支付流水 | MySQL, Redis, RocketMQ, Nacos |
+| byw-logistics | 8087 | 发货管理、物流跟踪、状态更新 | MySQL, RocketMQ, Nacos |
 | byw-review | 8088 | 评价管理、评分统计 | MySQL, MongoDB, Redis, Nacos |
-| byw-promotion | 8089 | 优惠券、秒杀（Lua预扣+限流）、拼团 | MySQL, Redis, Kafka, Nacos |
+| byw-promotion | 8089 | 优惠券、秒杀（Lua预扣+限流）、拼团 | MySQL, Redis, RocketMQ, Nacos |
 | byw-admin | 8090 | 管理后台 BFF 聚合层 | Nacos |
 | byw-common | — | 公共工具模块（8 个子模块） | — |
 
@@ -79,8 +79,8 @@ graph TB
 - Order → Promotion（核销优惠券）
 - Admin → 各业务服务（聚合查询）
 
-### 异步调用（Kafka）
-通过 Kafka 发布/订阅事件，实现跨服务最终一致性和削峰填谷：
+### 异步调用（RocketMQ）
+通过 RocketMQ 发布/订阅事件，实现跨服务最终一致性和削峰填谷：
 - **支付成功** → Pay 发送事件 → Order 更新状态为待发货
 - **库存扣减** → Promotion 秒杀预扣 → Order 异步创建订单
 - **物流状态变更** → Logistics 发送事件 → Order 更新物流状态
@@ -127,7 +127,7 @@ sequenceDiagram
     participant U as 用户
     participant GW as Gateway
     participant PAY as Pay服务
-    participant KF as Kafka
+    participant MQ as RocketMQ
     participant O as Order服务
 
     U->>GW: POST /api/pay/create
@@ -140,8 +140,8 @@ sequenceDiagram
     Note over U,PAY: 用户完成支付（模拟）
 
     PAY->>PAY: 接收支付回调，更新支付流水状态
-    PAY->>KF: 发布 PAYMENT_SUCCESS 事件
-    KF->>O: 消费支付成功事件
+    PAY->>MQ: 发布 PAYMENT_SUCCESS 事件
+    MQ->>O: 消费支付成功事件
     O->>O: 更新订单状态为「待发货」
     O-->>U: 推送订单状态变更通知
 ```
@@ -154,7 +154,7 @@ sequenceDiagram
     participant GW as Gateway
     participant PR as Promotion服务
     participant RD as Redis
-    participant KF as Kafka
+    participant MQ as RocketMQ
     participant O as Order服务
 
     U->>GW: POST /api/seckill/buy
@@ -170,8 +170,8 @@ sequenceDiagram
         GW-->>U: 提示已售罄
     else 库存充足
         RD-->>PR: 预扣成功
-        PR->>KF: 发布 SECKILL_ORDER 事件
-        KF->>O: 消费秒杀事件
+        PR->>MQ: 发布 SECKILL_ORDER 事件
+        MQ->>O: 消费秒杀事件
         O->>O: 异步创建秒杀订单（Seata事务）
         O-->>U: 推送秒杀结果通知
     end

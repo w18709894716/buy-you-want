@@ -19,7 +19,7 @@
         <module>byw-common-redis</module>
         <module>byw-common-mybatis</module>
         <module>byw-common-security</module>
-        <module>byw-common-kafka</module>
+        <module>byw-common-rocketmq</module>
         <module>byw-common-elasticsearch</module>
         <module>byw-common-swagger</module>
         <module>byw-common-log</module>

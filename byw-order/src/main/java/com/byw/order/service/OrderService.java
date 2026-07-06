@@ -28,6 +28,11 @@ public interface OrderService {
     void cancelOrder(String orderNo, String reason);
 
     /**
+     * 取消订单（指定操作人）
+     */
+    void cancelOrder(String orderNo, String reason, String operator);
+
+    /**
      * 确认收货
      */
     void confirmReceive(String orderNo);

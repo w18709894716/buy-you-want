@@ -1,9 +1,9 @@
 package com.byw.logistics.producer;
 
-import com.byw.common.kafka.constant.KafkaTopics;
+import com.byw.common.rocketmq.constant.RocketMQTopics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.kafka.core.KafkaTemplate;
+import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -13,7 +13,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class LogisticsEventProducer {
 
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final RocketMQTemplate rocketMQTemplate;
 
     /**
      * 发送物流更新事件
@@ -26,6 +26,6 @@ public class LogisticsEventProducer {
                 "timestamp", System.currentTimeMillis()
         );
         log.info("发送物流更新事件: orderNo={}, trackingNo={}, eventType={}", orderNo, trackingNo, eventType);
-        kafkaTemplate.send(KafkaTopics.LOGISTICS_UPDATE, orderNo, event);
+        rocketMQTemplate.syncSendOrderly(RocketMQTopics.LOGISTICS_UPDATE, event, orderNo);
     }
 }

@@ -8,7 +8,7 @@
 
 **三步启动项目：**
 
-1. **安装中间件** — [中间件安装指南](./start/middleware-setup.md)（Nacos / MySQL / Redis / Kafka / ES / MongoDB / Sentinel）
+1. **安装中间件** — [中间件安装指南](./start/middleware-setup.md)（Nacos / MySQL / Redis / RocketMQ / ES / MongoDB / Sentinel）
 2. **启动后端** — [后端启动指南](./start/backend-startup.md)（编译 → 建库 → 按顺序启动 11 个服务）
 3. **启动前端** — [前端启动指南](./start/frontend-startup.md)（管理端 :5174 / 用户端 :3000）
 
@@ -64,7 +64,7 @@
 | 微服务治理 | Spring Cloud Alibaba（Nacos + Sentinel + Seata） |
 | 数据层 | MyBatis-Plus 3.5.6 + MySQL 8.0 |
 | 缓存 | Redis 7.x（Redisson 3.28.0） |
-| 消息队列 | Kafka 3.7.0（KRaft 模式） |
+| 消息队列 | RocketMQ 5.x |
 | 搜索引擎 | Elasticsearch 8.13.4 + IK 分词 |
 | 文档数据库 | MongoDB 7.0.9 |
 | 用户端前端 | Nuxt.js 3.12 + Vue 3 + TailwindCSS |
@@ -76,8 +76,8 @@
 
 - 🏗️ **微服务架构** — 12 个独立服务，职责清晰，易于扩展
 - 🔒 **分布式事务** — Seata AT 模式保障下单核心链路数据一致性
-- ⚡ **高性能库存** — Redis Lua 预扣 + Kafka 异步落库
+- ⚡ **高性能库存** — Redis Lua 预扣 + RocketMQ 异步落库
 - 🔍 **全文搜索** — Elasticsearch + IK 分词，支持多维度筛选
-- 📨 **事件驱动** — Kafka 消息驱动实现最终一致性
+- 📨 **事件驱动** — RocketMQ 消息驱动实现最终一致性
 - 🛡️ **安全防护** — JWT + Gateway 全局鉴权 + Sentinel 限流
-- 🎯 **秒杀系统** — Redis 预扣 + Sentinel 限流 + Kafka 异步创单
+- 🎯 **秒杀系统** — Redis 预扣 + Sentinel 限流 + RocketMQ 异步创单

@@ -2,7 +2,7 @@ package com.byw.promotion.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.byw.common.core.exception.BusinessException;
-import com.byw.common.kafka.constant.KafkaTopics;
+import com.byw.common.rocketmq.constant.RocketMQTopics;
 import com.byw.common.redis.util.RedisUtil;
 import com.byw.promotion.entity.SeckillActivity;
 import com.byw.promotion.entity.SeckillOrder;
@@ -11,7 +11,7 @@ import com.byw.promotion.mapper.SeckillOrderMapper;
 import com.byw.promotion.service.SeckillService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.kafka.core.KafkaTemplate;
+import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,7 +27,7 @@ public class SeckillServiceImpl implements SeckillService {
     private final SeckillActivityMapper seckillActivityMapper;
     private final SeckillOrderMapper seckillOrderMapper;
     private final RedisUtil redisUtil;
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final RocketMQTemplate rocketMQTemplate;
 
     private static final String SECKILL_STOCK_KEY = "seckill:stock:";
     private static final String SECKILL_USER_KEY = "seckill:user:";
@@ -93,7 +93,7 @@ public class SeckillServiceImpl implements SeckillService {
         activity.setAvailableStock(activity.getAvailableStock() - 1);
         seckillActivityMapper.updateById(activity);
 
-        // 8. 发送Kafka消息异步创建订单
+        // 8. 发送RocketMQ消息异步创建订单
         Map<String, Object> event = Map.of(
                 "activityId", activityId,
                 "userId", userId,
@@ -102,7 +102,7 @@ public class SeckillServiceImpl implements SeckillService {
                 "seckillPrice", activity.getSeckillPrice().toPlainString(),
                 "timestamp", System.currentTimeMillis()
         );
-        kafkaTemplate.send(KafkaTopics.SECKILL_ORDER, String.valueOf(activityId), event);
+        rocketMQTemplate.syncSendOrderly(RocketMQTopics.SECKILL_ORDER, event, String.valueOf(activityId));
 
         log.info("秒杀成功: activityId={}, userId={}", activityId, userId);
     }

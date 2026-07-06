@@ -84,55 +84,82 @@ redis-cli ping
 
 ---
 
-## Kafka 3.7.0（消息队列，KRaft 模式）
+## RocketMQ 5.x（消息队列）
 
 ### 下载
 
-- https://kafka.apache.org/downloads
-- 选择 **Scala 2.13** 版本
+- 官方下载页: https://rocketmq.apache.org/download/
+- **Binary 直接下载**: https://dist.apache.org/repos/dist/release/rocketmq/5.5.0/rocketmq-all-5.5.0-bin-release.zip
+- 选择 **bin-release.zip**（编译好的二进制包），不要选 source-release.zip
 
 ### 安装步骤
 
-1. 解压到目录（如 `D:\kafka_2.13-3.7.0`）
+1. 解压到目录（如 `D:\rocketmq-5.x.x`）
 
-2. 生成集群 ID：
+2. 设置环境变量：
    ```bash
-   bin\windows\kafka-storage.bat random-uuid
+   setx ROCKETMQ_HOME "D:\rocketmq-5.x.x"
    ```
 
-3. 格式化存储目录（将 `YOUR_UUID` 替换为上一步生成的 ID）：
+3. 启动 NameServer（新开窗口）：
    ```bash
-   bin\windows\kafka-storage.bat format -t YOUR_UUID -c config\kraft\server.properties
+   cd %ROCKETMQ_HOME%\bin
+   start mqnamesrv.cmd
    ```
+   - 默认端口 **9876**
 
-4. 启动 Kafka：
+4. 启动 Broker（再新开窗口）：
    ```bash
-   bin\windows\kafka-server-start.bat config\kraft\server.properties
+   cd %ROCKETMQ_HOME%\bin
+   start mqbroker.cmd -n localhost:9876
    ```
-
-5. 默认端口 **9092**
-
-### ⚠️ Windows 11 已知问题
-
-如果遇到 `'wmic' 不是内部或外部命令` 错误：
-
-1. 打开 `bin\windows\kafka-run-class.bat`
-2. 找到包含 `wmic` 的这一行：
-   ```
-   for /f "tokens=2 delims==" %%j in ('wmic os get ...')
-   ```
-3. 将其中的 wmic 命令替换为 PowerShell：
-   ```
-   for /f "tokens=2 delims==" %%j in ('powershell -command "(Get-CimInstance Win32_OperatingSystem).TotalVisibleMemorySize"') do set "TOTAL_MEMORY=%%j"
-   ```
+   - 默认端口 **10911**
 
 ### 验证
 
 ```bash
-bin\windows\kafka-topics.bat --list --bootstrap-server localhost:9092
+# 查看 NameServer 日志无报错即表示启动成功
+# 或使用 rocketmq-dashboard 可视化管理
 ```
 
-无报错即表示 Kafka 正常运行。
+### 可选：安装 Dashboard（可视化管理界面）
+
+> Dashboard 是可选组件，用于可视化管理 RocketMQ 的 Topic、Consumer、消息查询等。
+> **注意**：Dashboard 没有预编译的二进制包，需要从源码构建。
+
+#### 下载源码
+
+- GitHub 仓库: https://github.com/apache/rocketmq-dashboard
+- 下载 2.1.0 版本源码: https://github.com/apache/rocketmq-dashboard/archive/refs/tags/rocketmq-dashboard-2.1.0.zip
+
+#### 构建步骤
+
+1. 解压源码到任意目录（如 `D:\rocketmq-dashboard`）
+
+2. 进入源码目录，执行 Maven 构建：
+   ```bash
+   cd D:\rocketmq-dashboard
+   mvn clean package -DskipTests
+   ```
+
+3. 构建完成后，jar 包位于 `target/rocketmq-dashboard-2.1.0.jar`
+
+#### 启动 Dashboard
+
+```bash
+java -jar target/rocketmq-dashboard-2.1.0.jar --rocketmq.config.namesrvAddr=localhost:9876
+```
+
+- 默认端口 **8080**（如与项目冲突，可加 `--server.port=8180` 修改）
+- 访问地址: http://localhost:8080（或你指定的端口）
+- 默认无需登录，可直接使用
+
+#### 功能说明
+
+- **Topic 管理**：查看/创建/删除 Topic，查看 Topic 统计信息
+- **Consumer 管理**：查看 Consumer Group 消费进度、在线消费者
+- **消息查询**：按 Topic + 时间范围 / Message Key / Message ID 查询消息
+- **消息轨迹**：追踪消息从发送到消费的完整链路
 
 ---
 

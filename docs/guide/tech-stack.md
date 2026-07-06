@@ -11,7 +11,7 @@
 | MyBatis-Plus | 3.5.6 | ORM 增强，内置分页插件、自动填充、代码生成 |
 | MySQL Connector/J | 8.3.0 | MySQL JDBC 驱动 |
 | Redisson | 3.28.0 | Redis 高级客户端，分布式锁、布隆过滤器、限流器 |
-| Spring Kafka | — | Kafka 客户端封装，生产者/消费者配置 |
+| RocketMQ Spring Boot Starter | 2.3.0 | RocketMQ 客户端封装，生产者/消费者配置 |
 | Spring Data Elasticsearch | — | Elasticsearch 客户端，索引与查询操作 |
 | Spring Data MongoDB | — | MongoDB 客户端，文档 CRUD 操作 |
 | Seata | 2.0.0 | 分布式事务框架，AT/TCC/Saga 模式 |
@@ -23,7 +23,7 @@
 | Nacos | 2.3.2 | 服务注册发现 + 配置管理中心 |
 | Sentinel | — | 流量控制、熔断降级、系统负载保护 |
 
-> 注：Spring Kafka、Spring Data Elasticsearch、Spring Data MongoDB 版本由 Spring Boot 3.2.5 BOM 统一管理，Sentinel 版本由 Spring Cloud Alibaba 2023.0.1.0 BOM 管理。
+> 注：Spring Data Elasticsearch、Spring Data MongoDB 版本由 Spring Boot 3.2.5 BOM 统一管理，Sentinel 版本由 Spring Cloud Alibaba 2023.0.1.0 BOM 管理。
 
 ## 前端技术栈
 
@@ -59,7 +59,7 @@
 | Nacos | 2.3.2 | 服务注册发现、动态配置管理、命名空间隔离 |
 | MySQL | 8.0 | 关系型数据库，各微服务独立数据库 |
 | Redis | 7.x | 缓存、分布式锁、购物车存储、秒杀库存预扣（Lua 脚本） |
-| Kafka | 3.7.0 (KRaft) | 消息队列，事件驱动，无 ZooKeeper 模式 |
+| RocketMQ | 5.x | 消息队列，事件驱动，支持顺序消息、事务消息 |
 | Elasticsearch | 8.13.4 | 商品全文搜索，IK 中文分词 |
 | MongoDB | 7.0.9 | 评价详情、图片等非结构化文档存储 |
 | Seata | 2.0 | 分布式事务协调（AT 模式） |
@@ -77,12 +77,12 @@
 - **开发效率**：屏蔽底层 Redis 协议细节，提供 Java 对象级 API
 - **高可用**：支持主从、哨兵、集群多种部署模式，自动故障转移
 
-### Kafka vs RabbitMQ
-- **高吞吐量**：Kafka 单 Broker 可达百万级 TPS，适合秒杀等高并发场景
-- **事件溯源**：天然支持事件驱动架构，消息持久化、可回溯消费
-- **KRaft 模式**：Kafka 3.7.0 已移除 ZooKeeper 依赖，简化部署运维
+### RocketMQ vs Kafka
+- **顺序消息**：RocketMQ 原生支持顺序消息，适合订单状态流转等场景
+- **事务消息**：内置事务消息，保证本地事务与消息发送的一致性
+- **阿里生态**：与 Spring Cloud Alibaba 生态无缝集成
 
 ### Seata AT vs TCC
 - **开发效率优先**：AT 模式基于数据源代理自动生成回滚 SQL，业务代码零侵入
 - **TCC 复杂度高**：需要手动编写 Try / Confirm / Cancel 三个接口，适合对一致性要求极高的金融场景
-- **本项目选型**：电商下单链路采用 AT 模式，兼顾开发效率与数据一致性；秒杀场景结合 Kafka 最终一致性方案
+- **本项目选型**：电商下单链路采用 AT 模式，兼顾开发效率与数据一致性；秒杀场景结合 RocketMQ 最终一致性方案

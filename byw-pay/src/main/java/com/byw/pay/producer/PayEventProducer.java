@@ -1,9 +1,9 @@
 package com.byw.pay.producer;
 
-import com.byw.common.kafka.constant.KafkaTopics;
+import com.byw.common.rocketmq.constant.RocketMQTopics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.kafka.core.KafkaTemplate;
+import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -13,7 +13,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PayEventProducer {
 
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final RocketMQTemplate rocketMQTemplate;
 
     /**
      * 发送支付结果消息
@@ -27,6 +27,6 @@ public class PayEventProducer {
                 "timestamp", System.currentTimeMillis()
         );
         log.info("发送支付结果消息: orderNo={}, payNo={}, status={}", orderNo, payNo, status);
-        kafkaTemplate.send(KafkaTopics.PAYMENT_RESULT, orderNo, event);
+        rocketMQTemplate.syncSendOrderly(RocketMQTopics.PAYMENT_RESULT, event, orderNo);
     }
 }

@@ -12,7 +12,7 @@ buy-you-want/
 │   ├── byw-common-redis/                  # Redis 工具：Redisson 配置、分布式锁工具类、RedisUtil
 │   ├── byw-common-mybatis/                # 持久层：MyBatis-Plus 配置、分页插件、自动填充 MetaObjectHandler
 │   ├── byw-common-security/               # 安全模块：JWT 工具类、UserContext 线程上下文、鉴权拦截器
-│   ├── byw-common-kafka/                  # 消息队列：Kafka 生产者/消费者配置、Topic 常量定义
+│   ├── byw-common-rocketmq/                 # 消息队列：RocketMQ 生产者/消费者配置、Topic 常量定义
 │   ├── byw-common-elasticsearch/          # 搜索引擎：ES RestHighLevelClient / ElasticsearchClient 配置
 │   ├── byw-common-swagger/                # API 文档：Knife4j OpenAPI3 统一配置、分组管理（仅 Servlet 服务）
 │   └── byw-common-log/                    # 日志模块：@OperLog 操作日志 AOP 切面
@@ -47,7 +47,7 @@ buy-you-want/
 │   └── ...                                #   雪花算法订单号、Seata 分布式事务、状态机、超时自动取消
 │
 ├── byw-pay/                               # 支付中心 (:8086)
-│   └── ...                                #   策略模式（支付宝/微信）、模拟支付回调、Kafka 异步通知
+│   └── ...                                #   策略模式（支付宝/微信）、模拟支付回调、RocketMQ 异步通知
 │
 ├── byw-logistics/                         # 物流中心 (:8087)
 │   └── ...                                #   发货管理、物流跟踪（模拟）、状态更新
@@ -131,8 +131,8 @@ byw-xxx/
         │   ├── config/                    # 模块级配置
         │   │   └── XxxConfig.java         #   本地 Bean 配置
         │   │
-        │   └── listener/                  # Kafka 消息监听器（可选）
-        │       └── XxxKafkaListener.java  #   @KafkaListener 消费事件
+        │   └── listener/                  # RocketMQ 消息监听器（可选）
+        │       └── XxxConsumer.java       #   @RocketMQMessageListener 消费事件
         │
         └── resources/
             ├── bootstrap.yml              # 启动配置（Nacos 连接信息、服务名、端口）
@@ -165,10 +165,10 @@ byw-xxx/
 - `UserContext` 用户上下文（ThreadLocal 存储当前登录用户信息）
 - `AuthInterceptor` 鉴权拦截器（从 Header 解析 Token 并注入 UserContext）
 
-### byw-common-kafka
-- Kafka 生产者配置（KafkaTemplate）
-- Kafka 消费者配置（ConcurrentKafkaListenerContainerFactory）
-- `KafkaTopicConstants` Topic 名称常量
+### byw-common-rocketmq
+- RocketMQ 生产者配置（RocketMQTemplate）
+- RocketMQ 消费者配置（@RocketMQMessageListener）
+- `RocketMQTopics` Topic 名称常量
 
 ### byw-common-elasticsearch
 - ElasticsearchClient 自动配置
