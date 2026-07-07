@@ -94,31 +94,45 @@ redis-cli ping
 
 ### 安装步骤
 
-1. 解压到目录（如 `D:\rocketmq-5.x.x`）
+1. 解压到目录（如 `D:\rocketmq-5.5.0`），记住这个路径
 
-2. 设置环境变量：
-   ```bash
-   setx ROCKETMQ_HOME "D:\rocketmq-5.x.x"
+2. 设置环境变量（二选一）：
+
+   **方式一：永久设置**（推荐，`setx` 设置后**当前窗口不生效**，需新开窗口）
+   ```cmd
+   setx ROCKETMQ_HOME "D:\rocketmq-5.5.0"
+   ```
+   > 设置完成后，**必须新开一个 CMD 窗口**才能使用 `%ROCKETMQ_HOME%`
+
+   **方式二：临时设置**（仅当前窗口有效，立即生效）
+   ```cmd
+   set ROCKETMQ_HOME=D:\rocketmq-5.5.0
    ```
 
-3. 启动 NameServer（新开窗口）：
-   ```bash
-   cd %ROCKETMQ_HOME%\bin
+3. 启动 NameServer（新开 CMD 窗口）：
+   ```cmd
+   cd /d %ROCKETMQ_HOME%\bin
    start mqnamesrv.cmd
    ```
+   - 启动成功后会弹出新窗口显示 NameServer 日志
    - 默认端口 **9876**
 
-4. 启动 Broker（再新开窗口）：
-   ```bash
-   cd %ROCKETMQ_HOME%\bin
+4. 启动 Broker（再新开 CMD 窗口）：
+   ```cmd
+   cd /d %ROCKETMQ_HOME%\bin
    start mqbroker.cmd -n localhost:9876
    ```
+   - 启动成功后会弹出新窗口显示 Broker 日志
    - 默认端口 **10911**
+
+> **注意**：
+> - 请将 `D:\rocketmq-5.5.0` 替换为你实际的解压路径
+> - 使用 `cd /d` 可跨盘符切换（如从 C 盘切换到 E 盘），避免因盘符不同导致路径不变
 
 ### 验证
 
-```bash
-# 查看 NameServer 日志无报错即表示启动成功
+```cmd
+# 查看 NameServer 弹窗日志，出现 "The Name Server boot success" 即表示启动成功
 # 或使用 rocketmq-dashboard 可视化管理
 ```
 
@@ -147,11 +161,11 @@ redis-cli ping
 #### 启动 Dashboard
 
 ```bash
-java -jar target/rocketmq-dashboard-2.1.0.jar --rocketmq.config.namesrvAddr=localhost:9876
+java -jar target/rocketmq-dashboard-2.1.0.jar --rocketmq.config.namesrvAddr=localhost:9876 --server.port=8180
 ```
 
 - 默认端口 **8080**（如与项目冲突，可加 `--server.port=8180` 修改）
-- 访问地址: http://localhost:8080（或你指定的端口）
+- 访问地址: http://localhost:8180
 - 默认无需登录，可直接使用
 
 #### 功能说明
