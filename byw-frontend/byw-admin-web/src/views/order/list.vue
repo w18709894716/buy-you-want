@@ -4,11 +4,11 @@
     <el-card shadow="never">
       <el-tabs v-model="activeTab" @tab-change="handleTabChange">
         <el-tab-pane label="全部" name="all" />
-        <el-tab-pane label="待付款" name="PENDING" />
-        <el-tab-pane label="待发货" name="PAID" />
-        <el-tab-pane label="已发货" name="SHIPPED" />
-        <el-tab-pane label="已完成" name="COMPLETED" />
-        <el-tab-pane label="已取消" name="CANCELLED" />
+        <el-tab-pane label="待付款" name="0" />
+        <el-tab-pane label="待发货" name="1" />
+        <el-tab-pane label="已发货" name="2" />
+        <el-tab-pane label="已完成" name="3" />
+        <el-tab-pane label="已取消" name="4" />
       </el-tabs>
 
       <!-- 搜索表单 -->
@@ -30,10 +30,10 @@
       <!-- 表格 -->
       <el-table :data="tableData" v-loading="loading" stripe border>
         <el-table-column prop="orderNo" label="订单号" width="200" />
-        <el-table-column prop="username" label="下单用户" width="120" />
-        <el-table-column prop="amount" label="订单金额" width="120">
+        <el-table-column prop="userId" label="用户ID" width="100" />
+        <el-table-column prop="payAmount" label="订单金额" width="120">
           <template #default="{ row }">
-            <span style="color:#F56C6C;font-weight:600;">¥{{ row.amount.toFixed(2) }}</span>
+            <span style="color:#F56C6C;font-weight:600;">¥{{ formatAmount(row.payAmount) }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="status" label="订单状态" width="110">
@@ -41,13 +41,16 @@
             <el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="payType" label="支付方式" width="100" />
-        <el-table-column prop="created" label="下单时间" min-width="170" />
+        <el-table-column prop="createdAt" label="下单时间" min-width="170">
+          <template #default="{ row }">
+            {{ formatTime(row.createdAt) }}
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" size="small" text @click="showDetail(row)">详情</el-button>
             <el-button
-              v-if="row.status === 'PAID'"
+              v-if="row.status === 1"
               type="success"
               size="small"
               text
@@ -76,13 +79,12 @@
       <template v-if="currentOrder">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="订单号">{{ currentOrder.orderNo }}</el-descriptions-item>
-          <el-descriptions-item label="下单用户">{{ currentOrder.username }}</el-descriptions-item>
-          <el-descriptions-item label="订单金额">¥{{ currentOrder.amount.toFixed(2) }}</el-descriptions-item>
+          <el-descriptions-item label="用户ID">{{ currentOrder.userId }}</el-descriptions-item>
+          <el-descriptions-item label="订单金额">¥{{ formatAmount(currentOrder.payAmount) }}</el-descriptions-item>
           <el-descriptions-item label="订单状态">
             <el-tag :type="statusType(currentOrder.status)">{{ statusLabel(currentOrder.status) }}</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="支付方式">{{ currentOrder.payType }}</el-descriptions-item>
-          <el-descriptions-item label="下单时间">{{ currentOrder.createdAt }}</el-descriptions-item>
+          <el-descriptions-item label="下单时间">{{ formatTime(currentOrder.createdAt) }}</el-descriptions-item>
           <el-descriptions-item label="收货地址" :span="2">{{ currentOrder.receiverAddress || '-' }}</el-descriptions-item>
         </el-descriptions>
 
@@ -152,6 +154,22 @@ const statusMap: Record<number, { label: string; type: string }> = {
 
 const statusLabel = (s: number) => statusMap[s]?.label || s
 const statusType = (s: number) => (statusMap[s]?.type as any) || 'info'
+
+// 格式化金额
+const formatAmount = (amount: any) => {
+  if (amount === null || amount === undefined) return '0.00'
+  return Number(amount).toFixed(2)
+}
+
+// 格式化时间（处理 LocalDateTime 数组格式或字符串格式）
+const formatTime = (time: any) => {
+  if (!time) return '-'
+  if (Array.isArray(time)) {
+    const [year, month, day, hour, minute, second] = time
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')} ${String(hour || 0).padStart(2, '0')}:${String(minute || 0).padStart(2, '0')}:${String(second || 0).padStart(2, '0')}`
+  }
+  return time
+}
 
 const fetchData = async () => {
   loading.value = true

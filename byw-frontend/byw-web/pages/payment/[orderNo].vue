@@ -130,10 +130,10 @@ async function fetchOrder() {
   try {
     const data = await get<any>(`/order/detail/${orderNo}`)
     order.value = data
-    // 计算倒计时：创建时间 + 15 分钟
+    // 计算倒计时：创建时间 + 30 分钟
     if (data.createdAt) {
       const createdAt = new Date(data.createdAt).getTime()
-      const deadline = createdAt + 15 * 60 * 1000
+      const deadline = createdAt + 30 * 60 * 1000
       updateCountdown(deadline)
       countdownTimer = setInterval(() => updateCountdown(deadline), 1000)
     }

@@ -36,40 +36,17 @@
       <!-- 主内容区 -->
       <div class="flex-1">
         <!-- 概览卡片 -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-          <div
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6">
+          <NuxtLink
             v-for="stat in statsCards"
             :key="stat.label"
+            :to="stat.path"
             class="bg-white rounded-lg p-4 text-center hover:shadow-md transition-shadow cursor-pointer"
           >
             <div class="text-2xl mb-1">{{ stat.icon }}</div>
             <div class="text-2xl font-bold text-gray-800">{{ stat.value }}</div>
             <div class="text-xs text-gray-500 mt-1">{{ stat.label }}</div>
-          </div>
-        </div>
-
-        <!-- 订单快捷入口 -->
-        <div class="bg-white rounded-lg p-6 mb-6">
-          <h3 class="font-medium text-gray-800 mb-4">我的订单</h3>
-          <div class="grid grid-cols-5 gap-4">
-            <NuxtLink
-              v-for="orderType in orderTypes"
-              :key="orderType.label"
-              :to="`/user/orders?status=${orderType.status}`"
-              class="flex flex-col items-center gap-2 p-3 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              <div class="relative">
-                <span class="text-3xl">{{ orderType.icon }}</span>
-                <span
-                  v-if="orderType.badge"
-                  class="absolute -top-1 -right-2 bg-primary text-white text-xs rounded-full h-4 min-w-4 flex items-center justify-center px-1"
-                >
-                  {{ orderType.badge }}
-                </span>
-              </div>
-              <span class="text-xs text-gray-600">{{ orderType.label }}</span>
-            </NuxtLink>
-          </div>
+          </NuxtLink>
         </div>
 
         <!-- 最近订单 -->
@@ -108,6 +85,7 @@
 
 <script setup lang="ts">
 import { useUserStore } from '~/stores/user'
+import { get } from '~/utils/request'
 
 definePageMeta({ middleware: ['auth'] })
 
@@ -123,20 +101,41 @@ const sidebarMenu = [
   { icon: '❤️', label: '我的收藏', path: '/user/favorites' },
 ]
 
-const statsCards = [
-  { icon: '📦', label: '待收货', value: 3 },
-  { icon: '💰', label: '待付款', value: 2 },
-  { icon: '⭐', label: '待评价', value: 5 },
-  { icon: '🎟️', label: '优惠券', value: 8 },
-]
+// 概览卡片数据（从接口获取）
+const statsCards = ref([
+  { icon: '💰', label: '待付款', value: 0, path: '/user/orders?status=0' },
+  { icon: '📋', label: '待发货', value: 0, path: '/user/orders?status=1' },
+  { icon: '🚚', label: '待收货', value: 0, path: '/user/orders?status=2' },
+  { icon: '⭐', label: '待评价', value: 0, path: '/user/orders?status=3' },
+  { icon: '🎟️', label: '优惠券', value: 0, path: '/user/coupons' },
+])
 
-const orderTypes = [
-  { icon: '💳', label: '待付款', status: 'pending_pay', badge: 2 },
-  { icon: '📋', label: '待发货', status: 'pending_ship', badge: 1 },
-  { icon: '🚚', label: '待收货', status: 'pending_receive', badge: 3 },
-  { icon: '⭐', label: '待评价', status: 'pending_review', badge: 5 },
-  { icon: '✅', label: '已完成', status: 'completed', badge: 0 },
-]
+// 获取订单各状态数量
+async function fetchOrderCounts() {
+  try {
+    const counts = await get<Record<number, number>>('/order/status-counts')
+    if (counts) {
+      statsCards.value[0].value = counts[0] || 0 // 待付款
+      statsCards.value[1].value = counts[1] || 0 // 待发货
+      statsCards.value[2].value = counts[2] || 0 // 待收货
+      statsCards.value[3].value = counts[3] || 0 // 待评价
+    }
+  } catch (e) {
+    console.error('获取订单统计失败', e)
+  }
+}
+
+// 获取优惠券数量
+async function fetchCouponCount() {
+  try {
+    const coupons = await get<any[]>('/coupon/my-coupons?status=0')
+    if (coupons) {
+      statsCards.value[4].value = coupons.length
+    }
+  } catch (e) {
+    console.error('获取优惠券统计失败', e)
+  }
+}
 
 const recentOrders = [
   {
@@ -165,5 +164,7 @@ const recentOrders = [
 
 onMounted(() => {
   userStore.getUserInfo()
+  fetchOrderCounts()
+  fetchCouponCount()
 })
 </script>

@@ -47,6 +47,9 @@ public class Order {
 
     private String cancelReason;
 
+    /** 是否已评价 0未评价 1已评价 */
+    private Integer reviewed;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 

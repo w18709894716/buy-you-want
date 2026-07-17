@@ -160,13 +160,36 @@ redis-cli ping
 
 #### 启动 Dashboard
 
+**默认启动（端口 8080）：**
+
 ```bash
-java -jar target/rocketmq-dashboard-2.1.0.jar --rocketmq.config.namesrvAddr=localhost:9876 --server.port=8180
+java -jar target/rocketmq-dashboard-2.1.0.jar --rocketmq.config.namesrvAddr=localhost:9876
 ```
 
-- 默认端口 **8080**（如与项目冲突，可加 `--server.port=8180` 修改）
-- 访问地址: http://localhost:8180
-- 默认无需登录，可直接使用
+访问地址: http://localhost:8080
+
+**修改端口（如与项目冲突）：**
+
+> **注意**：仅使用 `--server.port` 参数只能修改后端接口端口，前端 API 调用仍会指向原端口。需要同时修改两个配置文件才能完整修改端口。
+
+1. **修改后端端口**：编辑 `src/main/resources/application.yml`
+   ```yaml
+   server:
+     port: 8180  # 修改为想要的端口
+   ```
+
+2. **修改前端 API 端口**：编辑 `frontend-new/src/api/remote/remoteApi.js`
+   ```javascript
+   const apiBaseUrl = 'http://localhost:8180'  // 修改为与后端一致的端口
+   ```
+
+3. **重新构建并启动**：
+   ```bash
+   mvn clean package -DskipTests
+   java -jar target/rocketmq-dashboard-2.1.0.jar --rocketmq.config.namesrvAddr=localhost:9876
+   ```
+
+访问地址: http://localhost:8180
 
 #### 功能说明
 

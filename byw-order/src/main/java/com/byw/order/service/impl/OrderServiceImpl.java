@@ -103,6 +103,7 @@ public class OrderServiceImpl implements OrderService {
         order.setDiscountAmount(discountAmount);
         order.setCouponId(createDTO.getCouponId());
         order.setStatus(0); // 待付款
+        order.setReviewed(0); // 未评价
         order.setRemark(createDTO.getRemark());
 
         // 解析收货地址
@@ -270,6 +271,43 @@ public class OrderServiceImpl implements OrderService {
 
         saveStatusLog(order.getId(), fromStatus, status, "系统", "状态更新");
         orderEventProducer.sendOrderStatusChangeEvent(orderNo, fromStatus, status);
+    }
+
+    @Override
+    public java.util.Map<Integer, Integer> getOrderCountsByStatus(Long userId) {
+        List<Order> orders = orderMapper.selectList(
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getUserId, userId)
+                        .in(Order::getStatus, 0, 1, 2, 3)
+                        .select(Order::getStatus, Order::getReviewed));
+
+        java.util.Map<Integer, Integer> counts = new java.util.HashMap<>();
+        counts.put(0, 0); // 待付款
+        counts.put(1, 0); // 待发货
+        counts.put(2, 0); // 待收货
+        counts.put(3, 0); // 待评价（已完成未评价）
+
+        for (Order order : orders) {
+            int status = order.getStatus();
+            if (status == 3) {
+                // 已完成订单，只有未评价的才算"待评价"
+                if (order.getReviewed() == null || order.getReviewed() == 0) {
+                    counts.put(3, counts.get(3) + 1);
+                }
+            } else {
+                counts.put(status, counts.get(status) + 1);
+            }
+        }
+        return counts;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateReviewed(String orderNo, Integer reviewed) {
+        Order order = getOrderByNo(orderNo);
+        order.setReviewed(reviewed);
+        orderMapper.updateById(order);
+        log.info("订单评价状态更新: orderNo={}, reviewed={}", orderNo, reviewed);
     }
 
     // ==================== 私有方法 ====================

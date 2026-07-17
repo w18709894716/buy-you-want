@@ -41,4 +41,15 @@ public interface OrderService {
      * 更新订单状态
      */
     void updateStatus(String orderNo, Integer status);
+
+    /**
+     * 获取用户各状态订单数量
+     * @return Map<状态码, 数量>
+     */
+    java.util.Map<Integer, Integer> getOrderCountsByStatus(Long userId);
+
+    /**
+     * 更新订单评价状态
+     */
+    void updateReviewed(String orderNo, Integer reviewed);
 }

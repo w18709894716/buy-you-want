@@ -21,6 +21,7 @@ CREATE TABLE t_order (
     receive_time DATETIME,
     cancel_time DATETIME,
     cancel_reason VARCHAR(200),
+    reviewed TINYINT DEFAULT 0 COMMENT '是否已评价 0未评价 1已评价',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted TINYINT DEFAULT 0,

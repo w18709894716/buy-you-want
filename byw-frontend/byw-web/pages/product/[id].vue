@@ -375,9 +375,14 @@ async function handleAddToCart() {
 }
 
 function handleBuyNow() {
-  handleAddToCart().then(() => {
+  handleAddToCart().then(async () => {
     if (toast.type === 'success') {
-      setTimeout(() => navigateTo('/cart'), 1000)
+      // 将刚加入的商品设为选中状态
+      const addedItem = cartStore.items.find(i => i.skuId === matchedSkuId.value)
+      if (addedItem && !addedItem.checked) {
+        cartStore.toggleItem(addedItem.cartId)
+      }
+      setTimeout(() => navigateTo('/checkout'), 800)
     }
   })
 }

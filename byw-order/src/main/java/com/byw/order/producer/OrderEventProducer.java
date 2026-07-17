@@ -21,9 +21,9 @@ public class OrderEventProducer {
      * 延迟等级说明（RocketMQ 固定延迟级别）：
      * 1=1s  2=5s  3=10s  4=30s  5=1m  6=2m  7=3m  8=4m  9=5m
      * 10=6m 11=7m 12=8m  13=9m  14=10m 15=20m 16=30m 17=1h 18=2h
-     * 订单超时使用等级 15（20分钟），覆盖15分钟超时场景
+     * 订单超时使用等级 16（30分钟），与前端倒计时一致
      */
-    private static final int ORDER_TIMEOUT_DELAY_LEVEL = 15;
+    private static final int ORDER_TIMEOUT_DELAY_LEVEL = 16;
 
     /**
      * 发送订单创建事件
@@ -56,7 +56,7 @@ public class OrderEventProducer {
 
     /**
      * 发送订单超时取消延迟消息
-     * 使用 RocketMQ 延迟等级 15（约20分钟后投递），覆盖15分钟超时场景
+     * 使用 RocketMQ 延迟等级 16（30分钟后投递），与前端倒计时一致
      * 消费者收到消息后会校验订单状态，确保不会误取消已支付订单
      */
     public void sendOrderTimeoutCancelEvent(String orderNo) {
@@ -68,6 +68,6 @@ public class OrderEventProducer {
                 3000,
                 ORDER_TIMEOUT_DELAY_LEVEL
         );
-        log.info("发送订单超时取消延迟消息: orderNo={}, delayLevel={}（约20分钟后触发）", orderNo, ORDER_TIMEOUT_DELAY_LEVEL);
+        log.info("发送订单超时取消延迟消息: orderNo={}, delayLevel={}（30分钟后触发）", orderNo, ORDER_TIMEOUT_DELAY_LEVEL);
     }
 }

@@ -73,6 +73,20 @@ public class OrderController {
         return R.ok();
     }
 
+    @Operation(summary = "获取用户各状态订单数量")
+    @GetMapping("/status-counts")
+    public R<java.util.Map<Integer, Integer>> getStatusCounts() {
+        Long userId = UserContext.getUserId();
+        return R.ok(orderService.getOrderCountsByStatus(userId));
+    }
+
+    @Operation(summary = "更新订单评价状态")
+    @PostMapping("/reviewed/{orderNo}")
+    public R<Void> updateReviewed(@PathVariable String orderNo, @RequestParam Integer reviewed) {
+        orderService.updateReviewed(orderNo, reviewed);
+        return R.ok();
+    }
+
     // ========== Sentinel fallback ==========
     private R<String> createOrderFallback(OrderCreateDTO createDTO, Throwable ex) {
         log.error("[order:create] 触发 fallback，userId={}, 异常: {}", createDTO.getUserId(), ex.getMessage(), ex);

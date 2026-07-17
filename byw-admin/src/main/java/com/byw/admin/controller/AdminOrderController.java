@@ -28,4 +28,16 @@ public class AdminOrderController {
     public R<OrderDetailDTO> getOrderDetail(@PathVariable String orderNo) {
         return orderFeignClient.getOrderDetail(orderNo);
     }
+
+    /**
+     * 订单发货
+     */
+    @PutMapping("/{orderNo}/ship")
+    public R<Boolean> ship(@PathVariable String orderNo,
+                           @RequestParam(required = false) String company,
+                           @RequestParam(required = false) String trackingNo) {
+        // 更新订单状态为已发货 (status=2)
+        // TODO: 同时创建物流记录（company, trackingNo）
+        return orderFeignClient.updateOrderStatus(orderNo, 2);
+    }
 }

@@ -90,10 +90,17 @@
                 <div class="text-sm text-gray-500">
                   共 {{ order.quantity }} 件商品，合计：
                   <span class="text-primary font-bold text-lg">¥{{ order.total.toFixed(2) }}</span>
+                  <!-- 待付款倒计时 -->
+                  <span v-if="order.status === 0 && getOrderRemainingSeconds(order) > 0" class="ml-3 text-orange-500 text-xs">
+                    剩余 {{ formatCountdown(getOrderRemainingSeconds(order)) }}
+                  </span>
+                  <span v-if="order.status === 0 && getOrderRemainingSeconds(order) <= 0" class="ml-3 text-gray-400 text-xs">
+                    已超时
+                  </span>
                 </div>
                 <div class="flex flex-wrap gap-2">
                   <button
-                    v-if="order.status === 0"
+                    v-if="order.status === 0 && getOrderRemainingSeconds(order) > 0"
                     class="px-4 py-1.5 bg-primary text-white text-sm rounded hover:bg-primary-600 transition-colors"
                     @click="handlePay(order)"
                   >
@@ -252,6 +259,7 @@ const fetchOrders = async () => {
       id: o.id,
       orderNo: o.orderNo,
       date: o.createdAt,
+      createdAt: o.createdAt,
       status: o.status,
       statusText: statusTextMap[o.status] || '未知',
       statusClass: statusClassMap[o.status] || 'text-gray-500',
@@ -293,11 +301,40 @@ function viewOrderDetail(order: any) {
   navigateTo(`/user/orders/${order.orderNo || order.id}`)
 }
 
-/** 立即付款 */
+/** 立即付款 - 跳转到支付页面 */
 function handlePay(order: any) {
-  // TODO: 接入支付流程
-  alert(`订单 ${order.orderNo || order.id} 进入支付流程`)
+  navigateTo(`/payment/${order.orderNo}`)
 }
+
+// ===== 待付款倒计时（30分钟） =====
+const TIMEOUT_MS = 30 * 60 * 1000
+const now = ref(Date.now())
+let countdownTimer: ReturnType<typeof setInterval> | null = null
+
+function getOrderRemainingSeconds(order: any): number {
+  if (!order.createdAt || order.status !== 0) return 0
+  const deadline = new Date(order.createdAt).getTime() + TIMEOUT_MS
+  return Math.max(0, Math.floor((deadline - now.value) / 1000))
+}
+
+function formatCountdown(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+}
+
+onMounted(() => {
+  userStore.getUserInfo()
+  fetchOrders()
+  // 每秒更新倒计时
+  countdownTimer = setInterval(() => {
+    now.value = Date.now()
+  }, 1000)
+})
+
+onUnmounted(() => {
+  if (countdownTimer) clearInterval(countdownTimer)
+})
 
 const confirmDialog = ref<{ title: string; message: string; onConfirm: () => void } | null>(null)
 
@@ -339,9 +376,4 @@ function handleCancelOrder(order: any) {
     }
   }
 }
-
-onMounted(() => {
-  userStore.getUserInfo()
-  fetchOrders()
-})
 </script>

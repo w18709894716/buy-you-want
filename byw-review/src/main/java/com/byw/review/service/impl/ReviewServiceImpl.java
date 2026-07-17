@@ -2,6 +2,7 @@ package com.byw.review.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.byw.api.order.OrderFeignClient;
 import com.byw.api.review.dto.ReviewStatsDTO;
 import com.byw.common.core.exception.BusinessException;
 import com.byw.common.core.result.PageResult;
@@ -37,6 +38,7 @@ public class ReviewServiceImpl implements ReviewService {
     private final ReviewImageMapper reviewImageMapper;
     private final ReviewDetailRepository reviewDetailRepository;
     private final MongoTemplate mongoTemplate;
+    private final OrderFeignClient orderFeignClient;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -72,6 +74,13 @@ public class ReviewServiceImpl implements ReviewService {
         // 4. 保存到MongoDB
         reviewDetail.setCreatedAt(LocalDateTime.now());
         reviewDetailRepository.save(reviewDetail);
+
+        // 5. 更新订单评价状态
+        try {
+            orderFeignClient.updateReviewed(reviewDetail.getOrderId(), 1);
+        } catch (Exception e) {
+            log.warn("更新订单评价状态失败: orderNo={}, error={}", reviewDetail.getOrderId(), e.getMessage());
+        }
 
         log.info("评价创建成功: orderNo={}, productId={}", reviewDetail.getOrderId(), reviewDetail.getProductId());
     }

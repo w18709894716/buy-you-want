@@ -123,6 +123,13 @@ public class OrderFeignImpl implements OrderFeignClient {
         return R.ok(stats);
     }
 
+    @Override
+    @PostMapping("/update-reviewed")
+    public R<Boolean> updateReviewed(@RequestParam("orderNo") String orderNo, @RequestParam("reviewed") Integer reviewed) {
+        orderService.updateReviewed(orderNo, reviewed);
+        return R.ok(true);
+    }
+
     private OrderDetailDTO buildOrderDetailDTO(Order order, List<OrderItem> items) {
         OrderDetailDTO dto = new OrderDetailDTO();
         BeanUtils.copyProperties(order, dto);
