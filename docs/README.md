@@ -11,8 +11,8 @@
 **方式一：脚本启动（推荐）**
 
 ```bash
-python start_all.py          # 一键启动全部服务
-python start_all.py --skip-build  # 跳过构建，快速启动
+python docs/scripts/start_all.py          # 一键启动全部服务
+python docs/scripts/start_all.py --skip-build  # 跳过构建，快速启动
 ```
 
 详见 [脚本方式启动](./start/script-startup.md)

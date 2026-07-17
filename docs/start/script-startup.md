@@ -1,15 +1,16 @@
 # 脚本方式启动
 
 > 项目提供了 Python 一键启动/停止脚本，简化微服务启动流程，并支持交互式管理单个服务。
+> 脚本位于 `docs/scripts/` 目录下。
 
 ---
 
 ## 脚本一览
 
-| 脚本 | 功能 |
-|------|------|
-| `start_all.py` | 一键构建并启动所有服务，支持交互式命令管理 |
-| `stop_all.py` | 一键停止所有服务并关闭 CMD 窗口 |
+| 脚本 | 位置 | 功能 |
+|------|------|------|
+| `start_all.py` | `docs/scripts/start_all.py` | 一键构建并启动所有服务，支持交互式命令管理 |
+| `stop_all.py` | `docs/scripts/stop_all.py` | 一键停止所有服务并关闭 CMD 窗口 |
 
 ---
 
@@ -28,7 +29,7 @@
 ### 基本用法
 
 ```bash
-python start_all.py
+python docs/scripts/start_all.py
 ```
 
 ### 可选参数
@@ -42,16 +43,16 @@ python start_all.py
 
 ```bash
 # 完整启动（构建 + 后端 + 前端）
-python start_all.py
+python docs/scripts/start_all.py
 
 # 跳过构建，直接启动（代码未修改时使用）
-python start_all.py --skip-build
+python docs/scripts/start_all.py --skip-build
 
 # 仅启动后端服务
-python start_all.py --skip-frontend
+python docs/scripts/start_all.py --skip-frontend
 
 # 快速启动（跳过构建 + 前端）
-python start_all.py --skip-build --skip-frontend
+python docs/scripts/start_all.py --skip-build --skip-frontend
 ```
 
 ### 启动流程
@@ -123,7 +124,7 @@ byw> restart byw-order
 byw> quit
 
   退出交互模式，服务继续运行...
-  停止服务: python stop_all.py
+  停止服务: python docs/scripts/stop_all.py
 ```
 
 ### 典型使用场景
@@ -137,20 +138,20 @@ byw> restart byw-order
 # 或者退出后重新编译再启动
 byw> quit
 mvn compile -pl byw-order
-python start_all.py --skip-build --skip-frontend
+python docs/scripts/start_all.py --skip-build --skip-frontend
 ```
 
 **场景 2：只想启动后端，不启动前端**
 
 ```bash
-python start_all.py --skip-frontend
+python docs/scripts/start_all.py --skip-frontend
 ```
 
 **场景 3：快速重启单个服务**
 
 ```bash
 # 直接启动脚本，跳过构建和前端
-python start_all.py --skip-build --skip-frontend
+python docs/scripts/start_all.py --skip-build --skip-frontend
 # 进入交互模式后
 byw> restart byw-order
 byw> quit
@@ -163,7 +164,7 @@ byw> quit
 ### 基本用法
 
 ```bash
-python stop_all.py
+python docs/scripts/stop_all.py
 ```
 
 ### 功能说明
@@ -206,8 +207,8 @@ python stop_all.py
 
 1. **首次启动前** 必须先执行 `npm install`（前端依赖安装）
 2. **代码修改后** 需要重新编译：`mvn compile` 或 `mvn package -DskipTests`
-3. **交互模式下** 退出（quit）不会停止服务，需手动执行 `stop_all.py`
-4. **shutdown 命令** 会停止所有服务，等同于执行 `stop_all.py`
+3. **交互模式下** 退出（quit）不会停止服务，需手动执行 `python docs/scripts/stop_all.py`
+4. **shutdown 命令** 会停止所有服务，等同于执行 `python docs/scripts/stop_all.py`
 5. **中间件不在脚本管理范围内**，需单独启动和停止
 
 ---
@@ -236,5 +237,5 @@ taskkill /PID <pid> /F
 A: 前端支持热更新，修改代码后自动刷新，无需重启。如需重启：
 ```bash
 # 停止前端窗口后，重新启动
-python start_all.py --skip-build
+python docs/scripts/start_all.py --skip-build
 ```

@@ -13,7 +13,8 @@ import glob
 import argparse
 import threading
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+# 项目根目录（脚本位于 docs/scripts/，需向上两级）
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # ===== 服务定义 =====
 BATCH_1 = ["byw-gateway", "byw-auth"]
@@ -263,7 +264,7 @@ def interactive_mode(all_procs: list):
 
             if action in ("quit", "exit", "q"):
                 print("\n  退出交互模式，服务继续运行...")
-                print("  \033[37m停止服务: python stop_all.py\033[0m")
+                print("  \033[37m停止服务: python docs/scripts/stop_all.py\033[0m")
                 break
 
             elif action == "shutdown":
