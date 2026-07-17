@@ -18,6 +18,8 @@ public class ReviewDetail {
 
     private Long productId;
 
+    private Long skuId;
+
     private Long userId;
 
     private Integer rating;

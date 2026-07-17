@@ -114,7 +114,7 @@
                     确认收货
                   </button>
                   <button
-                    v-if="order.status === 3"
+                    v-if="order.status === 3 && (!order.reviewed || order.reviewed === 0)"
                     class="px-4 py-1.5 border border-primary text-primary text-sm rounded hover:bg-primary-50 transition-colors"
                     @click="handleReview(order)"
                   >
@@ -222,7 +222,8 @@ const tabs = ref([
   { label: '待付款', value: '0', count: 0 },
   { label: '待发货', value: '1', count: 0 },
   { label: '待收货', value: '2', count: 0 },
-  { label: '已完成', value: '3', count: 0 },
+  { label: '待评价', value: 'review', count: 0 },
+  { label: '已取消', value: '4', count: 0 },
 ])
 
 const statusTextMap: Record<number, string> = {
@@ -250,10 +251,20 @@ const orders = ref<any[]>([])
 
 const fetchOrders = async () => {
   try {
+    // 构建查询参数
+    let statusParam: number | undefined = undefined
+    let reviewedParam: number | undefined = undefined
+    if (activeTab.value === 'review') {
+      statusParam = 3
+      reviewedParam = 0
+    } else if (activeTab.value !== 'all') {
+      statusParam = parseInt(activeTab.value)
+    }
     const data = await get('/order/my-orders', {
       pageNum: currentPage.value,
       pageSize: 10,
-      status: activeTab.value === 'all' ? undefined : activeTab.value
+      status: statusParam,
+      reviewed: reviewedParam
     })
     orders.value = (data?.list || []).map((o: any) => ({
       id: o.id,
@@ -261,6 +272,7 @@ const fetchOrders = async () => {
       date: o.createdAt,
       createdAt: o.createdAt,
       status: o.status,
+      reviewed: o.reviewed,
       statusText: statusTextMap[o.status] || '未知',
       statusClass: statusClassMap[o.status] || 'text-gray-500',
       productId: o.items?.[0]?.productId || o.productId,
@@ -272,28 +284,40 @@ const fetchOrders = async () => {
       total: o.payAmount || o.totalAmount
     }))
     totalPages.value = Math.ceil((data?.total || 0) / 10)
-    
-    // 更新 tab 计数
-    tabs.value.forEach(tab => {
-      if (tab.value !== 'all') {
-        tab.count = orders.value.filter(o => o.status === parseInt(tab.value)).length
-      }
-    })
   } catch (e) {
     console.error('获取订单列表失败:', e)
     orders.value = []
   }
 }
 
+// 独立获取各状态订单数量（不受当前Tab筛选影响）
+async function fetchOrderCounts() {
+  try {
+    const counts = await get<Record<number, number>>('/order/status-counts')
+    if (counts) {
+      tabs.value[1].count = counts[0] || 0  // 待付款
+      tabs.value[2].count = counts[1] || 0  // 待发货
+      tabs.value[3].count = counts[2] || 0  // 待收货
+      tabs.value[4].count = counts[3] || 0  // 待评价
+      tabs.value[5].count = counts[4] || 0  // 已取消
+      // “全部订单” tab 显示所有状态总和
+      tabs.value[0].count = Object.values(counts).reduce((a: number, b: number) => a + b, 0)
+    }
+  } catch (e) {
+    console.error('获取订单统计失败:', e)
+  }
+}
+
 const filteredOrders = computed(() => {
-  if (activeTab.value === 'all') return orders.value
-  return orders.value.filter(o => o.status === parseInt(activeTab.value))
+  // 后端已按状态筛选，前端直接展示
+  return orders.value
 })
 
 function switchTab(tab: string) {
   activeTab.value = tab
   currentPage.value = 1
   fetchOrders()
+  fetchOrderCounts()
 }
 
 /** 查看订单详情 */
@@ -326,6 +350,7 @@ function formatCountdown(seconds: number): string {
 onMounted(() => {
   userStore.getUserInfo()
   fetchOrders()
+  fetchOrderCounts()
   // 每秒更新倒计时
   countdownTimer = setInterval(() => {
     now.value = Date.now()
@@ -357,7 +382,7 @@ function handleConfirmReceive(order: any) {
 
 /** 去评价 */
 function handleReview(order: any) {
-  navigateTo(`/user/reviews?orderNo=${order.orderNo || order.id}`)
+  navigateTo(`/user/orders/${order.orderNo || order.id}/review`)
 }
 
 /** 取消订单 */

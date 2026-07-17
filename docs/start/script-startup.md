@@ -84,42 +84,45 @@ python docs/scripts/start_all.py --skip-build --skip-frontend
 
 | 命令 | 说明 | 示例 |
 |------|------|------|
-| `restart <服务名>` | 重启指定服务 | `restart byw-order` |
+| `restart <服务名> [--skip-build]` | 重启指定服务（默认先编译打包） | `restart byw-order` |
 | `stop <服务名>` | 停止指定服务 | `stop byw-order` |
-| `start <服务名>` | 启动指定服务 | `start byw-order` |
+| `start <服务名> [--skip-build]` | 启动指定服务（默认先编译打包） | `start byw-order` |
 | `status` | 显示所有服务状态 | `status` |
 | `list` | 列出所有服务名 | `list` |
 | `help` | 显示帮助信息 | `help` |
 | `quit` / `exit` / `q` | 退出交互模式（服务继续运行） | `quit` |
-| `shutdown` | 停止所有服务并退出 | `shutdown` |
+| `shutdown` | 停止所有服务（后端 + 前端）并退出 | `shutdown` |
+
+> **注意**：`restart` 和 `start` 命令默认会先执行 `mvn package -pl <模块> -am -DskipTests` 编译打包，编译成功后再启动服务。如果不需要编译，可加 `--skip-build` 跳过。
 
 ### 可用服务名
 
 ```
+后端微服务:
 byw-gateway    byw-auth       byw-user       byw-product
 byw-cart       byw-order      byw-pay        byw-logistics
 byw-review     byw-promotion  byw-admin
+
+前端:
+byw-web        byw-admin-web
 ```
 
 ### 交互示例
 
 ```
-byw> status
-
-  === 服务状态 ===
-    byw-gateway        :8080  运行中
-    byw-auth           :8081  运行中
-    byw-user           :8082  运行中
-    byw-product        :8083  运行中
-    byw-cart           :8084  运行中
-    byw-order          :8085  运行中
-    ...
-
 byw> restart byw-order
 
   --- 重启 byw-order ---
   [OK] byw-order 已停止
+  [..] 编译 byw-order ...
+  [OK] byw-order 编译完成
   [OK] byw-order :8085  (pid=12345)
+
+byw> restart byw-order --skip-build
+
+  --- 重启 byw-order ---
+  [OK] byw-order 已停止
+  [OK] byw-order :8085  (pid=12346)
 
 byw> quit
 
@@ -132,13 +135,11 @@ byw> quit
 **场景 1：修改了某个服务的代码后重启**
 
 ```bash
-# 1. 在交互模式下重启该服务
+# 在交互模式下重启该服务（自动编译打包 + 启动）
 byw> restart byw-order
 
-# 或者退出后重新编译再启动
-byw> quit
-mvn compile -pl byw-order
-python docs/scripts/start_all.py --skip-build --skip-frontend
+# 如果只改了配置文件不需要重新编译，可跳过构建
+byw> restart byw-order --skip-build
 ```
 
 **场景 2：只想启动后端，不启动前端**
@@ -147,13 +148,13 @@ python docs/scripts/start_all.py --skip-build --skip-frontend
 python docs/scripts/start_all.py --skip-frontend
 ```
 
-**场景 3：快速重启单个服务**
+**场景 3：快速重启单个服务（不重新构建）**
 
 ```bash
 # 直接启动脚本，跳过构建和前端
 python docs/scripts/start_all.py --skip-build --skip-frontend
 # 进入交互模式后
-byw> restart byw-order
+byw> restart byw-order --skip-build
 byw> quit
 ```
 

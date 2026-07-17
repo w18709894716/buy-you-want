@@ -199,4 +199,100 @@ public class ReviewServiceImpl implements ReviewService {
         return reviewMapper.selectCount(
                 new LambdaQueryWrapper<Review>().eq(Review::getOrderNo, orderNo)) > 0;
     }
+
+    @Override
+    public PageResult<Review> adminListReviews(Integer pageNum, Integer pageSize, Integer rating, Integer status) {
+        LambdaQueryWrapper<Review> wrapper = new LambdaQueryWrapper<Review>()
+                .eq(rating != null, Review::getRating, rating)
+                .eq(status != null, Review::getStatus, status)
+                .orderByDesc(Review::getCreatedAt);
+        Page<Review> page = new Page<>(pageNum, pageSize);
+        Page<Review> reviewPage = reviewMapper.selectPage(page, wrapper);
+        return PageResult.of(reviewPage.getRecords(), reviewPage.getTotal(), pageNum, pageSize);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void adminUpdateVisible(Long reviewId, Integer status) {
+        Review review = reviewMapper.selectById(reviewId);
+        if (review == null) {
+            throw new BusinessException("评价不存在");
+        }
+        review.setStatus(status);
+        reviewMapper.updateById(review);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void adminDeleteReview(Long reviewId) {
+        Review review = reviewMapper.selectById(reviewId);
+        if (review == null) {
+            throw new BusinessException("评价不存在");
+        }
+        reviewMapper.deleteById(reviewId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void createBatchReviews(Long userId, String orderNo, List<ReviewDetail> reviewDetails) {
+        // 1. 检查是否已评价
+        if (reviewExists(orderNo)) {
+            throw new BusinessException("该订单已评价");
+        }
+
+        for (ReviewDetail detail : reviewDetails) {
+            detail.setOrderId(orderNo);
+            detail.setUserId(userId);
+
+            // 2. 保存到MySQL
+            Review review = new Review();
+            review.setOrderNo(orderNo);
+            review.setUserId(userId);
+            review.setProductId(detail.getProductId());
+            review.setSkuId(detail.getSkuId());
+            review.setRating(detail.getRating());
+            review.setContent(detail.getContent());
+            review.setIsAnonymous(detail.getImages() != null && !detail.getImages().isEmpty() ? 1 : 0);
+            review.setHasImage(detail.getImages() != null && !detail.getImages().isEmpty() ? 1 : 0);
+            review.setStatus(1);
+            reviewMapper.insert(review);
+
+            // 3. 保存图片
+            if (detail.getImages() != null) {
+                for (String imageUrl : detail.getImages()) {
+                    ReviewImage image = new ReviewImage();
+                    image.setReviewId(review.getId());
+                    image.setImageUrl(imageUrl);
+                    image.setType(0);
+                    reviewImageMapper.insert(image);
+                }
+            }
+
+            // 4. 保存到MongoDB
+            detail.setCreatedAt(LocalDateTime.now());
+            reviewDetailRepository.save(detail);
+        }
+
+        // 5. 更新订单评价状态
+        try {
+            orderFeignClient.updateReviewed(orderNo, 1);
+        } catch (Exception e) {
+            log.warn("更新订单评价状态失败: orderNo={}, error={}", orderNo, e.getMessage());
+        }
+
+        log.info("批量评价创建成功: orderNo={}, count={}", orderNo, reviewDetails.size());
+    }
+
+    @Override
+    public PageResult<Review> getUserReviews(Long userId, Integer pageNum, Integer pageSize, Boolean hasImage) {
+        LambdaQueryWrapper<Review> wrapper = new LambdaQueryWrapper<Review>()
+                .eq(Review::getUserId, userId);
+        if (Boolean.TRUE.equals(hasImage)) {
+            wrapper.eq(Review::getHasImage, 1);
+        }
+        wrapper.orderByDesc(Review::getCreatedAt);
+        Page<Review> page = new Page<>(pageNum, pageSize);
+        Page<Review> reviewPage = reviewMapper.selectPage(page, wrapper);
+        return PageResult.of(reviewPage.getRecords(), reviewPage.getTotal(), pageNum, pageSize);
+    }
 }

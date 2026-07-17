@@ -20,7 +20,7 @@ public interface OrderService {
     /**
      * 获取用户订单列表
      */
-    PageResult<OrderDetailDTO> getUserOrders(Long userId, Integer status, Integer pageNum, Integer pageSize);
+    PageResult<OrderDetailDTO> getUserOrders(Long userId, Integer status, Integer reviewed, Integer pageNum, Integer pageSize);
 
     /**
      * 取消订单

@@ -45,10 +45,11 @@ public class OrderController {
     @GetMapping("/my-orders")
     public R<PageResult<OrderDetailDTO>> myOrders(
             @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) Integer reviewed,
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "10") Integer pageSize) {
         Long userId = UserContext.getUserId();
-        return R.ok(orderService.getUserOrders(userId, status, pageNum, pageSize));
+        return R.ok(orderService.getUserOrders(userId, status, reviewed, pageNum, pageSize));
     }
 
     @Operation(summary = "取消订单")
@@ -95,7 +96,7 @@ public class OrderController {
         }
         return R.fail("系统繁忙，请稍后再试");
     }
-    private R<PageResult<OrderDetailDTO>> myOrdersFallback(Integer status, Integer pageNum, Integer pageSize, Throwable ex) {
+    private R<PageResult<OrderDetailDTO>> myOrdersFallback(Integer status, Integer reviewed, Integer pageNum, Integer pageSize, Throwable ex) {
         log.error("[order:list] 触发 fallback，异常: {}", ex.getMessage(), ex);
         if (ex instanceof BusinessException) {
             return R.fail(ex.getMessage());

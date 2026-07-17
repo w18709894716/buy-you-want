@@ -82,11 +82,13 @@ def start_frontend(name: str, work_dir: str):
         creationflags=subprocess.CREATE_NEW_CONSOLE,
     )
     ok(f"{name}  ->  {work_dir}")
+    # 注册到 running_services，以便 shutdown 能通过 PID 停止
+    running_services[name] = proc
     return proc
 
 
 def stop_service(name: str) -> bool:
-    """停止单个服务（通过窗口标题查找）"""
+    """停止单个服务（优先通过 PID，备用通过窗口标题/端口查找）"""
     if name in running_services:
         proc = running_services[name]
         if proc and proc.pid:
@@ -103,6 +105,15 @@ def stop_service(name: str) -> bool:
         if name in running_services:
             del running_services[name]
         return True
+    # 前端备用：通过端口查找
+    frontend_ports = {"byw-web": 3000, "byw-admin-web": 5173}
+    if name in frontend_ports:
+        port_pids = find_pids_by_port(frontend_ports[name])
+        for pid in port_pids:
+            os.system(f"taskkill /PID {pid} /F /T >nul 2>&1")
+        if port_pids:
+            ok(f"{name} 已停止 (端口 pid={','.join(map(str, port_pids))})")
+            return True
     warn(f"{name} 未运行")
     return False
 
@@ -129,28 +140,74 @@ def find_pids_by_window_title(title: str) -> list:
     return pids
 
 
-def restart_service(name: str):
-    """重启单个服务"""
+def find_pids_by_port(port: int) -> list:
+    """通过 netstat 查找占用指定端口的进程"""
+    pids = []
+    try:
+        output = subprocess.check_output(
+            ["netstat", "-ano"], text=True, stderr=subprocess.DEVNULL,
+        )
+        for line in output.splitlines():
+            if f":{port} " in line and "LISTENING" in line:
+                parts = line.split()
+                pid = int(parts[-1])
+                if pid not in pids:
+                    pids.append(pid)
+    except Exception:
+        pass
+    return pids
+
+
+def build_service(name: str) -> bool:
+    """编译打包单个服务模块"""
+    info(f"编译 {name} ...")
+    result = subprocess.run(
+        f"mvn package -pl {name} -am -DskipTests -q",
+        cwd=ROOT,
+        shell=True,
+    )
+    if result.returncode != 0:
+        warn(f"{name} 编译失败！")
+        return False
+    ok(f"{name} 编译完成")
+    return True
+
+
+def restart_service(name: str, skip_build: bool = False):
+    """重启单个服务（默认先编译打包）"""
     if name not in ALL_JAVA_SERVICES:
         warn(f"未知服务: {name}")
         return
     print(f"\n  --- 重启 {name} ---")
     stop_service(name)
     time.sleep(1)
+    if not skip_build:
+        if not build_service(name):
+            return
     start_java_service(name)
 
 
 def show_status():
     """显示服务状态"""
     print("\n  \033[36m=== 服务状态 ===\033[0m")
+    # 后端服务
     for name in ALL_JAVA_SERVICES:
         port = PORTS.get(name, '?')
         if name in running_services:
             proc = running_services[name]
             status = "\033[32m运行中\033[0m" if proc.poll() is None else "\033[31m已退出\033[0m"
         else:
-            # 检查窗口是否还存在
             pids = find_pids_by_window_title(name)
+            status = "\033[33m外部运行\033[0m" if pids else "\033[37m未启动\033[0m"
+        print(f"    {name:18} :{str(port):5}  {status}")
+    # 前端
+    frontend = [("byw-web", 3000), ("byw-admin-web", 5173)]
+    for name, port in frontend:
+        if name in running_services:
+            proc = running_services[name]
+            status = "\033[32m运行中\033[0m" if proc.poll() is None else "\033[31m已退出\033[0m"
+        else:
+            pids = find_pids_by_port(port)
             status = "\033[33m外部运行\033[0m" if pids else "\033[37m未启动\033[0m"
         print(f"    {name:18} :{str(port):5}  {status}")
     print()
@@ -160,14 +217,18 @@ def print_help():
     """打印帮助信息"""
     print("""
   \033[36m可用命令:\033[0m
-    \033[1mrestart <服务名>\033[0m   重启指定服务 (如: restart byw-order)
-    \033[1mstop <服务名>\033[0m      停止指定服务
-    \033[1mstart <服务名>\033[0m     启动指定服务
-    \033[1mstatus\033[0m             显示所有服务状态
-    \033[1mlist\033[0m               列出所有服务名
-    \033[1mhelp\033[0m               显示此帮助信息
-    \033[1mquit\033[0m / \033[1mexit\033[0m        退出（不停止服务）
-    \033[1mshutdown\033[0m           停止所有服务并退出
+    \033[1mrestart <服务名> [--skip-build]\033[0m   重启指定服务（默认先编译打包）
+    \033[1mstop <服务名>\033[0m                    停止指定服务
+    \033[1mstart <服务名> [--skip-build]\033[0m    启动指定服务（默认先编译打包）
+    \033[1mstatus\033[0m                           显示所有服务状态
+    \033[1mlist\033[0m                             列出所有服务名
+    \033[1mhelp\033[0m                             显示此帮助信息
+    \033[1mquit\033[0m / \033[1mexit\033[0m                      退出（不停止服务）
+    \033[1mshutdown\033[0m                         停止所有服务（后端 + 前端）并退出
+
+  \033[36m示例:\033[0m
+    restart byw-order              编译并重启订单服务
+    restart byw-order --skip-build 跳过编译直接重启
 
   \033[36m服务名列表:\033[0m
     """ + ", ".join(ALL_JAVA_SERVICES))
@@ -271,11 +332,14 @@ def interactive_mode(all_procs: list):
                 print("\n  正在停止所有服务...")
                 for name in list(running_services.keys()):
                     stop_service(name)
-                # 停止前端
-                for title in ["byw-web", "byw-admin-web"]:
-                    pids = find_pids_by_window_title(title)
-                    for pid in pids:
-                        os.system(f"taskkill /PID {pid} /F /T >nul 2>&1")
+                # 前端备用停止：通过端口查找（以防 npm 修改窗口标题导致未匹配）
+                for port, name in [(3000, "byw-web"), (5173, "byw-admin-web")]:
+                    if name not in running_services:
+                        pids = find_pids_by_port(port)
+                        for pid in pids:
+                            os.system(f"taskkill /PID {pid} /F /T >nul 2>&1")
+                        if pids:
+                            ok(f"{name} 已停止 (端口 pid={','.join(map(str, pids))})")
                 print("  已停止所有服务。")
                 break
 
@@ -286,22 +350,30 @@ def interactive_mode(all_procs: list):
                 show_status()
 
             elif action == "list":
-                print("\n  可用服务:")
+                print("\n  \033[36m后端服务:\033[0m")
                 for name in ALL_JAVA_SERVICES:
                     print(f"    {name} (:{PORTS[name]})")
+                print("\n  \033[36m前端:\033[0m")
+                print("    byw-web (:3000)")
+                print("    byw-admin-web (:5173)")
                 print()
 
             elif action == "restart" and len(parts) >= 2:
-                restart_service(parts[1])
+                skip = "--skip-build" in parts
+                restart_service(parts[1], skip_build=skip)
 
             elif action == "stop" and len(parts) >= 2:
                 stop_service(parts[1])
 
             elif action == "start" and len(parts) >= 2:
                 name = parts[1]
+                skip = "--skip-build" in parts
                 if name not in ALL_JAVA_SERVICES:
                     warn(f"未知服务: {name}")
                 else:
+                    if not skip:
+                        if not build_service(name):
+                            continue
                     start_java_service(name)
 
             else:

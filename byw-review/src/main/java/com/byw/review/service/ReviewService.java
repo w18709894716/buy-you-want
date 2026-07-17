@@ -3,6 +3,7 @@ package com.byw.review.service;
 import com.byw.api.review.dto.ReviewStatsDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.review.document.ReviewDetail;
+import com.byw.review.entity.Review;
 
 public interface ReviewService {
 
@@ -31,4 +32,29 @@ public interface ReviewService {
      * 检查订单是否已评价
      */
     boolean reviewExists(String orderNo);
+
+    /**
+     * 管理端：获取评价列表
+     */
+    PageResult<Review> adminListReviews(Integer pageNum, Integer pageSize, Integer rating, Integer status);
+
+    /**
+     * 管理端：更新评价显示状态
+     */
+    void adminUpdateVisible(Long reviewId, Integer status);
+
+    /**
+     * 管理端：删除评价
+     */
+    void adminDeleteReview(Long reviewId);
+
+    /**
+     * 批量创建评价（一个订单多个商品）
+     */
+    void createBatchReviews(Long userId, String orderNo, java.util.List<ReviewDetail> reviewDetails);
+
+    /**
+     * 获取用户评价列表
+     */
+    PageResult<Review> getUserReviews(Long userId, Integer pageNum, Integer pageSize, Boolean hasImage);
 }

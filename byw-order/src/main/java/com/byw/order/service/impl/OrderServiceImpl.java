@@ -173,10 +173,11 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public PageResult<OrderDetailDTO> getUserOrders(Long userId, Integer status, Integer pageNum, Integer pageSize) {
+    public PageResult<OrderDetailDTO> getUserOrders(Long userId, Integer status, Integer reviewed, Integer pageNum, Integer pageSize) {
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<Order>()
                 .eq(Order::getUserId, userId)
                 .eq(status != null, Order::getStatus, status)
+                .eq(reviewed != null, Order::getReviewed, reviewed)
                 .orderByDesc(Order::getCreatedAt);
 
         Page<Order> page = new Page<>(pageNum, pageSize);
@@ -278,7 +279,7 @@ public class OrderServiceImpl implements OrderService {
         List<Order> orders = orderMapper.selectList(
                 new LambdaQueryWrapper<Order>()
                         .eq(Order::getUserId, userId)
-                        .in(Order::getStatus, 0, 1, 2, 3)
+                        .in(Order::getStatus, 0, 1, 2, 3, 4)
                         .select(Order::getStatus, Order::getReviewed));
 
         java.util.Map<Integer, Integer> counts = new java.util.HashMap<>();
@@ -286,6 +287,7 @@ public class OrderServiceImpl implements OrderService {
         counts.put(1, 0); // 待发货
         counts.put(2, 0); // 待收货
         counts.put(3, 0); // 待评价（已完成未评价）
+        counts.put(4, 0); // 已取消
 
         for (Order order : orders) {
             int status = order.getStatus();

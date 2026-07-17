@@ -115,7 +115,15 @@ const fetchData = async () => {
   loading.value = true
   try {
     const data: any = await request.get('/admin/promotion/coupon/list')
-    tableData.value = data || []
+    tableData.value = (data?.list || []).map((item: any) => ({
+      ...item,
+      // 后端 type: 1=满减 2=折扣，转为字符串供模板判断
+      type: item.type === 1 ? 'FIXED' : 'PERCENT',
+      // 后端 discountValue -> 前端 value
+      value: item.discountValue ?? item.value,
+      // 后端 claimedCount -> 前端 usedCount
+      usedCount: item.claimedCount ?? item.usedCount
+    }))
   } catch (e: any) {
     if (!e._handled) ElMessage.error(e.message || '获取优惠券列表失败')
   } finally {
@@ -190,7 +198,7 @@ const submitForm = async () => {
         endTime: form.timeRange[1]
       }
       if (dialogType.value === 'add') {
-        await request.post('/admin/promotion/coupon/create', payload)
+        await request.post('/admin/promotion/coupon', payload)
         ElMessage.success('创建成功')
       } else {
         await request.put(`/admin/promotion/coupon/${editingId.value}`, payload)

@@ -106,7 +106,7 @@ const statsCards = ref([
   { icon: '💰', label: '待付款', value: 0, path: '/user/orders?status=0' },
   { icon: '📋', label: '待发货', value: 0, path: '/user/orders?status=1' },
   { icon: '🚚', label: '待收货', value: 0, path: '/user/orders?status=2' },
-  { icon: '⭐', label: '待评价', value: 0, path: '/user/orders?status=3' },
+  { icon: '⭐', label: '待评价', value: 0, path: '/user/orders?status=review' },
   { icon: '🎟️', label: '优惠券', value: 0, path: '/user/coupons' },
 ])
 

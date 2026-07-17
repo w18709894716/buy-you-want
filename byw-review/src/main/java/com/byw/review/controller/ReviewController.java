@@ -6,6 +6,7 @@ import com.byw.common.core.result.R;
 import com.byw.common.security.annotation.RequireLogin;
 import com.byw.common.security.context.UserContext;
 import com.byw.review.document.ReviewDetail;
+import com.byw.review.entity.Review;
 import com.byw.review.service.ReviewService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -65,6 +66,35 @@ public class ReviewController {
         return R.ok(reviewService.getReviewStats(productId));
     }
 
+    @Operation(summary = "批量创建评价")
+    @PostMapping("/create-batch")
+    public R<Void> createBatch(@RequestBody BatchReviewRequest request) {
+        List<ReviewDetail> details = new java.util.ArrayList<>();
+        for (ReviewItem item : request.getReviews()) {
+            ReviewDetail detail = new ReviewDetail();
+            detail.setOrderId(item.getOrderNo());
+            detail.setProductId(item.getProductId());
+            detail.setSkuId(item.getSkuId());
+            detail.setUserId(UserContext.getUserId());
+            detail.setRating(item.getRating());
+            detail.setContent(item.getContent());
+            detail.setImages(item.getImages());
+            details.add(detail);
+        }
+        String orderNo = request.getReviews().get(0).getOrderNo();
+        reviewService.createBatchReviews(UserContext.getUserId(), orderNo, details);
+        return R.ok();
+    }
+
+    @Operation(summary = "获取我的评价列表")
+    @GetMapping("/my-reviews")
+    public R<PageResult<Review>> myReviews(
+            @RequestParam(defaultValue = "1") Integer pageNum,
+            @RequestParam(defaultValue = "10") Integer pageSize,
+            @RequestParam(required = false) Boolean hasImage) {
+        return R.ok(reviewService.getUserReviews(UserContext.getUserId(), pageNum, pageSize, hasImage));
+    }
+
     @Data
     public static class CreateReviewRequest {
         private String orderNo;
@@ -73,6 +103,22 @@ public class ReviewController {
         private String content;
         private List<String> images;
         private List<String> videos;
+        private Integer isAnonymous;
+    }
+
+    @Data
+    public static class BatchReviewRequest {
+        private List<ReviewItem> reviews;
+    }
+
+    @Data
+    public static class ReviewItem {
+        private String orderNo;
+        private Long productId;
+        private Long skuId;
+        private Integer rating;
+        private String content;
+        private List<String> images;
         private Integer isAnonymous;
     }
 

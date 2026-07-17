@@ -19,8 +19,13 @@
             <div class="text-sm text-gray-500">订单号</div>
             <div class="text-lg font-medium text-gray-800 mt-1">{{ order.orderNo }}</div>
           </div>
-          <div :class="statusClassMap[order.status]" class="text-lg font-medium">
-            {{ statusTextMap[order.status] || '未知状态' }}
+          <div class="text-right">
+            <div :class="statusClassMap[order.status]" class="text-lg font-medium">
+              {{ statusTextMap[order.status] || '未知状态' }}
+            </div>
+            <div v-if="order.status === 0 && isOrderExpired(order)" class="text-xs text-red-500 mt-1">
+              付款超时
+            </div>
           </div>
         </div>
       </div>
@@ -85,7 +90,7 @@
       <!-- 操作按钮 -->
       <div class="bg-white rounded-lg p-6 flex justify-end gap-3">
         <button
-          v-if="order.status === 0"
+          v-if="order.status === 0 && !isOrderExpired(order)"
           class="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary-600 transition-colors"
           @click="handlePay"
         >
@@ -183,6 +188,17 @@ const fetchOrderDetail = async () => {
 
 const confirmDialog = ref<{ title: string; message: string; onConfirm: () => void } | null>(null)
 
+// ===== 待付款超时判断（30分钟） =====
+const TIMEOUT_MS = 30 * 60 * 1000
+const now = ref(Date.now())
+let countdownTimer: ReturnType<typeof setInterval> | null = null
+
+function isOrderExpired(order: any): boolean {
+  if (!order?.createdAt || order.status !== 0) return false
+  const deadline = new Date(order.createdAt).getTime() + TIMEOUT_MS
+  return now.value >= deadline
+}
+
 function handlePay() {
   alert(`订单 ${orderNo.value} 进入支付流程`)
 }
@@ -221,5 +237,13 @@ function handleCancel() {
 
 onMounted(() => {
   fetchOrderDetail()
+  // 每秒更新超时判断
+  countdownTimer = setInterval(() => {
+    now.value = Date.now()
+  }, 1000)
+})
+
+onUnmounted(() => {
+  if (countdownTimer) clearInterval(countdownTimer)
 })
 </script>

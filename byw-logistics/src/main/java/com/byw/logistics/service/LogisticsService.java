@@ -2,6 +2,8 @@ package com.byw.logistics.service;
 
 import com.byw.api.logistics.dto.LogisticsDTO;
 import com.byw.api.logistics.dto.ShipRequestDTO;
+import com.byw.common.core.result.PageResult;
+import com.byw.logistics.entity.LogisticsOrder;
 import com.byw.logistics.entity.LogisticsTrace;
 
 public interface LogisticsService {
@@ -25,4 +27,14 @@ public interface LogisticsService {
      * @param trace 轨迹信息
      */
     void updateTrace(Long logisticsId, LogisticsTrace trace);
+
+    /**
+     * 管理端：获取物流列表
+     */
+    PageResult<LogisticsOrder> adminListLogistics(Integer pageNum, Integer pageSize, String orderNo, Integer status);
+
+    /**
+     * 管理端：获取物流轨迹
+     */
+    java.util.List<LogisticsTrace> adminGetTrace(Long logisticsId);
 }

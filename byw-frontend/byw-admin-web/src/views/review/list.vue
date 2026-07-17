@@ -110,16 +110,12 @@ const fetchData = async () => {
     const data: any = await request.get('/admin/review/list', {
       params: { page: page.value, pageSize: pageSize.value, ...searchForm }
     })
-    tableData.value = data.records || []
+    tableData.value = data.list || []
     total.value = data.total || 0
-  } catch {
-    tableData.value = [
-      { id: 1, username: '张三', productName: 'Apple iPhone 15 Pro Max', rating: 5, content: '非常好用，拍照效果一流，电池续航也很满意！', images: ['img1.jpg', 'img2.jpg'], created: '2025-06-10 14:20:30', visible: true },
-      { id: 2, username: '李四', productName: 'Sony WH-1000XM5 耳机', rating: 4, content: '降噪效果很好，佩戴舒适，就是价格稍贵。', images: [], created: '2025-06-08 09:15:22', visible: true },
-      { id: 3, username: '王五', productName: 'Nike Air Max 270', rating: 3, content: '鞋子质量一般，穿了一个月就有开胶的迹象。', images: ['img3.jpg'], created: '2025-06-05 16:40:10', visible: false },
-      { id: 4, username: '赵六', productName: '小米14 Ultra', rating: 5, content: '徕卡镜头拍照太棒了，性价比超高！', images: [], created: '2025-06-12 11:30:45', visible: true }
-    ]
-    total.value = 4
+  } catch (e: any) {
+    if (!e._handled) ElMessage.error(e.message || '获取评论列表失败')
+    tableData.value = []
+    total.value = 0
   } finally {
     loading.value = false
   }

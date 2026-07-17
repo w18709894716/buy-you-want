@@ -1,9 +1,11 @@
 package com.byw.logistics.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byw.api.logistics.dto.LogisticsDTO;
 import com.byw.api.logistics.dto.ShipRequestDTO;
 import com.byw.common.core.exception.BusinessException;
+import com.byw.common.core.result.PageResult;
 import com.byw.logistics.entity.LogisticsOrder;
 import com.byw.logistics.entity.LogisticsTrace;
 import com.byw.logistics.mapper.LogisticsOrderMapper;
@@ -144,5 +146,24 @@ public class LogisticsServiceImpl implements LogisticsService {
         if (description.contains("派送") || description.contains("派件")) return 2;
         if (description.contains("运输") || description.contains("到达") || description.contains("转运")) return 1;
         return null;
+    }
+
+    @Override
+    public PageResult<LogisticsOrder> adminListLogistics(Integer pageNum, Integer pageSize, String orderNo, Integer status) {
+        LambdaQueryWrapper<LogisticsOrder> wrapper = new LambdaQueryWrapper<LogisticsOrder>()
+                .like(orderNo != null && !orderNo.isEmpty(), LogisticsOrder::getOrderNo, orderNo)
+                .eq(status != null, LogisticsOrder::getStatus, status)
+                .orderByDesc(LogisticsOrder::getCreatedAt);
+        Page<LogisticsOrder> page = new Page<>(pageNum, pageSize);
+        Page<LogisticsOrder> resultPage = logisticsOrderMapper.selectPage(page, wrapper);
+        return PageResult.of(resultPage.getRecords(), resultPage.getTotal(), pageNum, pageSize);
+    }
+
+    @Override
+    public List<LogisticsTrace> adminGetTrace(Long logisticsId) {
+        return logisticsTraceMapper.selectList(
+                new LambdaQueryWrapper<LogisticsTrace>()
+                        .eq(LogisticsTrace::getLogisticsId, logisticsId)
+                        .orderByDesc(LogisticsTrace::getTraceTime));
     }
 }
