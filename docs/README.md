@@ -6,22 +6,10 @@
 
 ## 快速开始
 
-**启动项目（二选一）：**
-
-**方式一：脚本启动（推荐）**
-
-```bash
-python docs/scripts/start_all.py          # 一键启动全部服务
-python docs/scripts/start_all.py --skip-build  # 跳过构建，快速启动
-```
-
-详见 [脚本方式启动](./start/script-startup.md)
-
-**方式二：手动启动**
-
 1. **安装中间件** — [中间件安装指南](./start/middleware-setup.md)（Nacos / MySQL / Redis / RocketMQ / ES / MongoDB / Sentinel）
 2. **启动后端** — [后端启动指南](./start/backend-startup.md)（编译 → 建库 → 按顺序启动 11 个服务）
-3. **启动前端** — [前端启动指南](./start/frontend-startup.md)（管理端 :5174 / 用户端 :3000）
+3. **启动前端** — [前端启动指南](./start/frontend-startup.md)（管理端 :5173 / 用户端 :3000）
+4. **脚本启动**（推荐，可跳过步骤 2、3） — [脚本启动指南](./start/script-startup.md)（一键启动/停止前后端，支持交互式重启单个服务）
 
 ---
 
