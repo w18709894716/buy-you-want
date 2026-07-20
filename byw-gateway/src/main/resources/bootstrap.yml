@@ -4,6 +4,8 @@ server:
 spring:
   application:
     name: byw-gateway
+  codec:
+    max-in-memory-size: 50MB
   cloud:
     nacos:
       discovery:
@@ -92,6 +94,13 @@ spring:
           filters:
             - StripPrefix=1
 
+        - id: byw-file
+          uri: lb://byw-file
+          predicates:
+            - Path=/api/file/**
+          filters:
+            - StripPrefix=1
+
         - id: api-docs-auth
           uri: lb://byw-auth
           predicates:
@@ -155,6 +164,13 @@ spring:
           filters:
             - RewritePath=/v3/api-docs/byw-promotion, /v3/api-docs
 
+        - id: api-docs-file
+          uri: lb://byw-file
+          predicates:
+            - Path=/v3/api-docs/byw-file
+          filters:
+            - RewritePath=/v3/api-docs/byw-file, /v3/api-docs
+
         - id: api-docs-admin
           uri: lb://byw-admin
           predicates:
@@ -195,5 +211,7 @@ springdoc:
         url: /v3/api-docs/byw-review
       - name: Promotion Service
         url: /v3/api-docs/byw-promotion
+      - name: File Service
+        url: /v3/api-docs/byw-file
       - name: Admin BFF
         url: /v3/api-docs/byw-admin

@@ -64,7 +64,7 @@
         <!-- 商品图片 -->
         <el-divider content-position="left">商品图片</el-divider>
         <el-form-item label="主图">
-          <ImageUpload v-model="formData.images" :limit="6" />
+          <ImageUpload v-model="formData.images" :limit="6" folder="product" />
         </el-form-item>
 
         <!-- 商品描述 -->
@@ -181,7 +181,7 @@ const loadProduct = async () => {
   loading.value = true
   try {
     const data: any = await request.get(`/admin/product/${route.params.id}`)
-    // 转换 categoryId 为完整路径（cascader 需要 [parentId, childId]）
+    // 转换 categoryId 为完整路径（cascader 需要 [parentId, childId] 格式）
     const path = findCategoryPath(categoryOptions.value, data.categoryId)
     formData.categoryId = path || (data.categoryId ? [data.categoryId] : [])
     formData.name = data.name || ''
@@ -205,7 +205,7 @@ const loadProduct = async () => {
         try {
           const parsed = JSON.parse(sku.specData || '{}')
           Object.keys(parsed).forEach(k => {
-            // 过滤掉脏数据 key（如 spec1、spec2）
+            // 过滤掉脏数据 key（如 spec1、spec2 等）
             if (k && !/^spec\d+$/.test(k)) specNameSet.add(k)
           })
           specs = Object.values(parsed) as string[]

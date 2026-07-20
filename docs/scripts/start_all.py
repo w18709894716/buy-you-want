@@ -20,7 +20,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 BATCH_1 = ["byw-gateway", "byw-auth"]
 BATCH_2 = ["byw-user", "byw-product"]
 BATCH_3 = ["byw-cart", "byw-order", "byw-pay",
-           "byw-logistics", "byw-review", "byw-promotion", "byw-admin"]
+           "byw-logistics", "byw-review", "byw-promotion", "byw-file", "byw-admin"]
 
 ALL_JAVA_SERVICES = BATCH_1 + BATCH_2 + BATCH_3
 
@@ -28,7 +28,7 @@ PORTS = {
     "byw-gateway": 8080, "byw-auth": 8081, "byw-user": 8082,
     "byw-product": 8083, "byw-cart": 8084, "byw-order": 8085,
     "byw-pay": 8086, "byw-logistics": 8087, "byw-review": 8088,
-    "byw-promotion": 8089, "byw-admin": 8090,
+    "byw-promotion": 8089, "byw-admin": 8090, "byw-file": 8091,
 }
 
 # 全局变量：存储正在运行的服务进程

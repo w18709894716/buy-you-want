@@ -1,7 +1,7 @@
 <template>
   <el-upload
     class="image-upload"
-    action="/api/admin/upload"
+    :action="uploadAction"
     :headers="headers"
     :file-list="fileList"
     :limit="limit"
@@ -41,10 +41,14 @@ import type { UploadFile, UploadUserFile } from 'element-plus'
 const props = withDefaults(defineProps<{
   modelValue?: string[]
   limit?: number
+  folder?: string
 }>(), {
   modelValue: () => [],
-  limit: 6
+  limit: 6,
+  folder: 'default'
 })
+
+const uploadAction = computed(() => `/api/admin/upload?folder=${props.folder}`)
 
 const emit = defineEmits<{
   'update:modelValue': [value: string[]]
@@ -82,7 +86,14 @@ const beforeUpload = (file: File) => {
 }
 
 const handleSuccess = (response: any, _file: UploadFile) => {
-  const url = response.data?.url || response.url || ''
+  // R<String> 响应: { code: 200, data: "url", message: "ok" }
+  const url = typeof response.data === 'string'
+    ? response.data
+    : response.data?.url || response.url || ''
+  if (!url) {
+    ElMessage.error('上传成功但未获取到文件地址')
+    return
+  }
   const urls = fileList.value.map(f => f.url || '').filter(Boolean)
   urls.push(url)
   emit('update:modelValue', urls)

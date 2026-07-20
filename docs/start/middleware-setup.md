@@ -274,6 +274,57 @@ mongosh
 
 ---
 
+## MinIO（对象存储）
+
+> **说明**：MinIO 为 byw-file 文件微服务提供底层存储能力，用于存储用户上传的商品评价图片等文件。
+
+### 下载
+
+- 官方下载页: https://min.io/download
+- Windows 直接下载: https://dl.min.io/server/minio/release/windows-amd64/minio.exe
+
+### 安装步骤
+
+1. 将 `minio.exe` 放到固定目录（如 `D:\minio\`）
+
+2. 创建数据目录（如 `D:\minio\data`）
+
+3. 启动（新开 CMD 窗口）：
+   ```cmd
+   set MINIO_ROOT_USER=minioadmin
+   set MINIO_ROOT_PASSWORD=minioadmin
+   D:\minio\minio.exe server D:\minio\data --console-address ":9001"
+   ```
+
+4. 端口说明：
+   - 对象 API 端口：**9000**（byw-file 服务连接此端口）
+   - 管理控制台端口：**9001**
+
+5. 访问管理控制台：http://localhost:9001
+   - 默认账号密码：`minioadmin` / `minioadmin`
+
+> **提示**：byw-file 服务首次启动时会自动创建 `byw-files` Bucket，无需手动操作。
+
+### 验证
+
+浏览器访问 http://localhost:9001 能看到 MinIO 控制台登录页面即表示启动成功。
+
+### 配置说明
+
+byw-file 服务的 MinIO 配置（位于 `byw-file/src/main/resources/bootstrap.yml`）：
+
+```yaml
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  access-key: ${MINIO_ACCESS_KEY:minioadmin}
+  secret-key: ${MINIO_SECRET_KEY:minioadmin}
+  bucket-name: ${MINIO_BUCKET:byw-files}
+```
+
+可通过环境变量覆盖默认值。
+
+---
+
 ## Seata 2.0.0（分布式事务，可选）
 
 > **说明**：Seata 是可选组件。如果不需要分布式事务，可以不启动 Seata Server，byw-order 会持续打印警告日志但不影响基本业务。
@@ -339,6 +390,8 @@ bin\seata-server.bat
 ```
 
 默认端口：**8091**（客户端连接）/ **7091**（TC 通信）
+
+> **端口冲突提示**：Seata Server 默认端口 8091 与 byw-file 微服务端口相同。若两者都需启动，请修改 Seata 端口：`seata-server.bat -p 8092`，或修改 byw-file 的 `bootstrap.yml` 中 `server.port`。
 
 ### 验证
 

@@ -113,14 +113,20 @@
               </div>
               <label
                 v-if="item.images.length < 9"
-                class="w-20 h-20 border-2 border-dashed border-gray-200 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-primary transition-colors"
+                class="w-20 h-20 border-2 border-dashed border-gray-200 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-primary transition-colors relative"
               >
-                <span class="text-gray-300 text-2xl">+</span>
-                <span class="text-xs text-gray-400 mt-0.5">上传图片</span>
+                <template v-if="uploading[idx]">
+                  <span class="text-primary text-xs">上传中...</span>
+                </template>
+                <template v-else>
+                  <span class="text-gray-300 text-2xl">+</span>
+                  <span class="text-xs text-gray-400 mt-0.5">上传图片</span>
+                </template>
                 <input
                   type="file"
                   accept="image/*"
                   class="hidden"
+                  :disabled="uploading[idx]"
                   @change="handleImageUpload($event, idx)"
                 />
               </label>
@@ -199,7 +205,7 @@
 </template>
 
 <script setup lang="ts">
-import { get, post } from '~/utils/request'
+import { get, post, upload } from '~/utils/request'
 
 definePageMeta({ middleware: ['auth'] })
 
@@ -211,6 +217,7 @@ const order = ref<any>(null)
 const alreadyReviewed = ref(false)
 const submitting = ref(false)
 const showSuccess = ref(false)
+const uploading = reactive<Record<number, boolean>>({})
 
 // ===== Toast 提示 =====
 interface Toast { id: number; message: string; type: 'error' | 'success' | 'info' }
@@ -257,8 +264,8 @@ function ratingColorClass(rating: number): string {
   return 'text-gray-400'
 }
 
-/** 图片上传处理（本地预览） */
-function handleImageUpload(event: Event, idx: number) {
+/** 图片上传处理（上传到文件服务） */
+async function handleImageUpload(event: Event, idx: number) {
   const input = event.target as HTMLInputElement
   if (!input.files?.length) return
   const file = input.files[0]
@@ -266,12 +273,18 @@ function handleImageUpload(event: Event, idx: number) {
     showToast('图片大小不能超过 5MB')
     return
   }
-  const reader = new FileReader()
-  reader.onload = () => {
-    reviewItems.value[idx].images.push(reader.result as string)
+  uploading[idx] = true
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    const url = await upload<string>('/file/upload?folder=review', formData)
+    reviewItems.value[idx].images.push(url)
+  } catch (e: any) {
+    showToast(e.message || '图片上传失败')
+  } finally {
+    uploading[idx] = false
+    input.value = ''
   }
-  reader.readAsDataURL(file)
-  input.value = ''
 }
 
 /** 获取订单信息 */

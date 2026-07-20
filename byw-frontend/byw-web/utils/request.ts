@@ -119,3 +119,32 @@ export function put<T = any>(url: string, body?: any, options?: RequestOptions):
 export function del<T = any>(url: string, options?: RequestOptions): Promise<T> {
   return request<T>(url, { method: 'DELETE', ...options })
 }
+
+/** 文件上传（multipart/form-data） */
+export async function upload<T = any>(url: string, formData: FormData): Promise<T> {
+  const config = useRuntimeConfig()
+  const baseURL = config.public.apiBase as string
+  const token = getToken()
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  try {
+    const response = await $fetch<R<T>>(url, {
+      baseURL,
+      method: 'POST',
+      body: formData,
+      headers,
+    })
+    if (response.code === 200 || response.code === 0) {
+      return response.data
+    }
+    throw new Error(response.message || '上传失败')
+  } catch (error: any) {
+    const data = error?.data || error?.response?._data
+    if (data && data.message) {
+      throw new Error(data.message)
+    }
+    throw error
+  }
+}

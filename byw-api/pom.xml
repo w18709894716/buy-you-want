@@ -23,5 +23,6 @@
         <module>byw-api-logistics</module>
         <module>byw-api-review</module>
         <module>byw-api-promotion</module>
+        <module>byw-api-file</module>
     </modules>
 </project>

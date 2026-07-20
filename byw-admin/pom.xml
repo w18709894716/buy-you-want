@@ -60,6 +60,10 @@
             <groupId>com.byw</groupId>
             <artifactId>byw-api-logistics</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.byw</groupId>
+            <artifactId>byw-api-file</artifactId>
+        </dependency>
 
         <!-- Spring Boot -->
         <dependency>

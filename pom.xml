@@ -24,6 +24,7 @@
         <module>byw-logistics</module>
         <module>byw-review</module>
         <module>byw-promotion</module>
+        <module>byw-file</module>
         <module>byw-admin</module>
     </modules>
 
@@ -235,6 +236,11 @@
             <dependency>
                 <groupId>com.byw</groupId>
                 <artifactId>byw-api-promotion</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.byw</groupId>
+                <artifactId>byw-api-file</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>

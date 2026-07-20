@@ -62,7 +62,7 @@
           <el-input v-model="dialogForm.firstLetter" placeholder="如：A" maxlength="1" style="width:100px" />
         </el-form-item>
         <el-form-item label="品牌Logo">
-          <ImageUpload v-model="dialogForm.logoList" :limit="1" />
+          <ImageUpload v-model="dialogForm.logoList" :limit="1" folder="brand" />
         </el-form-item>
         <el-form-item label="排序">
           <el-input-number v-model="dialogForm.sort" :min="0" :max="9999" />
