@@ -185,3 +185,31 @@ INSERT INTO t_sku (product_id, sku_code, sku_name, spec_data, price, cost_price,
 (9, 'IPAD-PRO-129-256', 'iPad Pro 12.9英寸 256GB', '{"颜色":"深空灰色","存储":"256GB"}', 9499.00, 7200.00, 30, 0, NULL, 0.68),
 -- 戴尔显示器
 (10, 'DL-U2723QE', '戴尔 U2723QE 4K显示器', '{"尺寸":"27英寸"}', 4299.00, 3200.00, 20, 0, NULL, 6.30);
+
+-- ----------------------------
+-- 首页轮播 Banner 表
+-- link_type: 1=搜索关键词 2=商品详情 3=商品分类 4=自定义链接
+-- 定时上下线通过查询时按 start_time/end_time 过滤实现，无需定时任务
+-- ----------------------------
+DROP TABLE IF EXISTS t_banner;
+CREATE TABLE t_banner (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    title VARCHAR(200) NOT NULL COMMENT 'Banner标题(后台识别/无图时展示)',
+    image_url VARCHAR(500) COMMENT '轮播图片URL(MinIO)',
+    link_type TINYINT NOT NULL DEFAULT 1 COMMENT '跳转类型:1搜索关键词 2商品详情 3商品分类 4自定义链接',
+    link_value VARCHAR(500) COMMENT '跳转值:关键词/商品ID/分类名/URL',
+    sort_order INT DEFAULT 0 COMMENT '排序,越小越靠前',
+    status TINYINT DEFAULT 1 COMMENT '0禁用 1启用',
+    start_time DATETIME COMMENT '上线时间(空表示立即上线)',
+    end_time DATETIME COMMENT '下线时间(空表示永久有效)',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted TINYINT DEFAULT 0,
+    INDEX idx_status_sort (status, sort_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='首页轮播Banner';
+
+-- 轮播图种子数据(image_url 留空,前端以渐变+标题兜底,可在管理端上传真实图片)
+INSERT INTO t_banner (title, image_url, link_type, link_value, sort_order, status) VALUES
+('买你所想，尽在此刻', NULL, 1, '手机', 1, 1),
+('数码新品上市特惠', NULL, 3, '手机数码', 2, 1),
+('全场满减优惠', NULL, 1, '耳机', 3, 1);

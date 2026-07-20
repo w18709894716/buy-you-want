@@ -1,23 +1,7 @@
 <template>
   <div>
-    <!-- 轮播 Banner -->
-    <section class="max-w-7xl mx-auto px-4 mt-4">
-      <div class="relative rounded-lg overflow-hidden bg-gradient-to-r from-primary-500 to-primary-700 h-40 sm:h-64 flex items-center">
-        <div class="text-white px-6 sm:px-12">
-          <h2 class="text-2xl sm:text-4xl font-bold mb-2 sm:mb-4">买你所想，尽在此刻</h2>
-          <p class="text-sm sm:text-lg opacity-90 mb-3 sm:mb-6">全场满减优惠，新品上市特惠</p>
-          <button class="bg-white text-primary px-5 sm:px-8 py-2 rounded-full font-medium hover:bg-gray-100 transition-colors text-sm sm:text-base">
-            立即抢购
-          </button>
-        </div>
-        <!-- Banner 指示器 -->
-        <div class="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-          <span class="w-8 h-1.5 bg-white rounded-full"></span>
-          <span class="w-8 h-1.5 bg-white/50 rounded-full"></span>
-          <span class="w-8 h-1.5 bg-white/50 rounded-full"></span>
-        </div>
-      </div>
-    </section>
+    <!-- 轮播 Banner（数据驱动，管理端可配置） -->
+    <HomeBanner />
 
     <!-- 三级分类导航 -->
     <section class="max-w-7xl mx-auto px-4 mt-6">

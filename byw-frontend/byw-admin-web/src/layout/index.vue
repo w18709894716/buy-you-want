@@ -54,6 +54,7 @@
           </template>
           <el-menu-item index="/promotion/coupon">优惠券管理</el-menu-item>
           <el-menu-item index="/promotion/seckill">秒杀管理</el-menu-item>
+          <el-menu-item index="/promotion/banner">轮播图管理</el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu index="review">

@@ -72,6 +72,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '秒杀管理' }
       },
       {
+        path: 'promotion/banner',
+        name: 'BannerManage',
+        component: () => import('../views/promotion/banner.vue'),
+        meta: { title: '轮播图管理' }
+      },
+      {
         path: 'review/list',
         name: 'ReviewList',
         component: () => import('../views/review/list.vue'),

@@ -48,7 +48,7 @@ spring:
         - id: byw-product
           uri: lb://byw-product
           predicates:
-            - Path=/api/product/**,/api/category/**,/api/search/**,/api/brand/**
+            - Path=/api/product/**,/api/category/**,/api/search/**,/api/brand/**,/api/banner/**
           filters:
             - StripPrefix=1
 

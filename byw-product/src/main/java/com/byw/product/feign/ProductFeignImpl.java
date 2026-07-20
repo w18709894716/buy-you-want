@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byw.api.product.ProductFeignClient;
+import com.byw.api.product.dto.BannerDTO;
 import com.byw.api.product.dto.BrandDTO;
 import com.byw.api.product.dto.CategoryDTO;
 import com.byw.api.product.dto.ProductDTO;
@@ -12,11 +13,13 @@ import com.byw.api.product.dto.SkuStockDeductDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
 import com.byw.product.entity.Brand;
+import com.byw.product.entity.Banner;
 import com.byw.product.entity.Category;
 import com.byw.product.entity.Product;
 import com.byw.product.entity.Sku;
 import com.byw.product.mapper.SkuMapper;
 import com.byw.product.service.BrandService;
+import com.byw.product.service.BannerService;
 import com.byw.product.service.CategoryService;
 import com.byw.product.service.ProductService;
 import com.byw.product.service.SkuService;
@@ -42,6 +45,7 @@ public class ProductFeignImpl implements ProductFeignClient {
     private final SkuMapper skuMapper;
     private final CategoryService categoryService;
     private final BrandService brandService;
+    private final BannerService bannerService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
@@ -414,6 +418,59 @@ public class ProductFeignImpl implements ProductFeignClient {
         if (brand == null) return R.fail("品牌不存在");
         brand.setStatus(brand.getStatus() == 1 ? 0 : 1);
         brandService.updateById(brand);
+        return R.ok();
+    }
+
+    // ========== 轮播Banner管理 ==========
+
+    @Override
+    @GetMapping("/banner/list")
+    public R<List<BannerDTO>> listBanners() {
+        List<Banner> banners = bannerService.list(new LambdaQueryWrapper<Banner>()
+                .orderByAsc(Banner::getSortOrder)
+                .orderByDesc(Banner::getId));
+        List<BannerDTO> dtoList = banners.stream().map(b -> {
+            BannerDTO dto = new BannerDTO();
+            BeanUtils.copyProperties(b, dto);
+            return dto;
+        }).collect(Collectors.toList());
+        return R.ok(dtoList);
+    }
+
+    @Override
+    @PostMapping("/banner")
+    public R<Void> createBanner(@RequestBody BannerDTO dto) {
+        Banner banner = new Banner();
+        BeanUtils.copyProperties(dto, banner);
+        bannerService.save(banner);
+        return R.ok();
+    }
+
+    @Override
+    @PutMapping("/banner/{bannerId}")
+    public R<Void> updateBanner(@PathVariable("bannerId") Long bannerId, @RequestBody BannerDTO dto) {
+        Banner banner = bannerService.getById(bannerId);
+        if (banner == null) return R.fail("Banner不存在");
+        BeanUtils.copyProperties(dto, banner);
+        banner.setId(bannerId);
+        bannerService.updateById(banner);
+        return R.ok();
+    }
+
+    @Override
+    @DeleteMapping("/banner/{bannerId}")
+    public R<Void> deleteBanner(@PathVariable("bannerId") Long bannerId) {
+        bannerService.removeById(bannerId);
+        return R.ok();
+    }
+
+    @Override
+    @PutMapping("/banner/{bannerId}/status")
+    public R<Void> toggleBannerStatus(@PathVariable("bannerId") Long bannerId) {
+        Banner banner = bannerService.getById(bannerId);
+        if (banner == null) return R.fail("Banner不存在");
+        banner.setStatus(banner.getStatus() == 1 ? 0 : 1);
+        bannerService.updateById(banner);
         return R.ok();
     }
 }

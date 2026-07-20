@@ -1,5 +1,6 @@
 package com.byw.api.product;
 
+import com.byw.api.product.dto.BannerDTO;
 import com.byw.api.product.dto.BrandDTO;
 import com.byw.api.product.dto.CategoryDTO;
 import com.byw.api.product.dto.ProductDTO;
@@ -84,4 +85,21 @@ public interface ProductFeignClient {
 
     @PutMapping("/feign/product/brand/{brandId}/status")
     R<Void> toggleBrandStatus(@PathVariable("brandId") Long brandId);
+
+    // ========== 轮播Banner管理 ==========
+
+    @GetMapping("/feign/product/banner/list")
+    R<List<BannerDTO>> listBanners();
+
+    @PostMapping("/feign/product/banner")
+    R<Void> createBanner(@RequestBody BannerDTO dto);
+
+    @PutMapping("/feign/product/banner/{bannerId}")
+    R<Void> updateBanner(@PathVariable("bannerId") Long bannerId, @RequestBody BannerDTO dto);
+
+    @DeleteMapping("/feign/product/banner/{bannerId}")
+    R<Void> deleteBanner(@PathVariable("bannerId") Long bannerId);
+
+    @PutMapping("/feign/product/banner/{bannerId}/status")
+    R<Void> toggleBannerStatus(@PathVariable("bannerId") Long bannerId);
 }
