@@ -1,6 +1,8 @@
 package com.byw.review.controller;
 
 import com.byw.api.review.dto.ReviewStatsDTO;
+import com.byw.api.user.UserFeignClient;
+import com.byw.api.user.dto.UserDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
 import com.byw.common.security.annotation.RequireLogin;
@@ -14,18 +16,24 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Tag(name = "评价", description = "评价管理")
 @RestController
 @RequestMapping("/review")
 @RequiredArgsConstructor
-@RequireLogin
 public class ReviewController {
 
     private final ReviewService reviewService;
+    private final UserFeignClient userFeignClient;
+
+    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     @Operation(summary = "创建评价")
+    @RequireLogin
     @PostMapping("/create")
     public R<Void> create(@RequestBody CreateReviewRequest request) {
         ReviewDetail detail = new ReviewDetail();
@@ -42,6 +50,7 @@ public class ReviewController {
     }
 
     @Operation(summary = "追加评价")
+    @RequireLogin
     @PostMapping("/append")
     public R<Void> append(@RequestBody AppendReviewRequest request) {
         reviewService.appendReview(request.getOrderNo(), UserContext.getUserId(),
@@ -51,13 +60,56 @@ public class ReviewController {
 
     @Operation(summary = "获取商品评价列表")
     @GetMapping("/product/{productId}")
-    public R<PageResult<ReviewDetail>> getByProduct(
+    public R<PageResult<ProductReviewVO>> getByProduct(
             @PathVariable Long productId,
             @RequestParam(required = false) Integer rating,
             @RequestParam(required = false) Boolean hasImage,
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "10") Integer pageSize) {
-        return R.ok(reviewService.getReviewsByProduct(productId, rating, hasImage, pageNum, pageSize));
+        PageResult<ReviewDetail> page = reviewService.getReviewsByProduct(productId, rating, hasImage, pageNum, pageSize);
+        Map<Long, String> nameCache = new HashMap<>();
+        List<ProductReviewVO> voList = new java.util.ArrayList<>();
+        for (ReviewDetail d : page.getList()) {
+            ProductReviewVO vo = new ProductReviewVO();
+            vo.setId(d.getId());
+            vo.setRating(d.getRating());
+            vo.setContent(d.getContent());
+            vo.setImages(d.getImages());
+            vo.setSkuId(d.getSkuId());
+            vo.setDate(d.getCreatedAt() != null ? d.getCreatedAt().format(DATE_FMT) : "");
+            vo.setUsername(resolveUsername(d.getUserId(), nameCache));
+            vo.setAppendContent(d.getAppendContent());
+            vo.setAppendImages(d.getAppendImages());
+            voList.add(vo);
+        }
+        return R.ok(PageResult.of(voList, page.getTotal(), pageNum, pageSize));
+    }
+
+    /** 获取并脱敏用户名（同一用户缓存避免重复调用） */
+    private String resolveUsername(Long userId, Map<Long, String> cache) {
+        if (userId == null) return "匿名用户";
+        if (cache.containsKey(userId)) return cache.get(userId);
+        String display = "匿名用户";
+        try {
+            R<UserDTO> r = userFeignClient.getUserById(userId);
+            if (r.isSuccess() && r.getData() != null) {
+                UserDTO u = r.getData();
+                String raw = u.getNickname() != null && !u.getNickname().isBlank() ? u.getNickname() : u.getUsername();
+                display = maskName(raw);
+            }
+        } catch (Exception ignored) {
+        }
+        cache.put(userId, display);
+        return display;
+    }
+
+    /** 用户名脱敏：保留首尾字符，中间以 * 代替 */
+    private String maskName(String name) {
+        if (name == null || name.isBlank()) return "匿名用户";
+        name = name.trim();
+        if (name.length() == 1) return name + "**";
+        if (name.length() == 2) return name.charAt(0) + "*";
+        return name.charAt(0) + "***" + name.charAt(name.length() - 1);
     }
 
     @Operation(summary = "获取商品评价统计")
@@ -66,7 +118,35 @@ public class ReviewController {
         return R.ok(reviewService.getReviewStats(productId));
     }
 
+    @Operation(summary = "检查订单是否已评价")
+    @RequireLogin
+    @GetMapping("/exists/{orderNo}")
+    public R<Boolean> exists(@PathVariable String orderNo) {
+        return R.ok(reviewService.reviewExists(orderNo));
+    }
+
+    @Operation(summary = "获取本人该订单的评价明细")
+    @RequireLogin
+    @GetMapping("/order/{orderNo}")
+    public R<List<OrderReviewVO>> getByOrder(@PathVariable String orderNo) {
+        List<ReviewDetail> details = reviewService.getOrderReviews(orderNo, UserContext.getUserId());
+        List<OrderReviewVO> voList = new java.util.ArrayList<>();
+        for (ReviewDetail d : details) {
+            OrderReviewVO vo = new OrderReviewVO();
+            vo.setProductId(d.getProductId());
+            vo.setSkuId(d.getSkuId());
+            vo.setRating(d.getRating());
+            vo.setContent(d.getContent());
+            vo.setImages(d.getImages());
+            vo.setAppendContent(d.getAppendContent());
+            vo.setAppendImages(d.getAppendImages());
+            voList.add(vo);
+        }
+        return R.ok(voList);
+    }
+
     @Operation(summary = "批量创建评价")
+    @RequireLogin
     @PostMapping("/create-batch")
     public R<Void> createBatch(@RequestBody BatchReviewRequest request) {
         List<ReviewDetail> details = new java.util.ArrayList<>();
@@ -87,6 +167,7 @@ public class ReviewController {
     }
 
     @Operation(summary = "获取我的评价列表")
+    @RequireLogin
     @GetMapping("/my-reviews")
     public R<PageResult<Review>> myReviews(
             @RequestParam(defaultValue = "1") Integer pageNum,
@@ -125,6 +206,30 @@ public class ReviewController {
     @Data
     public static class AppendReviewRequest {
         private String orderNo;
+        private String appendContent;
+        private List<String> appendImages;
+    }
+
+    @Data
+    public static class ProductReviewVO {
+        private String id;
+        private String username;
+        private String date;
+        private Integer rating;
+        private String content;
+        private List<String> images;
+        private Long skuId;
+        private String appendContent;
+        private List<String> appendImages;
+    }
+
+    @Data
+    public static class OrderReviewVO {
+        private Long productId;
+        private Long skuId;
+        private Integer rating;
+        private String content;
+        private List<String> images;
         private String appendContent;
         private List<String> appendImages;
     }

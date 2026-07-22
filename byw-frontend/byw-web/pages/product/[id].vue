@@ -184,7 +184,7 @@
         </div>
 
         <!-- 评论列表 -->
-        <div class="space-y-6">
+        <div v-if="reviews.length" class="space-y-6">
           <div v-for="review in reviews" :key="review.id" class="border-b pb-4">
             <div class="flex items-center gap-2 mb-2">
               <div class="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-sm text-gray-500">
@@ -200,7 +200,18 @@
             <div v-if="review.images" class="flex gap-2 mt-2">
               <img v-for="(img, i) in review.images" :key="i" :src="img" class="w-20 h-20 object-cover rounded" />
             </div>
+            <!-- 追评 -->
+            <div v-if="review.appendContent" class="mt-3 bg-gray-50 rounded-lg p-3">
+              <p class="text-sm text-gray-600"><span class="text-primary font-medium">追评：</span>{{ review.appendContent }}</p>
+              <div v-if="review.appendImages" class="flex gap-2 mt-2">
+                <img v-for="(img, i) in review.appendImages" :key="i" :src="img" class="w-20 h-20 object-cover rounded" />
+              </div>
+            </div>
           </div>
+        </div>
+        <div v-else class="text-center py-12 text-gray-400">
+          <div class="text-4xl mb-3">💬</div>
+          <p class="text-sm">暂无评价，快来抢沙发吧</p>
         </div>
       </div>
     </div>
@@ -269,8 +280,6 @@ const fetchProduct = async () => {
     product.price = data.minPrice || 0
     product.originalPrice = data.minPrice ? Math.round(data.minPrice * 1.2 * 100) / 100 : 0
     product.salesCount = data.salesCount || 0
-    product.reviewCount = 0
-    product.rating = 0
     product.shopName = ''
     product.description = data.detailHtml || ''
 
@@ -320,6 +329,37 @@ const fetchProduct = async () => {
     console.error('获取商品详情失败:', e)
   } finally {
     loading.value = false
+  }
+}
+
+// 加载商品评价列表
+const fetchReviews = async () => {
+  try {
+    const data: any = await get(`/review/product/${productId.value}`, { pageNum: 1, pageSize: 20 })
+    reviews.value = (data?.list || []).map((r: any) => ({
+      id: r.id,
+      username: r.username || '匿名用户',
+      date: r.date || '',
+      rating: r.rating || 0,
+      content: r.content || '',
+      images: r.images && r.images.length ? r.images : null,
+      appendContent: r.appendContent || '',
+      appendImages: r.appendImages && r.appendImages.length ? r.appendImages : null
+    }))
+  } catch (e) {
+    console.error('获取评价列表失败:', e)
+    reviews.value = []
+  }
+}
+
+// 加载商品评价统计
+const fetchReviewStats = async () => {
+  try {
+    const data: any = await get(`/review/stats/${productId.value}`)
+    product.rating = data?.avgRating || 0
+    product.reviewCount = data?.totalCount || 0
+  } catch (e) {
+    console.error('获取评价统计失败:', e)
   }
 }
 
@@ -393,11 +433,18 @@ watch(() => route.params.id, () => {
   quantity.value = 1
   selectedSpecs.value = {}
   matchedSkuId.value = 0
+  // 评分/评价数由 fetchReviewStats 管理，切换时先同步重置避免残留
+  product.rating = 0
+  product.reviewCount = 0
   fetchProduct()
+  fetchReviews()
+  fetchReviewStats()
 })
 
 onMounted(() => {
   fetchProduct()
+  fetchReviews()
+  fetchReviewStats()
 })
 </script>
 

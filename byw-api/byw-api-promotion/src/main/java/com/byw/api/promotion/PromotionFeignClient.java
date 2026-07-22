@@ -1,6 +1,7 @@
 package com.byw.api.promotion;
 
 import com.byw.api.promotion.dto.CouponDTO;
+import com.byw.api.promotion.dto.SeckillActivityDetailDTO;
 import com.byw.api.promotion.dto.UserCouponDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
@@ -62,17 +63,26 @@ public interface PromotionFeignClient {
     @DeleteMapping("/feign/promotion/seckill/{activityId}")
     R<Boolean> deleteSeckillActivity(@PathVariable("activityId") Long activityId);
 
+    @GetMapping("/feign/promotion/seckill/list/detail")
+    R<List<SeckillActivityDetailDTO>> listSeckillActivitiesWithProduct();
+
     @Data
     class SeckillActivityDTO implements Serializable {
         private Long id;
         private String name;
+        private java.time.LocalDateTime startTime;
+        private java.time.LocalDateTime endTime;
+        private Integer status;
+        private List<SeckillItemDTO> items;
+    }
+
+    @Data
+    class SeckillItemDTO implements Serializable {
+        private Long id;
         private Long productId;
         private Long skuId;
         private BigDecimal seckillPrice;
         private Integer totalStock;
         private Integer availableStock;
-        private java.time.LocalDateTime startTime;
-        private java.time.LocalDateTime endTime;
-        private Integer status;
     }
 }

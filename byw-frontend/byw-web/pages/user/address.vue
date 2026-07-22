@@ -138,6 +138,15 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- Toast 提示 -->
+    <Transition name="toast">
+      <div v-if="toast.visible"
+        :class="['fixed top-20 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2',
+          toast.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white']">
+        {{ toast.message }}
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -146,6 +155,14 @@ import { useUserStore } from '~/stores/user'
 import { get, post, put, del } from '~/utils/request'
 
 definePageMeta({ middleware: ['auth'] })
+
+const toast = reactive({ visible: false, message: '', type: 'success' as 'success' | 'error' })
+let toastTimer: ReturnType<typeof setTimeout> | null = null
+function showToast(message: string, type: 'success' | 'error' = 'success') {
+  if (toastTimer) clearTimeout(toastTimer)
+  toast.visible = true; toast.message = message; toast.type = type
+  toastTimer = setTimeout(() => { toast.visible = false }, 2500)
+}
 
 const userStore = useUserStore()
 
@@ -202,7 +219,7 @@ function openForm(addr: any) {
 
 async function saveAddress() {
   if (!form.value.receiverName || !form.value.receiverPhone || !form.value.detailAddress) {
-    alert('请填写完整信息')
+    showToast('请填写完整信息', 'error')
     return
   }
   try {
@@ -214,8 +231,9 @@ async function saveAddress() {
     }
     showForm.value = false
     await fetchAddresses()
+    showToast('保存成功')
   } catch (e: any) {
-    alert(e.message || '保存失败')
+    showToast(e.message || '保存失败', 'error')
   }
 }
 
@@ -229,8 +247,9 @@ async function doDelete() {
     await del(`/user/address/${deleteId.value}`)
     deleteId.value = null
     await fetchAddresses()
+    showToast('删除成功')
   } catch (e: any) {
-    alert(e.message || '删除失败')
+    showToast(e.message || '删除失败', 'error')
   }
 }
 
@@ -238,8 +257,9 @@ async function setDefault(id: number) {
   try {
     await put(`/user/address/${id}/default`)
     await fetchAddresses()
+    showToast('设置成功')
   } catch (e: any) {
-    alert(e.message || '设置失败')
+    showToast(e.message || '设置失败', 'error')
   }
 }
 

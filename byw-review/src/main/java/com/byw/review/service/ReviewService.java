@@ -57,4 +57,9 @@ public interface ReviewService {
      * 获取用户评价列表
      */
     PageResult<Review> getUserReviews(Long userId, Integer pageNum, Integer pageSize, Boolean hasImage);
+
+    /**
+     * 获取某订单本人的评价明细（含追评），用于订单卡片摘要
+     */
+    java.util.List<ReviewDetail> getOrderReviews(String orderNo, Long userId);
 }

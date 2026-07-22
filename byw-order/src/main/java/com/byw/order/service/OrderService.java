@@ -52,4 +52,9 @@ public interface OrderService {
      * 更新订单评价状态
      */
     void updateReviewed(String orderNo, Integer reviewed);
+
+    /**
+     * 生成订单号
+     */
+    String generateOrderNo();
 }

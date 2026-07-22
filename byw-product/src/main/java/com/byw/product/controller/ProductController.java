@@ -1,8 +1,6 @@
 package com.byw.product.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byw.api.product.dto.CategoryDTO;
 import com.byw.api.product.dto.ProductDTO;
 import com.byw.api.product.dto.SkuDTO;
@@ -21,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.stream.Collectors;
+import java.math.BigDecimal;
 
 /**
  * 用户端商品接口（公开接口，无需登录）
@@ -83,7 +82,9 @@ public class ProductController {
             @RequestParam(required = false) String sort,
             @RequestParam(required = false) String category,
             @RequestParam(required = false) Long brandId,
-            @RequestParam(required = false) String keyword) {
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) BigDecimal minPrice,
+            @RequestParam(required = false) BigDecimal maxPrice) {
 
         LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Product::getStatus, 1); // 只查上架商品
@@ -107,21 +108,13 @@ public class ProductController {
                     .or().like(Product::getSubtitle, keyword));
         }
 
-        // 排序
-        if ("sales".equals(sort)) {
-            wrapper.orderByDesc(Product::getSalesCount);
-        } else {
-            // 默认按创建时间倒序（新品）
-            wrapper.orderByDesc(Product::getCreatedAt);
-        }
-
-        IPage<Product> page = productService.page(new Page<>(pageNum, pageSize), wrapper);
-        List<Product> products = page.getRecords();
+        // 价格来自 SKU，无法用 DB 层 orderBy/where 完成，取全量匹配商品后在内存中筛选/排序/分页
+        List<Product> allProducts = productService.list(wrapper);
 
         // 批量查询 SKU 计算最低价
-        java.util.Map<Long, java.math.BigDecimal> minPriceMap = new java.util.HashMap<>();
-        if (!products.isEmpty()) {
-            List<Long> productIds = products.stream().map(Product::getId).collect(Collectors.toList());
+        java.util.Map<Long, BigDecimal> minPriceMap = new java.util.HashMap<>();
+        if (!allProducts.isEmpty()) {
+            List<Long> productIds = allProducts.stream().map(Product::getId).collect(Collectors.toList());
             List<Sku> allSkus = skuService.list(new LambdaQueryWrapper<Sku>()
                     .in(Sku::getProductId, productIds));
             for (Sku sku : allSkus) {
@@ -130,14 +123,57 @@ public class ProductController {
             }
         }
 
-        List<ProductDTO> dtoList = products.stream().map(p -> {
+        // 价格区间筛选（基于 SKU 最低价）
+        boolean priceFilter = minPrice != null || maxPrice != null;
+        List<Product> filtered = allProducts.stream().filter(p -> {
+            if (!priceFilter) return true;
+            BigDecimal mp = minPriceMap.get(p.getId());
+            if (mp == null) return false; // 无 SKU 价，价格过滤时排除
+            if (minPrice != null && mp.compareTo(minPrice) < 0) return false;
+            if (maxPrice != null && mp.compareTo(maxPrice) > 0) return false;
+            return true;
+        }).collect(Collectors.toList());
+
+        // 排序（价格排序 null 值排末尾）
+        java.util.Comparator<Product> comparator;
+        if ("sales".equals(sort)) {
+            comparator = java.util.Comparator.comparing(
+                    Product::getSalesCount, java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())).reversed();
+        } else if ("new".equals(sort)) {
+            comparator = java.util.Comparator.comparing(
+                    Product::getCreatedAt, java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())).reversed();
+        } else if ("price_asc".equals(sort)) {
+            comparator = java.util.Comparator.comparing(
+                    p -> minPriceMap.get(p.getId()), java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder()));
+        } else if ("price_desc".equals(sort)) {
+            comparator = java.util.Comparator.comparing(
+                    (Product p) -> minPriceMap.get(p.getId()), java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())).reversed();
+        } else {
+            // default（综合）：销量优先，再按创建时间
+            comparator = java.util.Comparator.comparing(
+                            Product::getSalesCount, java.util.Comparator.nullsLast(java.util.Comparator.<Integer>naturalOrder())).reversed()
+                    .thenComparing(java.util.Comparator.comparing(
+                            Product::getCreatedAt, java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())).reversed());
+        }
+        filtered.sort(comparator);
+
+        long total = filtered.size();
+
+        // 手动分页
+        int fromIndex = Math.max(0, (pageNum - 1) * pageSize);
+        int toIndex = Math.min(filtered.size(), fromIndex + pageSize);
+        List<Product> pageProducts = fromIndex >= filtered.size()
+                ? java.util.Collections.emptyList()
+                : filtered.subList(fromIndex, toIndex);
+
+        List<ProductDTO> dtoList = pageProducts.stream().map(p -> {
             ProductDTO dto = new ProductDTO();
             BeanUtils.copyProperties(p, dto);
             dto.setMinPrice(minPriceMap.get(p.getId()));
             return dto;
         }).collect(Collectors.toList());
 
-        return R.ok(PageResult.of(dtoList, page.getTotal(), pageNum, pageSize));
+        return R.ok(PageResult.of(dtoList, total, pageNum, pageSize));
     }
 
     /** 商品详情 */
@@ -178,7 +214,7 @@ public class ProductController {
     private R<List<CategoryDTO>> categoryTreeFallback(Throwable ex) {
         return R.fail("系统繁忙，请稍后再试");
     }
-    private R<PageResult<ProductDTO>> productListFallback(Integer pageNum, Integer pageSize, String sort, String category, Long brandId, String keyword, Throwable ex) {
+    private R<PageResult<ProductDTO>> productListFallback(Integer pageNum, Integer pageSize, String sort, String category, Long brandId, String keyword, BigDecimal minPrice, BigDecimal maxPrice, Throwable ex) {
         return R.fail("系统繁忙，请稍后再试");
     }
     private R<ProductDTO> productDetailFallback(Long productId, Throwable ex) {

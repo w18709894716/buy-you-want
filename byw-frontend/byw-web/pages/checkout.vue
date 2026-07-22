@@ -14,7 +14,16 @@
       </div>
     </Transition>
 
-    <h2 class="text-xl font-bold text-gray-800 mb-6">确认订单</h2>
+    <div class="flex items-center gap-3 mb-6">
+      <button
+        class="flex items-center justify-center w-9 h-9 rounded-full text-gray-500 hover:text-primary hover:bg-gray-100 transition-colors"
+        title="返回"
+        @click="goBack"
+      >
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+      </button>
+      <h2 class="text-xl font-bold text-gray-800">确认订单</h2>
+    </div>
 
     <div class="flex flex-col lg:flex-row gap-6">
       <div class="flex-1 min-w-0 space-y-4">
@@ -40,7 +49,7 @@
           </div>
           <div v-else class="text-center py-6 text-gray-400">
             <p>暂无收货地址</p>
-            <button class="mt-2 text-sm text-primary hover:text-primary-600" @click="navigateTo('/user/address')">去添加</button>
+            <button class="mt-2 text-sm text-primary hover:text-primary-600" @click="openAddressForm(null)">去添加</button>
           </div>
         </div>
 
@@ -144,12 +153,36 @@
             <p>联系电话：{{ selectedAddress?.receiverPhone || '-' }}</p>
           </div>
 
+          <!-- 支付方式 -->
+          <div class="border-t mt-4 pt-4">
+            <h4 class="text-sm font-medium text-gray-800 mb-3">支付方式</h4>
+            <div class="space-y-2">
+              <label
+                v-for="method in paymentMethods"
+                :key="method.id"
+                :class="[
+                  'flex items-center gap-3 border rounded-lg px-3 py-2 cursor-pointer transition-all',
+                  selectedMethod === method.id ? 'border-primary bg-primary-50' : 'border-gray-200 hover:border-gray-300'
+                ]"
+                @click="selectedMethod = method.id"
+              >
+                <div :class="['w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold', method.color]">
+                  {{ method.icon }}
+                </div>
+                <span class="flex-1 text-sm text-gray-800">{{ method.name }}</span>
+                <div :class="['w-4 h-4 rounded-full border-2 flex items-center justify-center', selectedMethod === method.id ? 'border-primary' : 'border-gray-300']">
+                  <div v-if="selectedMethod === method.id" class="w-2 h-2 rounded-full bg-primary" />
+                </div>
+              </label>
+            </div>
+          </div>
+
           <button
-            :disabled="!selectedAddressId || submitting"
+            :disabled="!selectedAddressId || !selectedMethod || submitting"
             class="w-full h-12 mt-4 bg-primary text-white rounded-lg font-medium hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            @click="submitOrder"
+            @click="payNow"
           >
-            {{ submitting ? '提交中...' : '提交订单' }}
+            {{ submitting ? '处理中...' : '立即支付 ¥' + totalAmount.toFixed(2) }}
           </button>
         </div>
       </div>
@@ -163,7 +196,7 @@
           <div class="relative bg-white rounded-lg shadow-xl w-full max-w-md p-6 max-h-[80vh] flex flex-col">
             <h3 class="text-base font-medium text-gray-800 mb-4">选择收货地址</h3>
             <div class="flex-1 overflow-y-auto space-y-2">
-              <label
+              <div
                 v-for="addr in addresses"
                 :key="addr.id"
                 :class="[
@@ -172,18 +205,69 @@
                 ]"
                 @click="selectedAddressId = addr.id; showAddressPicker = false"
               >
-                <div class="flex items-center gap-3">
-                  <span class="font-medium text-sm">{{ addr.receiverName }}</span>
-                  <span class="text-gray-500 text-xs">{{ addr.receiverPhone }}</span>
-                  <span v-if="addr.isDefault" class="text-xs bg-primary text-white px-1.5 py-0.5 rounded">默认</span>
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-3">
+                    <span class="font-medium text-sm">{{ addr.receiverName }}</span>
+                    <span class="text-gray-500 text-xs">{{ addr.receiverPhone }}</span>
+                    <span v-if="addr.isDefault" class="text-xs bg-primary text-white px-1.5 py-0.5 rounded">默认</span>
+                  </div>
+                  <button class="text-xs text-gray-400 hover:text-primary" @click.stop="openAddressForm(addr)">编辑</button>
                 </div>
                 <p class="text-xs text-gray-500 mt-1">{{ formatAddress(addr) }}</p>
-              </label>
+              </div>
             </div>
             <div class="border-t pt-3 mt-3">
-              <button class="w-full h-10 border border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:border-primary hover:text-primary transition-colors" @click="showAddressPicker = false; navigateTo('/user/address')">
+              <button class="w-full h-10 border border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:border-primary hover:text-primary transition-colors" @click="openAddressForm(null)">
                 + 新增收货地址
               </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 新增/编辑地址弹框 -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showAddressForm" class="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div class="fixed inset-0 bg-black/40" @click="showAddressForm = false" />
+          <div class="relative bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <h3 class="text-lg font-bold text-gray-800 mb-4">{{ editingAddr ? '编辑地址' : '新增地址' }}</h3>
+            <div class="space-y-3">
+              <div>
+                <label class="block text-sm text-gray-600 mb-1">收件人</label>
+                <input v-model="addrForm.receiverName" class="w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:border-primary" placeholder="请输入收件人姓名" />
+              </div>
+              <div>
+                <label class="block text-sm text-gray-600 mb-1">手机号</label>
+                <input v-model="addrForm.receiverPhone" class="w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:border-primary" placeholder="请输入手机号" />
+              </div>
+              <div class="grid grid-cols-3 gap-2">
+                <div>
+                  <label class="block text-sm text-gray-600 mb-1">省</label>
+                  <input v-model="addrForm.province" class="w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:border-primary" placeholder="省" />
+                </div>
+                <div>
+                  <label class="block text-sm text-gray-600 mb-1">市</label>
+                  <input v-model="addrForm.city" class="w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:border-primary" placeholder="市" />
+                </div>
+                <div>
+                  <label class="block text-sm text-gray-600 mb-1">区</label>
+                  <input v-model="addrForm.district" class="w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:border-primary" placeholder="区" />
+                </div>
+              </div>
+              <div>
+                <label class="block text-sm text-gray-600 mb-1">详细地址</label>
+                <input v-model="addrForm.detailAddress" class="w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:border-primary" placeholder="街道、楼牌号等" />
+              </div>
+              <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                <input v-model="addrIsDefault" type="checkbox" class="accent-primary" />
+                设为默认地址
+              </label>
+            </div>
+            <div class="flex gap-3 mt-6">
+              <button class="flex-1 h-10 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50" @click="showAddressForm = false">取消</button>
+              <button class="flex-1 h-10 bg-primary text-white rounded-lg text-sm hover:bg-primary-600" @click="saveAddress">保存</button>
             </div>
           </div>
         </div>
@@ -303,16 +387,32 @@
 
 <script setup lang="ts">
 import { useCartStore } from '~/stores/cart'
-import { get, post } from '~/utils/request'
+import { get, post, put } from '~/utils/request'
 
 definePageMeta({ middleware: ['auth'] })
 
 const cartStore = useCartStore()
+const router = useRouter()
+
+// 返回上一页（无历史时回购物车）
+function goBack() {
+  if (window.history.length > 1) router.back()
+  else navigateTo('/cart')
+}
 
 // ===== 基础数据 =====
 const orderItems = ref<any[]>(cartStore.checkedItems.map(item => ({ ...item })))
 const remark = ref('')
 const submitting = ref(false)
+
+// 支付方式
+const paymentMethods = [
+  { id: 'wechat', name: '微信支付', icon: '微', color: 'bg-green-500' },
+  { id: 'alipay', name: '支付宝', icon: '支', color: 'bg-blue-500' },
+  { id: 'unionpay', name: '云闪付', icon: '银', color: 'bg-red-500' },
+  { id: 'bank', name: '银行卡支付', icon: '卡', color: 'bg-gray-600' },
+]
+const selectedMethod = ref<string>('wechat')
 
 // Toast 通知
 const toast = reactive({ visible: false, message: '', type: 'success' as 'success' | 'error' })
@@ -330,16 +430,82 @@ const addresses = ref<any[]>([])
 const selectedAddressId = ref<number | null>(null)
 const showAddressPicker = ref(false)
 
+// 地址新增/编辑弹框
+const showAddressForm = ref(false)
+const editingAddr = ref<any>(null)
+const addrIsDefault = ref(false)
+const addrForm = ref({
+  receiverName: '',
+  receiverPhone: '',
+  province: '',
+  city: '',
+  district: '',
+  detailAddress: '',
+})
+
+function openAddressForm(addr: any) {
+  editingAddr.value = addr
+  if (addr) {
+    addrForm.value = {
+      receiverName: addr.receiverName || '',
+      receiverPhone: addr.receiverPhone || '',
+      province: addr.province || '',
+      city: addr.city || '',
+      district: addr.district || '',
+      detailAddress: addr.detailAddress || '',
+    }
+    addrIsDefault.value = addr.isDefault === 1
+  } else {
+    addrForm.value = { receiverName: '', receiverPhone: '', province: '', city: '', district: '', detailAddress: '' }
+    addrIsDefault.value = false
+  }
+  showAddressForm.value = true
+}
+
+async function saveAddress() {
+  if (!addrForm.value.receiverName || !addrForm.value.receiverPhone || !addrForm.value.detailAddress) {
+    showToast('请填写完整信息', 'error')
+    return
+  }
+  try {
+    const data = { ...addrForm.value, isDefault: addrIsDefault.value ? 1 : 0 }
+    if (editingAddr.value) {
+      await put('/user/address', { id: editingAddr.value.id, ...data })
+      showAddressForm.value = false
+      // 编辑地址不影响当前已选中的地址，仅刷新列表
+      await fetchAddresses()
+    } else {
+      const oldIds = addresses.value.map(a => a.id)
+      await post('/user/address', data)
+      showAddressForm.value = false
+      // 刷新后自动选中新增的地址
+      const list = await get<any[]>('/user/address/list')
+      addresses.value = list
+      const added = list.find(a => !oldIds.includes(a.id))
+      if (added) selectedAddressId.value = added.id
+    }
+    showToast('保存成功')
+  } catch (e: any) {
+    showToast(e?.message || '保存失败', 'error')
+  }
+}
+
 const selectedAddress = computed(() => addresses.value.find(a => a.id === selectedAddressId.value))
 
 function formatAddress(addr: any): string {
   return `${addr.province || ''}${addr.city || ''}${addr.district || ''}${addr.detailAddress || ''}`
 }
 
-async function fetchAddresses() {
+async function fetchAddresses(preferId: number | null = null) {
   try {
     const data = await get<any[]>('/user/address/list')
     addresses.value = data
+    if (preferId && data.some(a => a.id === preferId)) {
+      selectedAddressId.value = preferId
+      return
+    }
+    // 新增后优先选中新地址（若为默认则选默认）；否则保留当前选择
+    if (selectedAddressId.value && data.some(a => a.id === selectedAddressId.value)) return
     const defaultAddr = data.find(a => a.isDefault === 1)
     if (defaultAddr) selectedAddressId.value = defaultAddr.id
     else if (data.length > 0) selectedAddressId.value = data[0].id
@@ -513,11 +679,13 @@ const totalAmount = computed(() => {
   return Math.max(0, total)
 })
 
-// ===== 提交订单 =====
-async function submitOrder() {
+// ===== 立即支付（先提交订单变待支付，再发起支付） =====
+async function payNow() {
   if (!selectedAddressId.value) { showToast('请选择收货地址', 'error'); return }
+  if (!selectedMethod.value) { showToast('请选择支付方式', 'error'); return }
   submitting.value = true
   try {
+    // 1. 提交订单（订单变为待支付）
     const orderData = {
       addressId: selectedAddressId.value,
       couponId: selectedCouponId.value,
@@ -533,13 +701,22 @@ async function submitOrder() {
       })),
     }
     const orderNo = await post<string>('/order/create', orderData)
+    // 清空已下单的购物车项
     for (const item of orderItems.value) {
       await cartStore.removeItem(item.cartId)
     }
-    showToast('订单提交成功！', 'success')
-    setTimeout(() => navigateTo('/payment/' + orderNo), 800)
+    // 2. 发起支付（无第三方跳转，默认支付成功）
+    //    若支付失败，订单仍为待支付，引导用户去支付页继续支付
+    try {
+      await post(`/order/pay/${orderNo}`)
+      showToast('支付成功！', 'success')
+      setTimeout(() => navigateTo('/user/orders'), 1000)
+    } catch (payErr: any) {
+      showToast(payErr?.message || '支付未完成，可在订单中心继续支付', 'error')
+      setTimeout(() => navigateTo('/payment/' + orderNo), 1200)
+    }
   } catch (error: any) {
-    showToast(error?.message || '订单提交失败', 'error')
+    showToast(error?.message || '下单失败', 'error')
   } finally {
     submitting.value = false
   }

@@ -35,7 +35,12 @@ public class UserAddressController {
     @Operation(summary = "新增地址")
     @PostMapping
     public R<Void> add(@RequestBody UserAddress address) {
-        address.setUserId(UserContext.getUserId());
+        Long userId = UserContext.getUserId();
+        address.setUserId(userId);
+        // 若新增地址设为默认，先清除该用户其他默认地址，避免出现多个默认
+        if (address.getIsDefault() != null && address.getIsDefault() == 1) {
+            clearDefault(userId);
+        }
         userAddressMapper.insert(address);
         return R.ok();
     }
@@ -43,7 +48,12 @@ public class UserAddressController {
     @Operation(summary = "更新地址")
     @PutMapping
     public R<Void> update(@RequestBody UserAddress address) {
-        address.setUserId(UserContext.getUserId());
+        Long userId = UserContext.getUserId();
+        address.setUserId(userId);
+        // 若更新为默认地址，先清除该用户其他默认地址，避免出现多个默认
+        if (address.getIsDefault() != null && address.getIsDefault() == 1) {
+            clearDefault(userId);
+        }
         userAddressMapper.updateById(address);
         return R.ok();
     }
@@ -60,10 +70,7 @@ public class UserAddressController {
     public R<Void> setDefault(@PathVariable Long id) {
         Long userId = UserContext.getUserId();
         // Clear existing default
-        UserAddress clearDefault = new UserAddress();
-        clearDefault.setIsDefault(0);
-        userAddressMapper.update(clearDefault, new LambdaQueryWrapper<UserAddress>()
-                .eq(UserAddress::getUserId, userId));
+        clearDefault(userId);
         // Set new default
         UserAddress setDefault = new UserAddress();
         setDefault.setId(id);
@@ -71,5 +78,14 @@ public class UserAddressController {
         setDefault.setUserId(userId);
         userAddressMapper.updateById(setDefault);
         return R.ok();
+    }
+
+    /** 清除指定用户的所有默认地址标记 */
+    private void clearDefault(Long userId) {
+        UserAddress clearDefault = new UserAddress();
+        clearDefault.setIsDefault(0);
+        userAddressMapper.update(clearDefault, new LambdaQueryWrapper<UserAddress>()
+                .eq(UserAddress::getUserId, userId)
+                .eq(UserAddress::getIsDefault, 1));
     }
 }

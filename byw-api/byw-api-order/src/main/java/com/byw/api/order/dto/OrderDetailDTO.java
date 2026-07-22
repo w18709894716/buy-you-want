@@ -17,6 +17,8 @@ public class OrderDetailDTO implements Serializable {
     private BigDecimal freightAmount;
     private BigDecimal discountAmount;
     private Integer status;
+    /** 评价状态：0未评价 1已评价 */
+    private Integer reviewed;
     private String receiverName;
     private String receiverPhone;
     private String receiverAddress;

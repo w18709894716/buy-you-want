@@ -134,9 +134,27 @@ public class ProductFeignImpl implements ProductFeignClient {
         }
         wrapper.orderByDesc(Product::getCreatedAt);
         IPage<Product> page = productService.page(new Page<>(pageNum, pageSize), wrapper);
-        List<ProductDTO> dtoList = page.getRecords().stream().map(product -> {
+        List<Product> products = page.getRecords();
+
+        // 批量查询 SKU，计算每个商品的最低价与总库存
+        java.util.Map<Long, java.math.BigDecimal> minPriceMap = new java.util.HashMap<>();
+        java.util.Map<Long, Integer> stockMap = new java.util.HashMap<>();
+        if (!products.isEmpty()) {
+            List<Long> productIds = products.stream().map(Product::getId).collect(Collectors.toList());
+            List<Sku> allSkus = skuService.list(new LambdaQueryWrapper<Sku>()
+                    .in(Sku::getProductId, productIds));
+            for (Sku sku : allSkus) {
+                minPriceMap.merge(sku.getProductId(), sku.getPrice(),
+                        (old, val) -> old.compareTo(val) > 0 ? val : old);
+                stockMap.merge(sku.getProductId(), sku.getStock() == null ? 0 : sku.getStock(), Integer::sum);
+            }
+        }
+
+        List<ProductDTO> dtoList = products.stream().map(product -> {
             ProductDTO dto = new ProductDTO();
             BeanUtils.copyProperties(product, dto);
+            dto.setMinPrice(minPriceMap.get(product.getId()));
+            dto.setTotalStock(stockMap.getOrDefault(product.getId(), 0));
             return dto;
         }).collect(Collectors.toList());
         return R.ok(PageResult.of(dtoList, page.getTotal(), pageNum, pageSize));

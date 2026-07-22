@@ -97,7 +97,14 @@ public class ReviewServiceImpl implements ReviewService {
             throw new BusinessException("评价不存在");
         }
 
-        // 2. 保存追评图片到MySQL
+        // 2. 查找评价明细，校验是否已追评（仅允许追评一次）
+        Query query = new Query(Criteria.where("orderId").is(orderNo).and("userId").is(userId));
+        ReviewDetail detail = mongoTemplate.findOne(query, ReviewDetail.class);
+        if (detail != null && detail.getAppendContent() != null && !detail.getAppendContent().isBlank()) {
+            throw new BusinessException("该订单已追评，不能重复追评");
+        }
+
+        // 3. 保存追评图片到MySQL
         if (appendImages != null) {
             for (String imageUrl : appendImages) {
                 ReviewImage image = new ReviewImage();
@@ -108,13 +115,18 @@ public class ReviewServiceImpl implements ReviewService {
             }
         }
 
-        // 3. 更新MongoDB
-        Query query = new Query(Criteria.where("orderId").is(orderNo).and("userId").is(userId));
-        ReviewDetail detail = mongoTemplate.findOne(query, ReviewDetail.class);
+        // 4. 更新MongoDB
         if (detail != null) {
             detail.setAppendContent(appendContent);
             detail.setAppendImages(appendImages);
             reviewDetailRepository.save(detail);
+        }
+
+        // 5. 更新订单评价状态为已追评(2)
+        try {
+            orderFeignClient.updateReviewed(orderNo, 2);
+        } catch (Exception e) {
+            log.warn("更新订单追评状态失败: orderNo={}, error={}", orderNo, e.getMessage());
         }
 
         log.info("追评成功: orderNo={}", orderNo);
@@ -128,7 +140,8 @@ public class ReviewServiceImpl implements ReviewService {
             criteria = criteria.and("rating").is(rating);
         }
         if (Boolean.TRUE.equals(hasImage)) {
-            criteria = criteria.and("images").ne(null).and("images").ne(List.of());
+            // 数组首元素存在即非空，避免对同一字段重复添加 Criteria
+            criteria = criteria.and("images.0").exists(true);
         }
 
         long total = mongoTemplate.count(new Query(criteria), ReviewDetail.class);
@@ -162,8 +175,13 @@ public class ReviewServiceImpl implements ReviewService {
         int fiveStar = 0, fourStar = 0, threeStar = 0, twoStar = 0, oneStar = 0;
 
         for (Map map : mappedResults) {
-            Integer r = (Integer) map.get("_id");
-            int count = ((Number) map.get("count")).intValue();
+            Object idObj = map.get("_id");
+            Object countObj = map.get("count");
+            if (idObj == null || countObj == null) {
+                continue; // 跳过 rating 为空的文档，避免拆箱 NPE
+            }
+            int r = ((Number) idObj).intValue();
+            int count = ((Number) countObj).intValue();
             totalCount += count;
             totalRating += r * count;
 
@@ -173,6 +191,7 @@ public class ReviewServiceImpl implements ReviewService {
                 case 3 -> threeStar = count;
                 case 2 -> twoStar = count;
                 case 1 -> oneStar = count;
+                default -> { }
             }
         }
 
@@ -184,10 +203,10 @@ public class ReviewServiceImpl implements ReviewService {
         stats.setTwoStar(twoStar);
         stats.setOneStar(oneStar);
 
-        // 统计有图评价数
+        // 统计有图评价数（数组首元素存在即非空）
         long withImageCount = mongoTemplate.count(
                 new Query(Criteria.where("productId").is(productId)
-                        .and("images").ne(null).and("images").ne(List.of())),
+                        .and("images.0").exists(true)),
                 ReviewDetail.class);
         stats.setWithImageCount((int) withImageCount);
 
@@ -294,5 +313,11 @@ public class ReviewServiceImpl implements ReviewService {
         Page<Review> page = new Page<>(pageNum, pageSize);
         Page<Review> reviewPage = reviewMapper.selectPage(page, wrapper);
         return PageResult.of(reviewPage.getRecords(), reviewPage.getTotal(), pageNum, pageSize);
+    }
+
+    @Override
+    public List<ReviewDetail> getOrderReviews(String orderNo, Long userId) {
+        Query query = new Query(Criteria.where("orderId").is(orderNo).and("userId").is(userId));
+        return mongoTemplate.find(query, ReviewDetail.class);
     }
 }

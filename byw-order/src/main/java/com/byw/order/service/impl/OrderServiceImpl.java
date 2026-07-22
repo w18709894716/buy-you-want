@@ -177,7 +177,9 @@ public class OrderServiceImpl implements OrderService {
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<Order>()
                 .eq(Order::getUserId, userId)
                 .eq(status != null, Order::getStatus, status)
-                .eq(reviewed != null, Order::getReviewed, reviewed)
+                // reviewed=0 精确匹配待评价；reviewed>=1 视为已评价（含已追评 2）
+                .eq(reviewed != null && reviewed == 0, Order::getReviewed, 0)
+                .ge(reviewed != null && reviewed >= 1, Order::getReviewed, 1)
                 .orderByDesc(Order::getCreatedAt);
 
         Page<Order> page = new Page<>(pageNum, pageSize);
@@ -323,7 +325,8 @@ public class OrderServiceImpl implements OrderService {
         return order;
     }
 
-    private String generateOrderNo() {
+    @Override
+    public String generateOrderNo() {
         String datePart = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
         long seq = SEQUENCE.incrementAndGet() % 100000;
         return datePart + String.format("%05d", seq);

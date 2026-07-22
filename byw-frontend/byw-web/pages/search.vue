@@ -233,9 +233,16 @@ function goPage(page: number) {
 }
 
 function selectPriceRange(range: { label: string; min: number; max: number }) {
-  activePriceRange.value = range.label
-  priceRange.min = range.min
-  priceRange.max = range.max
+  if (activePriceRange.value === range.label) {
+    // 再次点击已选中区间 → 取消价格筛选
+    activePriceRange.value = ''
+    priceRange.min = 0
+    priceRange.max = 0
+  } else {
+    activePriceRange.value = range.label
+    priceRange.min = range.min
+    priceRange.max = range.max
+  }
   currentPage.value = 1
   fetchProducts()
 }

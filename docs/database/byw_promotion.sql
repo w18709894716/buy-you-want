@@ -35,11 +35,6 @@ DROP TABLE IF EXISTS t_seckill_activity;
 CREATE TABLE t_seckill_activity (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(100) NOT NULL,
-    product_id BIGINT NOT NULL,
-    sku_id BIGINT NOT NULL,
-    seckill_price DECIMAL(10,2) NOT NULL,
-    total_stock INT NOT NULL,
-    available_stock INT NOT NULL,
     start_time DATETIME NOT NULL,
     end_time DATETIME NOT NULL,
     status TINYINT DEFAULT 0 COMMENT '0未开始 1进行中 2已结束',
@@ -49,15 +44,31 @@ CREATE TABLE t_seckill_activity (
     INDEX idx_start_time (start_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+DROP TABLE IF EXISTS t_seckill_activity_item;
+CREATE TABLE t_seckill_activity_item (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    activity_id BIGINT NOT NULL,
+    product_id BIGINT NOT NULL,
+    sku_id BIGINT NOT NULL,
+    seckill_price DECIMAL(10,2) NOT NULL,
+    total_stock INT NOT NULL,
+    available_stock INT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted TINYINT DEFAULT 0,
+    INDEX idx_activity_id (activity_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 DROP TABLE IF EXISTS t_seckill_order;
 CREATE TABLE t_seckill_order (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     activity_id BIGINT NOT NULL,
+    item_id BIGINT NOT NULL,
     user_id BIGINT NOT NULL,
     order_no VARCHAR(64),
     status TINYINT DEFAULT 0 COMMENT '0待支付 1已支付 2已取消',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uk_activity_user (activity_id, user_id)
+    UNIQUE KEY uk_item_user (item_id, user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 DROP TABLE IF EXISTS t_group_buy_activity;
@@ -81,6 +92,7 @@ CREATE TABLE t_group_buy_activity (
 TRUNCATE TABLE t_seckill_order;
 TRUNCATE TABLE t_coupon_record;
 TRUNCATE TABLE t_group_buy_activity;
+TRUNCATE TABLE t_seckill_activity_item;
 TRUNCATE TABLE t_seckill_activity;
 TRUNCATE TABLE t_coupon;
 
@@ -110,13 +122,18 @@ INSERT INTO t_coupon_record (coupon_id, user_id, status, created_at) VALUES
 (8, 8, 0, '2026-06-15 09:00:00'),
 (1, 3, 0, '2026-06-02 10:00:00');
 
--- 秒杀活动
-INSERT INTO t_seckill_activity (name, product_id, sku_id, seckill_price, total_stock, available_stock, start_time, end_time, status) VALUES
-('iPhone限时秒杀', 1, 1, 7999.00, 10, 8, '2026-06-20 10:00:00', '2026-06-20 12:00:00', 0),
-('华为Mate60秒杀', 2, 5, 5999.00, 20, 15, '2026-06-20 14:00:00', '2026-06-20 16:00:00', 0),
-('小米14秒杀', 3, 8, 4999.00, 30, 25, '2026-06-21 10:00:00', '2026-06-21 12:00:00', 0),
-('Sony耳机秒杀', 6, 14, 1699.00, 50, 42, '2026-06-21 14:00:00', '2026-06-21 16:00:00', 0),
-('Nike运动鞋秒杀', 7, 16, 599.00, 100, 78, '2026-06-22 10:00:00', '2026-06-22 12:00:00', 0);
+-- 秒杀活动（多商品：活动 + 商品条目子表）
+INSERT INTO t_seckill_activity (name, start_time, end_time, status) VALUES
+('618数码秒杀专场', '2026-06-20 10:00:00', '2026-06-20 12:00:00', 0),
+('周末好物半价抢', '2026-06-21 14:00:00', '2026-06-21 16:00:00', 0);
+
+-- 秒杀活动商品条目
+INSERT INTO t_seckill_activity_item (activity_id, product_id, sku_id, seckill_price, total_stock, available_stock) VALUES
+(1, 1, 1, 7999.00, 10, 8),
+(1, 2, 5, 5999.00, 20, 15),
+(1, 3, 8, 4999.00, 30, 25),
+(2, 6, 14, 1699.00, 50, 42),
+(2, 7, 16, 599.00, 100, 78);
 
 -- 团购活动
 INSERT INTO t_group_buy_activity (name, product_id, group_price, original_price, group_size, max_groups, start_time, end_time, status) VALUES

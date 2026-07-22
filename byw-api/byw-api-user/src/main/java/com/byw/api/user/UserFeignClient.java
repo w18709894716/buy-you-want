@@ -49,4 +49,7 @@ public interface UserFeignClient {
 
     @GetMapping("/feign/user/address/{addressId}")
     R<AddressDTO> getAddressById(@PathVariable("addressId") Long addressId);
+
+    @GetMapping("/feign/user/{userId}/default-address")
+    R<AddressDTO> getDefaultAddress(@PathVariable("userId") Long userId);
 }

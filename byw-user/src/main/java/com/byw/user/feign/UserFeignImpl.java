@@ -141,4 +141,26 @@ public class UserFeignImpl implements UserFeignClient {
         BeanUtils.copyProperties(address, dto);
         return R.ok(dto);
     }
+
+    @Override
+    @GetMapping("/{userId}/default-address")
+    public R<AddressDTO> getDefaultAddress(@PathVariable("userId") Long userId) {
+        UserAddress address = userAddressMapper.selectOne(
+                new LambdaQueryWrapper<UserAddress>()
+                        .eq(UserAddress::getUserId, userId)
+                        .eq(UserAddress::getIsDefault, 1)
+                        .last("LIMIT 1"));
+        // 如果没有默认地址，取第一个
+        if (address == null) {
+            address = userAddressMapper.selectOne(
+                    new LambdaQueryWrapper<UserAddress>()
+                            .eq(UserAddress::getUserId, userId)
+                            .orderByDesc(UserAddress::getCreatedAt)
+                            .last("LIMIT 1"));
+        }
+        if (address == null) return R.fail("无收货地址");
+        AddressDTO dto = new AddressDTO();
+        BeanUtils.copyProperties(address, dto);
+        return R.ok(dto);
+    }
 }

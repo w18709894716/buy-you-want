@@ -139,6 +139,15 @@
         </div>
       </Transition>
     </Teleport>
+
+    <!-- Toast 提示 -->
+    <Transition name="toast">
+      <div v-if="toast.visible"
+        :class="['fixed top-20 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2',
+          toast.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white']">
+        {{ toast.message }}
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -146,6 +155,14 @@
 import { get, post } from '~/utils/request'
 
 definePageMeta({ middleware: ['auth'] })
+
+const toast = reactive({ visible: false, message: '', type: 'success' as 'success' | 'error' })
+let toastTimer: ReturnType<typeof setTimeout> | null = null
+function showToast(message: string, type: 'success' | 'error' = 'success') {
+  if (toastTimer) clearTimeout(toastTimer)
+  toast.visible = true; toast.message = message; toast.type = type
+  toastTimer = setTimeout(() => { toast.visible = false }, 2500)
+}
 
 const route = useRoute()
 const orderNo = computed(() => route.params.id as string)
@@ -200,7 +217,7 @@ function isOrderExpired(order: any): boolean {
 }
 
 function handlePay() {
-  alert(`订单 ${orderNo.value} 进入支付流程`)
+  navigateTo(`/payment/${orderNo.value}`)
 }
 
 function handleConfirmReceive() {

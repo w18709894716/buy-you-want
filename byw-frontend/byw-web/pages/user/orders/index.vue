@@ -50,6 +50,19 @@
           </button>
         </div>
 
+        <!-- 评价子筛选（仅“评价”tab下显示） -->
+        <div v-if="activeTab === 'review'" class="bg-white border-b px-3 sm:px-6 py-2 flex gap-2">
+          <button
+            v-for="sub in reviewSubTabs"
+            :key="sub.value"
+            :class="[
+              'px-3 py-1 text-xs rounded-full border transition-colors',
+              reviewSubTab === sub.value ? 'bg-primary text-white border-primary' : 'text-gray-500 border-gray-200 hover:border-primary hover:text-primary'
+            ]"
+            @click="switchReviewSubTab(sub.value)"
+          >{{ sub.label }}</button>
+        </div>
+
         <!-- 订单列表 -->
         <div class="bg-white rounded-b-lg">
           <div v-if="filteredOrders.length === 0" class="p-16 text-center">
@@ -68,21 +81,47 @@
                 <span :class="order.statusClass" class="font-medium">{{ order.statusText }}</span>
               </div>
 
-              <!-- 订单商品 -->
-              <div class="flex items-center gap-4 mb-3">
-                <NuxtLink :to="`/product/${order.productId}`">
-                  <img :src="order.image" :alt="order.productName" class="w-20 h-20 object-cover rounded" />
-                </NuxtLink>
-                <div class="flex-1">
-                  <NuxtLink :to="`/product/${order.productId}`" class="text-sm text-gray-800 hover:text-primary">
-                    {{ order.productName }}
+              <!-- 订单商品（支持多件） -->
+              <div class="space-y-3 mb-3">
+                <div
+                  v-for="(item, idx) in order.items"
+                  :key="item.skuId || idx"
+                  class="flex items-center gap-4"
+                >
+                  <NuxtLink :to="`/product/${item.productId}`">
+                    <img :src="item.productImage || 'https://via.placeholder.com/80x80?text=商品'" :alt="item.productName" class="w-20 h-20 object-cover rounded" />
                   </NuxtLink>
-                  <p class="text-xs text-gray-400 mt-1">{{ order.specs }}</p>
+                  <div class="flex-1">
+                    <NuxtLink :to="`/product/${item.productId}`" class="text-sm text-gray-800 hover:text-primary">
+                      {{ item.productName }}
+                    </NuxtLink>
+                    <p class="text-xs text-gray-400 mt-1">{{ item.skuName }}</p>
+                  </div>
+                  <div class="text-right">
+                    <div class="text-sm font-bold text-primary">¥{{ (item.price || 0).toFixed(2) }}</div>
+                    <div class="text-xs text-gray-400">x{{ item.quantity }}</div>
+                  </div>
                 </div>
-                <div class="text-right">
-                  <div class="text-sm font-bold text-primary">¥{{ order.price.toFixed(2) }}</div>
-                  <div class="text-xs text-gray-400">x{{ order.quantity }}</div>
+              </div>
+
+              <!-- 已评价摘要 -->
+              <div
+                v-if="activeTab === 'review' && reviewSubTab === 'reviewed' && reviewSummaries[order.orderNo]"
+                class="mb-3 bg-gray-50 rounded-lg p-3"
+              >
+                <div class="flex items-center gap-1 mb-1">
+                  <span
+                    v-for="s in 5"
+                    :key="s"
+                    class="text-sm"
+                    :class="s <= (reviewSummaries[order.orderNo].rating || 0) ? 'text-yellow-400' : 'text-gray-200'"
+                  >★</span>
+                  <span class="ml-2 text-xs text-gray-400">我的评价</span>
                 </div>
+                <p class="text-sm text-gray-600 line-clamp-2">{{ reviewSummaries[order.orderNo].content || '（未填写评价内容）' }}</p>
+                <p v-if="reviewSummaries[order.orderNo].appendContent" class="text-xs text-gray-500 mt-1 line-clamp-2">
+                  <span class="text-primary">追评：</span>{{ reviewSummaries[order.orderNo].appendContent }}
+                </p>
               </div>
 
               <!-- 订单底部 -->
@@ -119,6 +158,13 @@
                     @click="handleReview(order)"
                   >
                     去评价
+                  </button>
+                  <button
+                    v-if="order.status === 3 && order.reviewed === 1"
+                    class="px-4 py-1.5 border border-primary text-primary text-sm rounded hover:bg-primary-50 transition-colors"
+                    @click="handleAppendReview(order)"
+                  >
+                    继续追评
                   </button>
                   <button
                     class="px-4 py-1.5 border border-gray-300 text-gray-600 text-sm rounded hover:bg-gray-50 transition-colors"
@@ -214,15 +260,21 @@ const sidebarMenu = [
 ]
 
 const activeTab = ref((route.query.status as string) || 'all')
+const reviewSubTab = ref('pending') // pending=待评价, reviewed=已评价
 const currentPage = ref(1)
 const totalPages = ref(1)
+
+const reviewSubTabs = [
+  { label: '待评价', value: 'pending' },
+  { label: '已评价', value: 'reviewed' },
+]
 
 const tabs = ref([
   { label: '全部订单', value: 'all', count: 0 },
   { label: '待付款', value: '0', count: 0 },
   { label: '待发货', value: '1', count: 0 },
   { label: '待收货', value: '2', count: 0 },
-  { label: '待评价', value: 'review', count: 0 },
+  { label: '评价', value: 'review', count: 0 },
   { label: '已取消', value: '4', count: 0 },
 ])
 
@@ -248,6 +300,8 @@ const statusClassMap: Record<number, string> = {
 
 // 订单列表从接口获取
 const orders = ref<any[]>([])
+// 已评价订单的评价摘要：orderNo -> { rating, content, appendContent }
+const reviewSummaries = ref<Record<string, any>>({})
 
 const fetchOrders = async () => {
   try {
@@ -256,7 +310,7 @@ const fetchOrders = async () => {
     let reviewedParam: number | undefined = undefined
     if (activeTab.value === 'review') {
       statusParam = 3
-      reviewedParam = 0
+      reviewedParam = reviewSubTab.value === 'reviewed' ? 1 : 0
     } else if (activeTab.value !== 'all') {
       statusParam = parseInt(activeTab.value)
     }
@@ -266,28 +320,65 @@ const fetchOrders = async () => {
       status: statusParam,
       reviewed: reviewedParam
     })
-    orders.value = (data?.list || []).map((o: any) => ({
-      id: o.id,
-      orderNo: o.orderNo,
-      date: o.createdAt,
-      createdAt: o.createdAt,
-      status: o.status,
-      reviewed: o.reviewed,
-      statusText: statusTextMap[o.status] || '未知',
-      statusClass: statusClassMap[o.status] || 'text-gray-500',
-      productId: o.items?.[0]?.productId || o.productId,
-      image: o.items?.[0]?.productImage || o.productImage,
-      productName: o.items?.[0]?.productName || o.productName,
-      specs: o.items?.[0]?.skuName || '',
-      price: o.items?.[0]?.price || o.totalAmount,
-      quantity: o.items?.[0]?.quantity || 1,
-      total: o.payAmount || o.totalAmount
-    }))
+    orders.value = (data?.list || []).map((o: any) => {
+      const items = (o.items && o.items.length ? o.items : [{
+        productId: o.productId,
+        productImage: o.productImage,
+        productName: o.productName,
+        skuName: '',
+        price: o.totalAmount,
+        quantity: 1
+      }])
+      const totalQuantity = items.reduce((s: number, it: any) => s + (it.quantity || 0), 0)
+      return {
+        id: o.id,
+        orderNo: o.orderNo,
+        date: o.createdAt,
+        createdAt: o.createdAt,
+        status: o.status,
+        reviewed: o.reviewed,
+        statusText: statusTextMap[o.status] || '未知',
+        statusClass: statusClassMap[o.status] || 'text-gray-500',
+        items,
+        // 保留首件商品用于评价等跳转场景
+        productId: items[0]?.productId,
+        productName: items[0]?.productName,
+        quantity: totalQuantity,
+        total: o.payAmount || o.totalAmount
+      }
+    })
     totalPages.value = Math.ceil((data?.total || 0) / 10)
+    // 已评价子筛选：拉取评价摘要用于卡片展示
+    if (activeTab.value === 'review' && reviewSubTab.value === 'reviewed') {
+      fetchReviewSummaries()
+    } else {
+      reviewSummaries.value = {}
+    }
   } catch (e) {
     console.error('获取订单列表失败:', e)
     orders.value = []
   }
+}
+
+// 拉取当前已评价订单的评价摘要（取首条评价）
+async function fetchReviewSummaries() {
+  reviewSummaries.value = {}
+  const targets = orders.value.filter(o => o.orderNo)
+  await Promise.all(targets.map(async (o) => {
+    try {
+      const list = await get<any[]>(`/review/order/${o.orderNo}`)
+      if (list && list.length) {
+        const first = list[0]
+        reviewSummaries.value[o.orderNo] = {
+          rating: first.rating || 0,
+          content: first.content || '',
+          appendContent: first.appendContent || ''
+        }
+      }
+    } catch (e) {
+      // 单条失败不阻断其他
+    }
+  }))
 }
 
 // 独立获取各状态订单数量（不受当前Tab筛选影响）
@@ -315,9 +406,18 @@ const filteredOrders = computed(() => {
 
 function switchTab(tab: string) {
   activeTab.value = tab
+  reviewSubTab.value = 'pending'
   currentPage.value = 1
   fetchOrders()
   fetchOrderCounts()
+}
+
+/** 切换评价子筛选（待评价/已评价） */
+function switchReviewSubTab(sub: string) {
+  if (reviewSubTab.value === sub) return
+  reviewSubTab.value = sub
+  currentPage.value = 1
+  fetchOrders()
 }
 
 /** 查看订单详情 */
@@ -383,6 +483,11 @@ function handleConfirmReceive(order: any) {
 /** 去评价 */
 function handleReview(order: any) {
   navigateTo(`/user/orders/${order.orderNo || order.id}/review`)
+}
+
+/** 继续追评 */
+function handleAppendReview(order: any) {
+  navigateTo(`/user/orders/${order.orderNo || order.id}/review?mode=append`)
 }
 
 /** 取消订单 */

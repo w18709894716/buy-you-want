@@ -3,23 +3,27 @@ package com.byw.promotion.entity;
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("t_seckill_activity")
-public class SeckillActivity {
+@TableName("t_seckill_activity_item")
+public class SeckillActivityItem {
 
     @TableId(type = IdType.AUTO)
     private Long id;
 
-    private String name;
+    private Long activityId;
 
-    private LocalDateTime startTime;
+    private Long productId;
 
-    private LocalDateTime endTime;
+    private Long skuId;
 
-    /** 0未开始 1进行中 2已结束 */
-    private Integer status;
+    private BigDecimal seckillPrice;
+
+    private Integer totalStock;
+
+    private Integer availableStock;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;

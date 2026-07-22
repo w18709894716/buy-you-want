@@ -62,7 +62,9 @@
         <div
           v-for="shortcut in shortcuts"
           :key="shortcut.label"
-          class="flex flex-col items-center gap-1 py-3 bg-white rounded-lg hover:shadow-md transition-shadow cursor-pointer"
+          class="flex flex-col items-center gap-1 py-3 bg-white rounded-lg transition-shadow"
+          :class="shortcut.disabled ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-md cursor-pointer'"
+          @click="handleShortcutClick(shortcut)"
         >
           <span class="text-2xl">{{ shortcut.icon }}</span>
           <span class="text-xs text-gray-600">{{ shortcut.label }}</span>
@@ -95,11 +97,28 @@
         <ProductCard v-for="product in newProducts" :key="product.id" :product="product" />
       </div>
     </section>
+
+    <!-- Toast 提示 -->
+    <Transition name="toast">
+      <div v-if="toast.visible"
+        :class="['fixed top-20 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2',
+          toast.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white']">
+        {{ toast.message }}
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
 import { get } from '~/utils/request'
+
+const toast = reactive({ visible: false, message: '', type: 'success' as 'success' | 'error' })
+let toastTimer: ReturnType<typeof setTimeout> | null = null
+function showToast(message: string, type: 'success' | 'error' = 'success') {
+  if (toastTimer) clearTimeout(toastTimer)
+  toast.visible = true; toast.message = message; toast.type = type
+  toastTimer = setTimeout(() => { toast.visible = false }, 2500)
+}
 
 const hoveredCategory = ref('')
 
@@ -117,17 +136,25 @@ const fetchCategories = async () => {
 
 // 快捷入口
 const shortcuts = [
-  { icon: '⚡', label: '限时秒杀' },
-  { icon: '🎁', label: '新人专享' },
-  { icon: '🏷️', label: '品牌特卖' },
-  { icon: '💰', label: '领券中心' },
-  { icon: '🔥', label: '热卖榜' },
-  { icon: '✨', label: '新品首发' },
-  { icon: '🌍', label: '海外精选' },
-  { icon: '🎮', label: '充值中心' },
-  { icon: '📦', label: '物流查询' },
-  { icon: '💬', label: '在线客服' },
+  { icon: '⚡', label: '限时秒杀', to: '/seckill' },
+  { icon: '🎁', label: '新人专享', to: '/coupons' },
+  { icon: '🏷️', label: '品牌特卖', to: '/search?brandSale=1' },
+  { icon: '💰', label: '领券中心', to: '/coupons' },
+  { icon: '🔥', label: '热卖榜', to: '/search?sort=sales' },
+  { icon: '✨', label: '新品首发', to: '/search?sort=new' },
+  { icon: '🌍', label: '海外精选', disabled: true },
+  { icon: '🎮', label: '充值中心', disabled: true },
+  { icon: '📦', label: '物流查询', to: '/logistics' },
+  { icon: '💬', label: '在线客服', disabled: true },
 ]
+
+const handleShortcutClick = (s: { to?: string; disabled?: boolean; label: string }) => {
+  if (s.disabled) {
+    showToast(`${s.label}：功能开发中，敬请期待`)
+    return
+  }
+  if (s.to) navigateTo(s.to)
+}
 
 // 热门商品从接口获取
 const hotProducts = ref<any[]>([])

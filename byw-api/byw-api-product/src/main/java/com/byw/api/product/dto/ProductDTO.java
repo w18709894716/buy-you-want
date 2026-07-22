@@ -20,6 +20,8 @@ public class ProductDTO implements Serializable {
     private Integer status;
     private Integer salesCount;
     private BigDecimal minPrice;
+    /** 该商品所有 SKU 库存之和 */
+    private Integer totalStock;
     private LocalDateTime createdAt;
     private List<SkuDTO> skus;
 }

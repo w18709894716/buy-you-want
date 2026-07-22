@@ -14,6 +14,8 @@ public class SeckillOrder {
 
     private Long activityId;
 
+    private Long itemId;
+
     private Long userId;
 
     private String orderNo;
