@@ -285,7 +285,8 @@ const statusTextMap: Record<number, string> = {
   3: '已完成',
   4: '已取消',
   5: '退款中',
-  6: '已退款'
+  6: '已退款',
+  7: '部分发货'
 }
 
 const statusClassMap: Record<number, string> = {
@@ -295,7 +296,8 @@ const statusClassMap: Record<number, string> = {
   3: 'text-green-500',
   4: 'text-gray-500',
   5: 'text-yellow-500',
-  6: 'text-gray-400'
+  6: 'text-gray-400',
+  7: 'text-orange-500'
 }
 
 // 订单列表从接口获取

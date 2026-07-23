@@ -3,6 +3,9 @@ package com.byw.order.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byw.api.cart.CartFeignClient;
+import com.byw.api.logistics.LogisticsFeignClient;
+import com.byw.api.logistics.dto.LogisticsDTO;
+import com.byw.api.logistics.dto.ShipRequestDTO;
 import com.byw.api.order.dto.OrderCreateDTO;
 import com.byw.api.order.dto.OrderDetailDTO;
 import com.byw.api.product.ProductFeignClient;
@@ -46,6 +49,7 @@ public class OrderServiceImpl implements OrderService {
     private final CartFeignClient cartFeignClient;
     private final PromotionFeignClient promotionFeignClient;
     private final UserFeignClient userFeignClient;
+    private final LogisticsFeignClient logisticsFeignClient;
     private final OrderEventProducer orderEventProducer;
 
     /** 雪花ID计数器，用于生成唯一订单号 */
@@ -274,6 +278,80 @@ public class OrderServiceImpl implements OrderService {
 
         saveStatusLog(order.getId(), fromStatus, status, "系统", "状态更新");
         orderEventProducer.sendOrderStatusChangeEvent(orderNo, fromStatus, status);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void shipItems(String orderNo, List<Long> itemIds, String companyName, String trackingNo) {
+        // 1. 校验订单状态：仅待发货(1)或部分发货(7)可发货
+        Order order = getOrderByNo(orderNo);
+        Integer fromStatus = order.getStatus();
+        if (fromStatus == null || (fromStatus != 1 && fromStatus != 7)) {
+            throw new BusinessException("当前订单状态不可发货");
+        }
+        if (itemIds == null || itemIds.isEmpty()) {
+            throw new BusinessException("请选择要发货的商品");
+        }
+
+        // 2. 校验选中明细均属于该订单且未发货
+        List<OrderItem> allItems = orderItemMapper.selectList(
+                new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderNo, orderNo));
+        List<OrderItem> toShip = allItems.stream()
+                .filter(i -> itemIds.contains(i.getId()))
+                .collect(Collectors.toList());
+        if (toShip.size() != itemIds.size()) {
+            throw new BusinessException("存在不属于该订单的商品");
+        }
+        boolean anyShipped = toShip.stream().anyMatch(i -> i.getShipStatus() != null && i.getShipStatus() == 1);
+        if (anyShipped) {
+            throw new BusinessException("选中商品中存在已发货项");
+        }
+
+        // 3. 创建物流包裹，取回运单号
+        ShipRequestDTO shipRequest = new ShipRequestDTO();
+        shipRequest.setOrderNo(orderNo);
+        shipRequest.setCompanyName(companyName);
+        shipRequest.setTrackingNo(trackingNo);
+        shipRequest.setReceiverName(order.getReceiverName());
+        shipRequest.setReceiverPhone(order.getReceiverPhone());
+        shipRequest.setReceiverAddress(order.getReceiverAddress());
+        String finalTrackingNo = trackingNo;
+        try {
+            R<LogisticsDTO> shipResult = logisticsFeignClient.ship(shipRequest);
+            if (shipResult != null && shipResult.isSuccess() && shipResult.getData() != null) {
+                finalTrackingNo = shipResult.getData().getTrackingNo();
+            }
+        } catch (Exception e) {
+            log.warn("创建物流包裹失败: orderNo={}, error={}", orderNo, e.getMessage());
+        }
+
+        // 4. 更新选中明细发货信息
+        LocalDateTime now = LocalDateTime.now();
+        for (OrderItem item : toShip) {
+            item.setShipStatus(1);
+            item.setTrackingNo(finalTrackingNo);
+            item.setCompanyName(companyName);
+            item.setShipTime(now);
+            orderItemMapper.updateById(item);
+        }
+
+        // 5. 根据剩余未发货项重算订单状态
+        boolean allShipped = allItems.stream()
+                .allMatch(i -> itemIds.contains(i.getId())
+                        || (i.getShipStatus() != null && i.getShipStatus() == 1));
+        int toStatus = allShipped ? 2 : 7;
+        order.setStatus(toStatus);
+        if (allShipped) {
+            order.setShipTime(now);
+        }
+        orderMapper.updateById(order);
+
+        // 6. 记录状态日志与事件
+        saveStatusLog(order.getId(), fromStatus, toStatus, "admin",
+                allShipped ? "全部发货" : "部分发货");
+        orderEventProducer.sendOrderStatusChangeEvent(orderNo, fromStatus, toStatus);
+
+        log.info("订单发货: orderNo={}, 发货商品数={}, 全部发完={}", orderNo, toShip.size(), allShipped);
     }
 
     @Override

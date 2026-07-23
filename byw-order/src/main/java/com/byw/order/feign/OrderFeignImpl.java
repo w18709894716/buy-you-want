@@ -60,14 +60,24 @@ public class OrderFeignImpl implements OrderFeignClient {
     }
 
     @Override
+    @PostMapping("/ship-items")
+    public R<Boolean> shipItems(@RequestParam("orderNo") String orderNo,
+                                @RequestParam("companyName") String companyName,
+                                @RequestParam(value = "trackingNo", required = false) String trackingNo,
+                                @RequestBody List<Long> itemIds) {
+        orderService.shipItems(orderNo, itemIds, companyName, trackingNo);
+        return R.ok(true);
+    }
+
+    @Override
     @GetMapping("/list")
     public R<PageResult<OrderDetailDTO>> listOrders(@RequestParam(value = "pageNum", defaultValue = "1") Integer pageNum,
                                                     @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,
-                                                    @RequestParam(value = "status", required = false) Integer status,
+                                                    @RequestParam(value = "statuses", required = false) List<Integer> statuses,
                                                     @RequestParam(value = "orderNo", required = false) String orderNo) {
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
-        if (status != null) {
-            wrapper.eq(Order::getStatus, status);
+        if (statuses != null && !statuses.isEmpty()) {
+            wrapper.in(Order::getStatus, statuses);
         }
         if (orderNo != null && !orderNo.isEmpty()) {
             wrapper.like(Order::getOrderNo, orderNo);

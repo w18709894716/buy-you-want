@@ -49,6 +49,14 @@
             <div class="flex-1">
               <p class="text-sm text-gray-800">{{ item.productName }}</p>
               <p class="text-xs text-gray-400 mt-0.5">{{ item.skuName }}</p>
+              <div class="mt-1 flex items-center gap-2">
+                <span v-if="item.shipStatus === 1" class="inline-flex items-center text-xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded">已发货</span>
+                <span v-else class="inline-flex items-center text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">未发货</span>
+                <template v-if="item.shipStatus === 1">
+                  <span class="text-xs text-gray-400">{{ item.companyName }} {{ item.trackingNo }}</span>
+                  <button class="text-xs text-primary hover:underline" @click="navigateTo(`/logistics?orderNo=${order.orderNo}`)">查看物流</button>
+                </template>
+              </div>
             </div>
             <div class="text-sm text-gray-800">¥{{ item.price?.toFixed(2) }}</div>
             <div class="text-sm text-gray-500">x{{ item.quantity }}</div>
@@ -177,7 +185,8 @@ const statusTextMap: Record<number, string> = {
   3: '已完成',
   4: '已取消',
   5: '退款中',
-  6: '已退款'
+  6: '已退款',
+  7: '部分发货'
 }
 
 const statusClassMap: Record<number, string> = {
@@ -187,7 +196,8 @@ const statusClassMap: Record<number, string> = {
   3: 'text-green-500',
   4: 'text-gray-500',
   5: 'text-yellow-500',
-  6: 'text-gray-400'
+  6: 'text-gray-400',
+  7: 'text-orange-500'
 }
 
 const fetchOrderDetail = async () => {

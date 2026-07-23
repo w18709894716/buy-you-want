@@ -73,6 +73,7 @@ public class ReviewServiceImpl implements ReviewService {
 
         // 4. 保存到MongoDB
         reviewDetail.setCreatedAt(LocalDateTime.now());
+        reviewDetail.setIsAnonymous(isAnonymous != null ? isAnonymous : 0);
         reviewDetailRepository.save(reviewDetail);
 
         // 5. 更新订单评价状态
@@ -87,21 +88,23 @@ public class ReviewServiceImpl implements ReviewService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void appendReview(String orderNo, Long userId, String appendContent, List<String> appendImages) {
-        // 1. 查找原评价
+    public void appendReview(String orderNo, Long userId, Long skuId, String appendContent, List<String> appendImages) {
+        // 1. 查找该商品的原评价（按 orderNo+userId+skuId 精确定位，避免一单多商品时命中多条）
         Review review = reviewMapper.selectOne(
                 new LambdaQueryWrapper<Review>()
                         .eq(Review::getOrderNo, orderNo)
-                        .eq(Review::getUserId, userId));
+                        .eq(Review::getUserId, userId)
+                        .eq(Review::getSkuId, skuId));
         if (review == null) {
             throw new BusinessException("评价不存在");
         }
 
-        // 2. 查找评价明细，校验是否已追评（仅允许追评一次）
-        Query query = new Query(Criteria.where("orderId").is(orderNo).and("userId").is(userId));
+        // 2. 查找评价明细，校验是否已追评（每个商品仅允许追评一次）
+        Query query = new Query(Criteria.where("orderId").is(orderNo)
+                .and("userId").is(userId).and("skuId").is(skuId));
         ReviewDetail detail = mongoTemplate.findOne(query, ReviewDetail.class);
         if (detail != null && detail.getAppendContent() != null && !detail.getAppendContent().isBlank()) {
-            throw new BusinessException("该订单已追评，不能重复追评");
+            throw new BusinessException("该商品已追评，不能重复追评");
         }
 
         // 3. 保存追评图片到MySQL
@@ -122,14 +125,21 @@ public class ReviewServiceImpl implements ReviewService {
             reviewDetailRepository.save(detail);
         }
 
-        // 5. 更新订单评价状态为已追评(2)
+        // 5. 仅当本人该订单全部已评商品都已追评时，才将订单标记为已追评(2)，避免一单多商品时提前隐藏追评入口
         try {
-            orderFeignClient.updateReviewed(orderNo, 2);
+            List<ReviewDetail> all = mongoTemplate.find(
+                    new Query(Criteria.where("orderId").is(orderNo).and("userId").is(userId)),
+                    ReviewDetail.class);
+            boolean allAppended = !all.isEmpty() && all.stream()
+                    .allMatch(rd -> rd.getAppendContent() != null && !rd.getAppendContent().isBlank());
+            if (allAppended) {
+                orderFeignClient.updateReviewed(orderNo, 2);
+            }
         } catch (Exception e) {
             log.warn("更新订单追评状态失败: orderNo={}, error={}", orderNo, e.getMessage());
         }
 
-        log.info("追评成功: orderNo={}", orderNo);
+        log.info("追评成功: orderNo={}, skuId={}", orderNo, skuId);
     }
 
     @Override
@@ -271,7 +281,7 @@ public class ReviewServiceImpl implements ReviewService {
             review.setSkuId(detail.getSkuId());
             review.setRating(detail.getRating());
             review.setContent(detail.getContent());
-            review.setIsAnonymous(detail.getImages() != null && !detail.getImages().isEmpty() ? 1 : 0);
+            review.setIsAnonymous(detail.getIsAnonymous() != null ? detail.getIsAnonymous() : 0);
             review.setHasImage(detail.getImages() != null && !detail.getImages().isEmpty() ? 1 : 0);
             review.setStatus(1);
             reviewMapper.insert(review);

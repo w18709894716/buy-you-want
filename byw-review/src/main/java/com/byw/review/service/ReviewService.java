@@ -15,7 +15,7 @@ public interface ReviewService {
     /**
      * 追加评价
      */
-    void appendReview(String orderNo, Long userId, String appendContent, java.util.List<String> appendImages);
+    void appendReview(String orderNo, Long userId, Long skuId, String appendContent, java.util.List<String> appendImages);
 
     /**
      * 获取商品评价列表

@@ -22,6 +22,13 @@ public interface LogisticsService {
     LogisticsDTO track(String orderNo);
 
     /**
+     * 查询订单全部物流包裹（一单多包裹）
+     * @param orderNo 订单编号
+     * @return 物流包裹列表（各含轨迹）
+     */
+    java.util.List<LogisticsDTO> trackAll(String orderNo);
+
+    /**
      * 更新物流轨迹
      * @param logisticsId 物流单ID
      * @param trace 轨迹信息

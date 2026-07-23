@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.util.List;
 
 @FeignClient(name = "byw-order", contextId = "orderFeignClient")
 public interface OrderFeignClient {
@@ -26,10 +27,16 @@ public interface OrderFeignClient {
     @PostMapping("/feign/order/update-status")
     R<Boolean> updateOrderStatus(@RequestParam("orderNo") String orderNo, @RequestParam("status") Integer status);
 
+    @PostMapping("/feign/order/ship-items")
+    R<Boolean> shipItems(@RequestParam("orderNo") String orderNo,
+                         @RequestParam("companyName") String companyName,
+                         @RequestParam(value = "trackingNo", required = false) String trackingNo,
+                         @RequestBody List<Long> itemIds);
+
     @GetMapping("/feign/order/list")
     R<PageResult<OrderDetailDTO>> listOrders(@RequestParam(value = "pageNum", defaultValue = "1") Integer pageNum,
                                              @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,
-                                             @RequestParam(value = "status", required = false) Integer status,
+                                             @RequestParam(value = "statuses", required = false) List<Integer> statuses,
                                              @RequestParam(value = "orderNo", required = false) String orderNo);
 
     @GetMapping("/feign/order/stats")

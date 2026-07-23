@@ -31,7 +31,7 @@
       </button>
     </div>
 
-    <!-- 追评表单 -->
+    <!-- 追评表单（按商品） -->
     <div v-else-if="isAppend" class="space-y-4">
       <!-- 订单信息概览 -->
       <div class="bg-white rounded-xl p-5">
@@ -48,69 +48,112 @@
         </p>
       </div>
 
-      <div class="bg-white rounded-xl p-5 space-y-4">
-        <h3 class="text-base font-medium text-gray-800">追加评价</h3>
-        <div>
-          <textarea
-            v-model="appendContent"
-            placeholder="再次使用后，您有什么新的感受？"
-            rows="4"
-            maxlength="500"
-            class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors"
-          />
-          <div class="text-right text-xs text-gray-400 mt-1">{{ appendContent.length }}/500</div>
-        </div>
+      <!-- 全部已追评 -->
+      <div v-if="allAppended" class="bg-white rounded-xl p-16 text-center">
+        <div class="text-5xl mb-3">✅</div>
+        <p class="text-gray-600 font-medium">该订单商品均已追评</p>
+        <p class="text-gray-400 text-sm mt-2">感谢您的反馈</p>
+        <button
+          class="mt-6 px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary-600 transition-colors"
+          @click="navigateTo('/user/orders')"
+        >返回订单列表</button>
+      </div>
 
-        <!-- 图片上传 -->
-        <div>
-          <div class="flex items-center gap-2 flex-wrap">
-            <div
-              v-for="(img, imgIdx) in appendImages"
-              :key="imgIdx"
-              class="relative w-20 h-20 rounded-lg overflow-hidden group"
-            >
-              <img :src="img" class="w-full h-full object-cover" />
-              <button
-                class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs transition-opacity"
-                @click="appendImages.splice(imgIdx, 1)"
-              >删除</button>
+      <!-- 逐商品追评卡片 -->
+      <template v-else>
+        <div v-for="(item, idx) in appendItems" :key="item.skuId" class="bg-white rounded-xl overflow-hidden shadow-sm">
+          <!-- 商品信息 -->
+          <div class="p-4 border-b border-gray-100 flex items-center gap-3 bg-gray-50">
+            <img :src="item.productImage || 'https://via.placeholder.com/60x60?text=商品'" class="w-14 h-14 object-cover rounded-lg flex-shrink-0" />
+            <div class="flex-1 min-w-0">
+              <p class="text-sm text-gray-800 font-medium truncate">{{ item.productName }}</p>
+              <p class="text-xs text-gray-400 mt-0.5">{{ item.skuName }}</p>
             </div>
-            <label
-              v-if="appendImages.length < 9"
-              class="w-20 h-20 border-2 border-dashed border-gray-200 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-primary transition-colors relative"
-            >
-              <template v-if="appendUploading">
-                <span class="text-primary text-xs">上传中...</span>
-              </template>
-              <template v-else>
-                <span class="text-gray-300 text-2xl">+</span>
-                <span class="text-xs text-gray-400 mt-0.5">上传图片</span>
-              </template>
-              <input
-                type="file"
-                accept="image/*"
-                class="hidden"
-                :disabled="appendUploading"
-                @change="handleAppendImageUpload($event)"
-              />
-            </label>
           </div>
-          <p class="text-xs text-gray-400 mt-1">最多上传9张图片，支持 JPG/PNG</p>
-        </div>
-      </div>
 
-      <!-- 提交按钮 -->
-      <div class="sticky bottom-4 bg-white rounded-xl p-4 shadow-lg border">
-        <div class="flex items-center justify-end">
-          <button
-            :disabled="submitting || !appendContent.trim()"
-            class="px-8 py-2.5 bg-primary text-white rounded-lg font-medium hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            @click="submitAppend"
-          >
-            {{ submitting ? '提交中...' : '发表追评' }}
-          </button>
+          <div class="p-4 space-y-3">
+            <!-- 原评价（只读） -->
+            <div class="bg-gray-50 rounded-lg p-3">
+              <div class="flex items-center gap-1 mb-1">
+                <span v-for="star in 5" :key="star" class="text-sm" :class="star <= item.origRating ? 'text-yellow-400' : 'text-gray-200'">★</span>
+              </div>
+              <p class="text-sm text-gray-600 whitespace-pre-wrap">{{ item.origContent || '（首评未填写文字）' }}</p>
+            </div>
+
+            <!-- 已追评：只读展示 -->
+            <div v-if="item.alreadyAppended" class="border-l-2 border-primary/40 pl-3">
+              <p class="text-xs text-primary mb-1">已追评</p>
+              <p class="text-sm text-gray-600 whitespace-pre-wrap">{{ item.existingAppendContent }}</p>
+              <div v-if="item.existingAppendImages.length" class="flex gap-2 flex-wrap mt-2">
+                <img v-for="(img, i) in item.existingAppendImages" :key="i" :src="img" class="w-16 h-16 object-cover rounded-lg" />
+              </div>
+            </div>
+
+            <!-- 未追评：可编辑 -->
+            <template v-else>
+              <div>
+                <textarea
+                  v-model="item.appendContent"
+                  placeholder="再次使用后，您有什么新的感受？"
+                  rows="3"
+                  maxlength="500"
+                  class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors"
+                />
+                <div class="text-right text-xs text-gray-400 mt-1">{{ item.appendContent.length }}/500</div>
+              </div>
+              <div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <div
+                    v-for="(img, imgIdx) in item.appendImages"
+                    :key="imgIdx"
+                    class="relative w-20 h-20 rounded-lg overflow-hidden group"
+                  >
+                    <img :src="img" class="w-full h-full object-cover" />
+                    <button
+                      class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs transition-opacity"
+                      @click="item.appendImages.splice(imgIdx, 1)"
+                    >删除</button>
+                  </div>
+                  <label
+                    v-if="item.appendImages.length < 9"
+                    class="w-20 h-20 border-2 border-dashed border-gray-200 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-primary transition-colors relative"
+                  >
+                    <template v-if="appendUploadingMap[idx]">
+                      <span class="text-primary text-xs">上传中...</span>
+                    </template>
+                    <template v-else>
+                      <span class="text-gray-300 text-2xl">+</span>
+                      <span class="text-xs text-gray-400 mt-0.5">上传图片</span>
+                    </template>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      class="hidden"
+                      :disabled="appendUploadingMap[idx]"
+                      @change="handleAppendImageUpload($event, idx)"
+                    />
+                  </label>
+                </div>
+                <p class="text-xs text-gray-400 mt-1">最多上传9张图片，支持 JPG/PNG</p>
+              </div>
+            </template>
+          </div>
         </div>
-      </div>
+
+        <!-- 提交按钮 -->
+        <div class="sticky bottom-4 bg-white rounded-xl p-4 shadow-lg border">
+          <div class="flex items-center justify-end">
+            <button
+              :disabled="submitting || !canSubmitAppend"
+              class="px-8 py-2.5 bg-primary text-white rounded-lg font-medium hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              @click="submitAppend"
+            >
+              {{ submitting ? '提交中...' : '发表追评' }}
+            </button>
+          </div>
+          <p v-if="!canSubmitAppend" class="text-xs text-orange-500 mt-2 text-right">请至少填写一个商品的追评内容</p>
+        </div>
+      </template>
     </div>
 
     <!-- 评价表单 -->
@@ -302,10 +345,30 @@ const submitting = ref(false)
 const showSuccess = ref(false)
 const uploading = reactive<Record<number, boolean>>({})
 
-// ===== 追评表单状态 =====
-const appendContent = ref('')
-const appendImages = ref<string[]>([])
-const appendUploading = ref(false)
+// ===== 追评表单状态（按商品） =====
+interface AppendItemForm {
+  productId: number
+  skuId: number
+  productName: string
+  skuName: string
+  productImage: string
+  origRating: number
+  origContent: string
+  alreadyAppended: boolean
+  existingAppendContent: string
+  existingAppendImages: string[]
+  appendContent: string
+  appendImages: string[]
+}
+const appendItems = ref<AppendItemForm[]>([])
+const appendUploadingMap = reactive<Record<number, boolean>>({})
+
+const allAppended = computed(() =>
+  appendItems.value.length > 0 && appendItems.value.every(it => it.alreadyAppended)
+)
+const canSubmitAppend = computed(() =>
+  appendItems.value.some(it => !it.alreadyAppended && it.appendContent.trim().length > 0)
+)
 
 // ===== Toast 提示 =====
 interface Toast { id: number; message: string; type: 'error' | 'success' | 'info' }
@@ -438,8 +501,8 @@ async function submitReviews() {
   }
 }
 
-/** 追评图片上传 */
-async function handleAppendImageUpload(event: Event) {
+/** 追评图片上传（按商品） */
+async function handleAppendImageUpload(event: Event, idx: number) {
   const input = event.target as HTMLInputElement
   if (!input.files?.length) return
   const file = input.files[0]
@@ -447,30 +510,64 @@ async function handleAppendImageUpload(event: Event) {
     showToast('图片大小不能超过 5MB')
     return
   }
-  appendUploading.value = true
+  appendUploadingMap[idx] = true
   try {
     const formData = new FormData()
     formData.append('file', file)
     const url = await upload<string>('/file/upload?folder=review', formData)
-    appendImages.value.push(url)
+    appendItems.value[idx].appendImages.push(url)
   } catch (e: any) {
     showToast(e.message || '图片上传失败')
   } finally {
-    appendUploading.value = false
+    appendUploadingMap[idx] = false
     input.value = ''
   }
 }
 
-/** 提交追评 */
+/** 加载追评页数据：合并订单商品与本人已有评价 */
+async function fetchAppendData() {
+  try {
+    const reviews = await get<any[]>(`/review/order/${orderNo.value}`)
+    const reviewMap = new Map<number, any>()
+    ;(reviews || []).forEach(r => reviewMap.set(r.skuId, r))
+    const items = order.value?.items || []
+    appendItems.value = items.map((item: any) => {
+      const rv = reviewMap.get(item.skuId) || {}
+      const appended = !!(rv.appendContent && String(rv.appendContent).trim())
+      return {
+        productId: item.productId,
+        skuId: item.skuId,
+        productName: item.productName,
+        skuName: item.skuName || '',
+        productImage: item.productImage || '',
+        origRating: rv.rating || 0,
+        origContent: rv.content || '',
+        alreadyAppended: appended,
+        existingAppendContent: rv.appendContent || '',
+        existingAppendImages: rv.appendImages || [],
+        appendContent: '',
+        appendImages: []
+      }
+    })
+  } catch (e) {
+    console.error('获取订单评价失败:', e)
+  }
+}
+
+/** 提交追评（逐个商品） */
 async function submitAppend() {
-  if (!appendContent.value.trim() || submitting.value) return
+  const targets = appendItems.value.filter(it => !it.alreadyAppended && it.appendContent.trim())
+  if (targets.length === 0 || submitting.value) return
   submitting.value = true
   try {
-    await post('/review/append', {
-      orderNo: orderNo.value,
-      appendContent: appendContent.value.trim(),
-      appendImages: appendImages.value.length > 0 ? appendImages.value : undefined
-    })
+    for (const it of targets) {
+      await post('/review/append', {
+        orderNo: orderNo.value,
+        skuId: it.skuId,
+        appendContent: it.appendContent.trim(),
+        appendImages: it.appendImages.length > 0 ? it.appendImages : undefined
+      })
+    }
     showSuccess.value = true
   } catch (e: any) {
     showToast(e.message || '提交追评失败，请重试')
@@ -480,7 +577,12 @@ async function submitAppend() {
 }
 
 onMounted(async () => {
-  await Promise.all([fetchOrder(), checkReviewed()])
+  await fetchOrder()
+  if (isAppend.value) {
+    await fetchAppendData()
+  } else {
+    await checkReviewed()
+  }
 })
 </script>
 

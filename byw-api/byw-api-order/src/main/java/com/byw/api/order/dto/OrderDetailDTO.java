@@ -31,6 +31,7 @@ public class OrderDetailDTO implements Serializable {
 
     @Data
     public static class OrderItemDTO implements Serializable {
+        private Long id;
         private Long productId;
         private Long skuId;
         private String productName;
@@ -39,5 +40,10 @@ public class OrderDetailDTO implements Serializable {
         private BigDecimal price;
         private Integer quantity;
         private BigDecimal subtotal;
+        /** 发货状态 0未发货 1已发货 */
+        private Integer shipStatus;
+        private String trackingNo;
+        private String companyName;
+        private LocalDateTime shipTime;
     }
 }

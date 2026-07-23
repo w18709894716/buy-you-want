@@ -32,6 +32,12 @@ public class LogisticsController {
         return R.ok(logisticsService.track(orderNo));
     }
 
+    @Operation(summary = "查询订单全部物流包裹")
+    @GetMapping("/track-all/{orderNo}")
+    public R<java.util.List<LogisticsDTO>> trackAll(@PathVariable String orderNo) {
+        return R.ok(logisticsService.trackAll(orderNo));
+    }
+
     @Operation(summary = "更新物流轨迹")
     @PostMapping("/trace/{logisticsId}")
     @RequireAdmin

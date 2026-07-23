@@ -4,6 +4,8 @@ import com.byw.api.order.dto.OrderCreateDTO;
 import com.byw.api.order.dto.OrderDetailDTO;
 import com.byw.common.core.result.PageResult;
 
+import java.util.List;
+
 public interface OrderService {
 
     /**
@@ -41,6 +43,11 @@ public interface OrderService {
      * 更新订单状态
      */
     void updateStatus(String orderNo, Integer status);
+
+    /**
+     * 拆分发货：对选中的订单明细发货
+     */
+    void shipItems(String orderNo, List<Long> itemIds, String companyName, String trackingNo);
 
     /**
      * 获取用户各状态订单数量

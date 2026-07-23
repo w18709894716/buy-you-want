@@ -35,6 +35,18 @@ public class OrderItem {
 
     private BigDecimal subtotal;
 
+    /** 发货状态 0未发货 1已发货 */
+    private Integer shipStatus;
+
+    /** 运单号 */
+    private String trackingNo;
+
+    /** 物流公司 */
+    private String companyName;
+
+    /** 发货时间 */
+    private LocalDateTime shipTime;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 }

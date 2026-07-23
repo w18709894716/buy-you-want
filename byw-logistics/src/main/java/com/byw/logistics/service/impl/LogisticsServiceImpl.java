@@ -40,7 +40,11 @@ public class LogisticsServiceImpl implements LogisticsService {
         order.setOrderNo(request.getOrderNo());
         order.setCompanyCode(request.getCompanyCode());
         order.setCompanyName(request.getCompanyName());
-        order.setTrackingNo(generateTrackingNo(request.getCompanyCode()));
+        // 运单号：优先使用传入值，为空时自动生成
+        String trackingNo = (request.getTrackingNo() != null && !request.getTrackingNo().isBlank())
+                ? request.getTrackingNo()
+                : generateTrackingNo(request.getCompanyCode());
+        order.setTrackingNo(trackingNo);
         order.setSenderName(request.getSenderName());
         order.setSenderPhone(request.getSenderPhone());
         order.setSenderAddress(request.getSenderAddress());
@@ -70,9 +74,12 @@ public class LogisticsServiceImpl implements LogisticsService {
 
     @Override
     public LogisticsDTO track(String orderNo) {
-        // 1. 查询物流订单
+        // 1. 查询物流订单（一单多包裹时取最新一条）
         LogisticsOrder order = logisticsOrderMapper.selectOne(
-                new LambdaQueryWrapper<LogisticsOrder>().eq(LogisticsOrder::getOrderNo, orderNo));
+                new LambdaQueryWrapper<LogisticsOrder>()
+                        .eq(LogisticsOrder::getOrderNo, orderNo)
+                        .orderByDesc(LogisticsOrder::getCreatedAt)
+                        .last("LIMIT 1"));
         if (order == null) {
             throw new BusinessException("物流信息不存在");
         }
@@ -84,6 +91,22 @@ public class LogisticsServiceImpl implements LogisticsService {
                         .orderByDesc(LogisticsTrace::getTraceTime));
 
         return buildLogisticsDTO(order, traces);
+    }
+
+    @Override
+    public List<LogisticsDTO> trackAll(String orderNo) {
+        // 一单多包裹：返回该订单全部物流包裹，各自附轨迹
+        List<LogisticsOrder> orders = logisticsOrderMapper.selectList(
+                new LambdaQueryWrapper<LogisticsOrder>()
+                        .eq(LogisticsOrder::getOrderNo, orderNo)
+                        .orderByAsc(LogisticsOrder::getCreatedAt));
+        return orders.stream().map(order -> {
+            List<LogisticsTrace> traces = logisticsTraceMapper.selectList(
+                    new LambdaQueryWrapper<LogisticsTrace>()
+                            .eq(LogisticsTrace::getLogisticsId, order.getId())
+                            .orderByDesc(LogisticsTrace::getTraceTime));
+            return buildLogisticsDTO(order, traces);
+        }).collect(Collectors.toList());
     }
 
     @Override

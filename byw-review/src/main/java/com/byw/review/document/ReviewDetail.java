@@ -22,6 +22,8 @@ public class ReviewDetail {
 
     private Long userId;
 
+    private Integer isAnonymous;
+
     private Integer rating;
 
     private String content;

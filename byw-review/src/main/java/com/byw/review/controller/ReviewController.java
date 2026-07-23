@@ -53,7 +53,7 @@ public class ReviewController {
     @RequireLogin
     @PostMapping("/append")
     public R<Void> append(@RequestBody AppendReviewRequest request) {
-        reviewService.appendReview(request.getOrderNo(), UserContext.getUserId(),
+        reviewService.appendReview(request.getOrderNo(), UserContext.getUserId(), request.getSkuId(),
                 request.getAppendContent(), request.getAppendImages());
         return R.ok();
     }
@@ -77,7 +77,13 @@ public class ReviewController {
             vo.setImages(d.getImages());
             vo.setSkuId(d.getSkuId());
             vo.setDate(d.getCreatedAt() != null ? d.getCreatedAt().format(DATE_FMT) : "");
-            vo.setUsername(resolveUsername(d.getUserId(), nameCache));
+            boolean anonymous = d.getIsAnonymous() != null && d.getIsAnonymous() == 1;
+            String rawName = resolveRawName(d.getUserId(), nameCache);
+            if (rawName == null) {
+                vo.setUsername("匿名用户");
+            } else {
+                vo.setUsername(anonymous ? maskName(rawName) : rawName);
+            }
             vo.setAppendContent(d.getAppendContent());
             vo.setAppendImages(d.getAppendImages());
             voList.add(vo);
@@ -85,22 +91,21 @@ public class ReviewController {
         return R.ok(PageResult.of(voList, page.getTotal(), pageNum, pageSize));
     }
 
-    /** 获取并脱敏用户名（同一用户缓存避免重复调用） */
-    private String resolveUsername(Long userId, Map<Long, String> cache) {
-        if (userId == null) return "匿名用户";
+    /** 获取用户原始展示名（昵称优先，其次用户名）；查询失败返回 null。同一用户缓存避免重复调用 */
+    private String resolveRawName(Long userId, Map<Long, String> cache) {
+        if (userId == null) return null;
         if (cache.containsKey(userId)) return cache.get(userId);
-        String display = "匿名用户";
+        String raw = null;
         try {
             R<UserDTO> r = userFeignClient.getUserById(userId);
             if (r.isSuccess() && r.getData() != null) {
                 UserDTO u = r.getData();
-                String raw = u.getNickname() != null && !u.getNickname().isBlank() ? u.getNickname() : u.getUsername();
-                display = maskName(raw);
+                raw = u.getNickname() != null && !u.getNickname().isBlank() ? u.getNickname() : u.getUsername();
             }
         } catch (Exception ignored) {
         }
-        cache.put(userId, display);
-        return display;
+        cache.put(userId, raw);
+        return raw;
     }
 
     /** 用户名脱敏：保留首尾字符，中间以 * 代替 */
@@ -159,6 +164,7 @@ public class ReviewController {
             detail.setRating(item.getRating());
             detail.setContent(item.getContent());
             detail.setImages(item.getImages());
+            detail.setIsAnonymous(item.getIsAnonymous());
             details.add(detail);
         }
         String orderNo = request.getReviews().get(0).getOrderNo();
@@ -206,6 +212,7 @@ public class ReviewController {
     @Data
     public static class AppendReviewRequest {
         private String orderNo;
+        private Long skuId;
         private String appendContent;
         private List<String> appendImages;
     }

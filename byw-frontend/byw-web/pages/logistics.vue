@@ -31,66 +31,78 @@
         </div>
       </div>
 
-      <!-- 查询结果 -->
-      <div v-if="result" class="mt-4 bg-white rounded-lg shadow-sm overflow-hidden">
-        <!-- 快递公司信息 -->
-        <div class="p-4 border-b bg-gray-50">
-          <div class="flex items-center gap-4">
-            <div class="w-12 h-12 rounded-full bg-primary-100 flex items-center justify-center text-2xl">
-              🚚
-            </div>
-            <div class="flex-1 min-w-0">
-              <p class="font-medium text-gray-800">{{ result.companyName || '快递运输中' }}</p>
-              <p class="text-sm text-gray-500 mt-0.5">
-                运单号：<span class="font-mono">{{ result.trackingNo || '-' }}</span>
-              </p>
-              <p class="text-xs mt-1">
-                <span
-                  class="px-2 py-0.5 rounded text-xs"
-                  :class="statusClass(result.status)"
-                >
-                  {{ statusText(result.status) }}
-                </span>
-              </p>
+      <!-- 查询结果（支持一单多包裹） -->
+      <div v-if="packages.length" class="mt-4 space-y-4">
+        <div
+          v-if="packages.length > 1"
+          class="text-sm text-gray-500"
+        >共 {{ packages.length }} 个包裹</div>
+        <div
+          v-for="(pkg, pIdx) in packages"
+          :key="pkg.id || pIdx"
+          class="bg-white rounded-lg shadow-sm overflow-hidden"
+        >
+          <!-- 快递公司信息 -->
+          <div class="p-4 border-b bg-gray-50">
+            <div class="flex items-center gap-4">
+              <div class="w-12 h-12 rounded-full bg-primary-100 flex items-center justify-center text-2xl">
+                🚚
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="font-medium text-gray-800">
+                  <span v-if="packages.length > 1" class="text-gray-400 mr-1">包裹{{ pIdx + 1 }} ·</span>{{ pkg.companyName || '快递运输中' }}
+                </p>
+                <p class="text-sm text-gray-500 mt-0.5">
+                  运单号：<span class="font-mono">{{ pkg.trackingNo || '-' }}</span>
+                </p>
+                <p class="text-xs mt-1">
+                  <span
+                    class="px-2 py-0.5 rounded text-xs"
+                    :class="statusClass(pkg.status)"
+                  >
+                    {{ statusText(pkg.status) }}
+                  </span>
+                </p>
+              </div>
             </div>
           </div>
-        </div>
-
-        <!-- 物流轨迹时间线 -->
-        <div class="p-4">
-          <h3 class="text-sm font-medium text-gray-700 mb-4">物流轨迹</h3>
-          <div v-if="traces.length" class="relative pl-6">
-            <!-- 竖线 -->
-            <div class="absolute left-2 top-1.5 bottom-1.5 w-px bg-gray-200" />
-            <!-- 轨迹项 -->
-            <div
-              v-for="(trace, idx) in traces"
-              :key="idx"
-              class="relative pb-5 last:pb-0"
-            >
-              <!-- 圆点 -->
-              <span
-                class="absolute -left-5 top-1 w-3 h-3 rounded-full border-2"
-                :class="idx === 0 ? 'bg-primary border-primary' : 'bg-white border-gray-300'"
-              />
-              <p
-                class="text-sm"
-                :class="idx === 0 ? 'text-gray-800 font-medium' : 'text-gray-600'"
+      
+          <!-- 物流轨迹时间线 -->
+          <div class="p-4">
+            <h3 class="text-sm font-medium text-gray-700 mb-4">物流轨迹</h3>
+            <div v-if="pkg.sortedTraces && pkg.sortedTraces.length" class="relative pl-6">
+              <!-- 竖线 -->
+              <div class="absolute left-2 top-1.5 bottom-1.5 w-px bg-gray-200" />
+              <!-- 轨迹项 -->
+              <div
+                v-for="(trace, idx) in pkg.sortedTraces"
+                :key="idx"
+                class="relative pb-5 last:pb-0"
               >
-                {{ trace.description }}
-              </p>
-              <p class="text-xs text-gray-400 mt-0.5">
-                {{ formatTime(trace.traceTime) }}
-                <span v-if="trace.location" class="ml-2">{{ trace.location }}</span>
-              </p>
+                <!-- 圆点 -->
+                <span
+                  class="absolute -left-5 top-1 w-3 h-3 rounded-full border-2"
+                  :class="idx === 0 ? 'bg-primary border-primary' : 'bg-white border-gray-300'"
+                />
+                <p
+                  class="text-sm"
+                  :class="idx === 0 ? 'text-gray-800 font-medium' : 'text-gray-600'"
+                >
+                  {{ trace.description }}
+                </p>
+                <p class="text-xs text-gray-400 mt-0.5">
+                  {{ formatTime(trace.traceTime) }}
+                  <span v-if="trace.location" class="ml-2">{{ trace.location }}</span>
+                </p>
+              </div>
             </div>
-          </div>
-          <div v-else class="text-center py-8 text-gray-400 text-sm">
-            暂无物流轨迹
+            <div v-else class="text-center py-8 text-gray-400 text-sm">
+              暂无物流轨迹
+            </div>
           </div>
         </div>
       </div>
-
+      
       <!-- 错误/未找到 -->
       <div v-else-if="notFound" class="mt-4 bg-white rounded-lg p-12 text-center text-gray-400 shadow-sm">
         <p class="text-5xl mb-4">📭</p>
@@ -119,15 +131,14 @@ interface LogisticsResult {
   trackingNo?: string
   status: number
   traces?: Trace[]
+  sortedTraces?: Trace[]
 }
 
 const route = useRoute()
 const orderNo = ref('')
 const querying = ref(false)
-const result = ref<LogisticsResult | null>(null)
+const packages = ref<LogisticsResult[]>([])
 const notFound = ref(false)
-
-const traces = ref<Trace[]>([])
 
 const statusText = (s: number) =>
   ({ 0: '已揽收', 1: '运输中', 2: '派送中', 3: '已签收', 4: '异常' } as Record<number, string>)[s] || '未知'
@@ -150,14 +161,15 @@ const handleQuery = async () => {
   const no = orderNo.value.trim()
   if (!no) return
   querying.value = true
-  result.value = null
+  packages.value = []
   notFound.value = false
-  traces.value = []
   try {
-    const data = await get<any>(`/logistics/track/${encodeURIComponent(no)}`)
-    if (data) {
-      result.value = data
-      traces.value = (data.traces || []).slice().reverse()
+    const data = await get<any[]>(`/logistics/track-all/${encodeURIComponent(no)}`)
+    if (data && data.length) {
+      packages.value = data.map((pkg: any) => ({
+        ...pkg,
+        sortedTraces: (pkg.traces || []).slice().reverse()
+      }))
     } else {
       notFound.value = true
     }
