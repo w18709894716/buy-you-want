@@ -51,6 +51,19 @@ CREATE TABLE t_user_level (
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 用户商品收藏（商品级收藏）
+DROP TABLE IF EXISTS t_user_favorite;
+CREATE TABLE t_user_favorite (
+                                 id              BIGINT PRIMARY KEY AUTO_INCREMENT,
+                                 user_id         BIGINT NOT NULL,
+                                 product_id      BIGINT NOT NULL,
+                                 created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                 updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                                 deleted         TINYINT DEFAULT 0,
+                                 UNIQUE KEY uk_user_product (user_id, product_id),
+                                 INDEX idx_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- ========== 清空数据 ==========
 TRUNCATE TABLE t_user_address;
 TRUNCATE TABLE t_user;

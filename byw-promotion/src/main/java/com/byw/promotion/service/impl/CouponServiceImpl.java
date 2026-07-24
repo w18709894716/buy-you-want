@@ -1,6 +1,7 @@
 package com.byw.promotion.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.byw.api.order.OrderFeignClient;
 import com.byw.api.promotion.dto.CouponDTO;
 import com.byw.api.promotion.dto.UserCouponDTO;
 import com.byw.common.core.exception.BusinessException;
@@ -29,16 +30,21 @@ public class CouponServiceImpl implements CouponService {
     private final CouponMapper couponMapper;
     private final CouponRecordMapper couponRecordMapper;
     private final RedisUtil redisUtil;
+    private final OrderFeignClient orderFeignClient;
 
     private static final String COUPON_CLAIM_KEY = "coupon:claim:";
 
     @Override
-    public List<Coupon> listAvailable() {
+    public List<Coupon> listAvailable(Integer newUser) {
         return couponMapper.selectList(
                 new LambdaQueryWrapper<Coupon>()
                         .eq(Coupon::getStatus, 1)
                         .le(Coupon::getStartTime, LocalDateTime.now())
                         .ge(Coupon::getEndTime, LocalDateTime.now())
+                        // newUser=1 只取新人专享；newUser=0 只取普通券（含旧数据 null）；null 不限
+                        .eq(newUser != null && newUser == 1, Coupon::getNewUser, 1)
+                        .and(newUser != null && newUser == 0,
+                                w -> w.ne(Coupon::getNewUser, 1).or().isNull(Coupon::getNewUser))
                         .apply("claimed_count < total_count"));
     }
 
@@ -55,6 +61,21 @@ public class CouponServiceImpl implements CouponService {
         LocalDateTime now = LocalDateTime.now();
         if (now.isBefore(coupon.getStartTime()) || now.isAfter(coupon.getEndTime())) {
             throw new BusinessException("优惠券不在有效期内");
+        }
+
+        // 2.1 新人专享券：仅限新用户（无历史订单）领取
+        if (coupon.getNewUser() != null && coupon.getNewUser() == 1) {
+            long orderCount;
+            try {
+                Long c = orderFeignClient.countUserOrders(userId).getData();
+                orderCount = c == null ? 0L : c;
+            } catch (Exception e) {
+                log.warn("校验新用户领取资格失败: userId={}, err={}", userId, e.getMessage());
+                throw new BusinessException("暂时无法校验领取资格，请稍后再试");
+            }
+            if (orderCount > 0) {
+                throw new BusinessException("该优惠券仅限新用户领取");
+            }
         }
 
         // 3. 使用Redis increment防止超领

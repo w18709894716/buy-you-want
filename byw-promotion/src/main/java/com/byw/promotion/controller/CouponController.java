@@ -23,8 +23,8 @@ public class CouponController {
 
     @Operation(summary = "获取可用优惠券列表")
     @GetMapping("/list")
-    public R<List<Coupon>> list() {
-        return R.ok(couponService.listAvailable());
+    public R<List<Coupon>> list(@RequestParam(value = "newUser", required = false) Integer newUser) {
+        return R.ok(couponService.listAvailable(newUser));
     }
 
     @Operation(summary = "领取优惠券")

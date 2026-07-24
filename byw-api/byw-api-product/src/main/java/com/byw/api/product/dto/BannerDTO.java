@@ -17,6 +17,8 @@ public class BannerDTO implements Serializable {
     private Integer linkType;
     /** 跳转值 */
     private String linkValue;
+    /** 展示位置:0轮播 1右侧活动位 */
+    private Integer position;
     /** 排序 */
     private Integer sortOrder;
     /** 0禁用 1启用 */

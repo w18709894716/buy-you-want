@@ -5,6 +5,8 @@ import com.byw.common.core.result.PageResult;
 import com.byw.review.document.ReviewDetail;
 import com.byw.review.entity.Review;
 
+import java.util.Map;
+
 public interface ReviewService {
 
     /**
@@ -34,9 +36,9 @@ public interface ReviewService {
     boolean reviewExists(String orderNo);
 
     /**
-     * 管理端：获取评价列表
+     * 管理端：获取评价列表（含真实商品名称、图片与追评信息）
      */
-    PageResult<Review> adminListReviews(Integer pageNum, Integer pageSize, Integer rating, Integer status);
+    PageResult<Map<String, Object>> adminListReviews(Integer pageNum, Integer pageSize, Integer rating, Integer status);
 
     /**
      * 管理端：更新评价显示状态
@@ -54,9 +56,9 @@ public interface ReviewService {
     void createBatchReviews(Long userId, String orderNo, java.util.List<ReviewDetail> reviewDetails);
 
     /**
-     * 获取用户评价列表
+     * 获取用户评价列表（含图片与追评信息）
      */
-    PageResult<Review> getUserReviews(Long userId, Integer pageNum, Integer pageSize, Boolean hasImage);
+    PageResult<Map<String, Object>> getUserReviews(Long userId, Integer pageNum, Integer pageSize, Boolean hasImage);
 
     /**
      * 获取某订单本人的评价明细（含追评），用于订单卡片摘要

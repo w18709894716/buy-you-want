@@ -81,10 +81,33 @@
             <p v-else class="text-sm text-gray-400 italic mb-2">该用户未填写评价内容</p>
 
             <!-- 评价图片 -->
-            <div v-if="review.hasImage" class="flex gap-2 mb-2">
-              <span class="inline-flex items-center gap-1 text-xs text-gray-400 bg-gray-50 px-2 py-1 rounded">
-                🖼 有图评价
-              </span>
+            <div v-if="review.images?.length" class="flex flex-wrap gap-2 mb-2">
+              <a
+                v-for="(img, i) in review.images"
+                :key="i"
+                :href="img"
+                target="_blank"
+                class="block w-20 h-20 rounded overflow-hidden border border-gray-100 hover:opacity-90 transition-opacity"
+              >
+                <img :src="img" class="w-full h-full object-cover" />
+              </a>
+            </div>
+
+            <!-- 追评 -->
+            <div v-if="review.hasAppend" class="mt-1 mb-2 pl-3 border-l-2 border-primary/40">
+              <p class="text-xs text-primary mb-1">追评</p>
+              <p v-if="review.appendContent" class="text-sm text-gray-700 mb-2 leading-relaxed">{{ review.appendContent }}</p>
+              <div v-if="review.appendImages?.length" class="flex flex-wrap gap-2">
+                <a
+                  v-for="(img, i) in review.appendImages"
+                  :key="i"
+                  :href="img"
+                  target="_blank"
+                  class="block w-20 h-20 rounded overflow-hidden border border-gray-100 hover:opacity-90 transition-opacity"
+                >
+                  <img :src="img" class="w-full h-full object-cover" />
+                </a>
+              </div>
             </div>
 
             <!-- 底部信息 -->

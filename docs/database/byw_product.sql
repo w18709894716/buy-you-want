@@ -198,6 +198,7 @@ CREATE TABLE t_banner (
     image_url VARCHAR(500) COMMENT '轮播图片URL(MinIO)',
     link_type TINYINT NOT NULL DEFAULT 1 COMMENT '跳转类型:1搜索关键词 2商品详情 3商品分类 4自定义链接',
     link_value VARCHAR(500) COMMENT '跳转值:关键词/商品ID/分类名/URL',
+    position TINYINT NOT NULL DEFAULT 0 COMMENT '展示位置:0轮播 1右侧活动位',
     sort_order INT DEFAULT 0 COMMENT '排序,越小越靠前',
     status TINYINT DEFAULT 1 COMMENT '0禁用 1启用',
     start_time DATETIME COMMENT '上线时间(空表示立即上线)',
@@ -205,11 +206,18 @@ CREATE TABLE t_banner (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted TINYINT DEFAULT 0,
-    INDEX idx_status_sort (status, sort_order)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='首页轮播Banner';
+    INDEX idx_pos_status_sort (position, status, sort_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='首页轮播Banner/活动位';
 
--- 轮播图种子数据(image_url 留空,前端以渐变+标题兜底,可在管理端上传真实图片)
-INSERT INTO t_banner (title, image_url, link_type, link_value, sort_order, status) VALUES
-('买你所想，尽在此刻', NULL, 1, '手机', 1, 1),
-('数码新品上市特惠', NULL, 3, '手机数码', 2, 1),
-('全场满减优惠', NULL, 1, '耳机', 3, 1);
+-- 轮播图种子数据(position=0,image_url 留空,前端以渐变+标题兜底,可在管理端上传真实图片)
+INSERT INTO t_banner (title, image_url, link_type, link_value, position, sort_order, status) VALUES
+('买你所想，尽在此刻', NULL, 1, '手机', 0, 1, 1),
+('数码新品上市特惠', NULL, 3, '手机数码', 0, 2, 1),
+('全场满减优惠', NULL, 1, '耳机', 0, 3, 1);
+
+-- 右侧活动位种子数据(position=1,建议配 4 个,首页右侧2x2活动图框)
+INSERT INTO t_banner (title, image_url, link_type, link_value, position, sort_order, status) VALUES
+('新人专享', NULL, 4, '/search?sort=hot', 1, 1, 1),
+('限时秒杀', NULL, 1, '笔记本', 1, 2, 1),
+('品牌甄选', NULL, 3, '手机数码', 1, 3, 1),
+('超值好物', NULL, 1, '耳机', 1, 4, 1);

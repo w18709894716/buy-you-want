@@ -140,6 +140,14 @@ public class OrderFeignImpl implements OrderFeignClient {
         return R.ok(true);
     }
 
+    @Override
+    @GetMapping("/count-by-user")
+    public R<Long> countUserOrders(@RequestParam("userId") Long userId) {
+        Long count = orderMapper.selectCount(
+                new LambdaQueryWrapper<Order>().eq(Order::getUserId, userId));
+        return R.ok(count);
+    }
+
     private OrderDetailDTO buildOrderDetailDTO(Order order, List<OrderItem> items) {
         OrderDetailDTO dto = new OrderDetailDTO();
         BeanUtils.copyProperties(order, dto);

@@ -1,10 +1,5 @@
 <template>
   <div class="max-w-7xl mx-auto px-4 py-6">
-    <!-- 搜索头部 -->
-    <div class="mb-6">
-      <SearchBar />
-    </div>
-
     <div class="flex gap-6">
       <!-- 左侧筛选 -->
       <aside class="w-56 flex-shrink-0 hidden lg:block">

@@ -76,9 +76,9 @@
             <span>运费</span>
             <span class="text-green-500">免运费</span>
           </div>
-          <div v-if="order.couponAmount" class="flex justify-between">
+          <div v-if="order.discountAmount && order.discountAmount > 0" class="flex justify-between">
             <span>优惠券</span>
-            <span class="text-green-500">-¥{{ order.couponAmount?.toFixed(2) }}</span>
+            <span class="text-green-500">-¥{{ order.discountAmount?.toFixed(2) }}</span>
           </div>
           <div class="border-t pt-2 mt-2 flex justify-between items-baseline">
             <span class="font-medium">实付金额</span>

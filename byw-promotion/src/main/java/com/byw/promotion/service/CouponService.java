@@ -11,8 +11,9 @@ public interface CouponService {
 
     /**
      * 获取可用优惠券列表
+     * @param newUser 新人筛选：null=全部，0=仅普通券，1=仅新人专享券
      */
-    List<Coupon> listAvailable();
+    List<Coupon> listAvailable(Integer newUser);
 
     /**
      * 领取优惠券

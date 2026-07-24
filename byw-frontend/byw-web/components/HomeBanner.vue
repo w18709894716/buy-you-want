@@ -1,9 +1,9 @@
 <template>
-  <section class="max-w-7xl mx-auto px-4 mt-4">
+  <div class="w-full h-full">
     <!-- 有轮播数据 -->
     <div
       v-if="banners.length"
-      class="relative rounded-lg overflow-hidden h-40 sm:h-64 group"
+      class="relative rounded-lg overflow-hidden w-full h-full group"
       @mouseenter="pause"
       @mouseleave="resume"
     >
@@ -76,14 +76,14 @@
     <!-- 无数据兜底 -->
     <div
       v-else
-      class="relative rounded-lg overflow-hidden bg-gradient-to-r from-primary-500 to-primary-700 h-40 sm:h-64 flex items-center"
+      class="relative rounded-lg overflow-hidden bg-gradient-to-r from-primary-500 to-primary-700 w-full h-full flex items-center"
     >
       <div class="text-white px-6 sm:px-12">
         <h2 class="text-2xl sm:text-4xl font-bold mb-2 sm:mb-4">买你所想，尽在此刻</h2>
         <p class="text-sm sm:text-lg opacity-90">全场满减优惠，新品上市特惠</p>
       </div>
     </div>
-  </section>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -115,7 +115,7 @@ const INTERVAL = 4000
 
 const fetchBanners = async () => {
   try {
-    const data = await get<any[]>('/banner/list')
+    const data = await get<any[]>('/banner/list', { position: 0 })
     banners.value = (data || []).map(b => ({
       id: b.id,
       title: b.title,

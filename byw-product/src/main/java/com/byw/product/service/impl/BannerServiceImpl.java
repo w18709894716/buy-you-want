@@ -15,9 +15,15 @@ public class BannerServiceImpl extends ServiceImpl<BannerMapper, Banner> impleme
 
     @Override
     public List<Banner> listActiveBanners() {
+        return listActiveBanners(null);
+    }
+
+    @Override
+    public List<Banner> listActiveBanners(Integer position) {
         LocalDateTime now = LocalDateTime.now();
         LambdaQueryWrapper<Banner> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Banner::getStatus, 1)
+                .eq(position != null, Banner::getPosition, position)
                 // 已到上线时间（start_time 为空表示立即上线）
                 .and(w -> w.isNull(Banner::getStartTime).or().le(Banner::getStartTime, now))
                 // 未到下线时间（end_time 为空表示永久有效）

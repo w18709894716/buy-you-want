@@ -2,25 +2,29 @@
   <div class="page-container">
     <!-- 操作栏 -->
     <el-card shadow="never" class="search-card">
-      <el-form inline>
-        <el-form-item>
-          <el-button type="success" @click="handleAdd">
-            <el-icon><Plus /></el-icon>添加轮播图
-          </el-button>
-        </el-form-item>
-        <el-alert
-          type="info"
-          :closable="false"
-          show-icon
-          title="轮播图按排序值升序展示；上线/下线时间留空表示立即上线且永久有效，到点自动生效（无需手动操作）。"
-          style="padding: 4px 12px;"
-        />
-      </el-form>
+      <div class="toolbar">
+        <el-radio-group v-model="positionFilter">
+          <el-radio-button :value="0">轮播图（{{ carouselCount }}）</el-radio-button>
+          <el-radio-button :value="1">右侧活动位（{{ activityCount }}）</el-radio-button>
+        </el-radio-group>
+        <el-button type="success" @click="handleAdd">
+          <el-icon><Plus /></el-icon>添加{{ positionText(positionFilter) }}
+        </el-button>
+      </div>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        :title="positionFilter === 1
+          ? '右侧活动位：展示在首页轮播图右侧，建议配 4 个；按排序值升序展示。'
+          : '轮播图：展示在首页顶部横幅；按排序值升序展示。上线/下线时间留空表示立即上线且永久有效。'"
+        style="margin-top: 12px; padding: 4px 12px;"
+      />
     </el-card>
 
     <!-- 表格 -->
     <el-card shadow="never" class="table-card">
-      <el-table :data="tableData" v-loading="loading" stripe border>
+      <el-table :data="filteredTableData" v-loading="loading" stripe border>
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column label="图片" width="140">
           <template #default="{ row }">
@@ -70,12 +74,18 @@
       width="560px"
     >
       <el-form ref="dialogFormRef" :model="dialogForm" :rules="dialogRules" label-width="100px">
+        <el-form-item label="展示位置" prop="position">
+          <el-radio-group v-model="dialogForm.position">
+            <el-radio-button :value="0">轮播图</el-radio-button>
+            <el-radio-button :value="1">右侧活动位</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
         <el-form-item label="标题" prop="title">
           <el-input v-model="dialogForm.title" placeholder="用于后台识别，无图时也会展示" />
         </el-form-item>
-        <el-form-item label="轮播图片">
+        <el-form-item label="图片">
           <ImageUpload v-model="dialogForm.imageList" :limit="1" folder="banner" />
-          <div class="text-xs text-gray-400 mt-1">建议尺寸 1200×400，留空则展示渐变+标题</div>
+          <div class="text-xs text-gray-400 mt-1">{{ dialogForm.position === 1 ? '活动位建议方图或 1:1，留空则展示渐变+标题' : '轮播建议尺寸 1200×400，留空则展示渐变+标题' }}</div>
         </el-form-item>
         <el-form-item label="跳转类型" prop="linkType">
           <el-select v-model="dialogForm.linkType" style="width: 200px">
@@ -130,6 +140,16 @@ import request from '../../utils/request'
 
 const loading = ref(false)
 const tableData = ref<any[]>([])
+const positionFilter = ref(0)
+
+const filteredTableData = computed(() =>
+  tableData.value.filter((r) => (r.position ?? 0) === positionFilter.value)
+)
+
+const carouselCount = computed(() => tableData.value.filter((r) => (r.position ?? 0) === 0).length)
+const activityCount = computed(() => tableData.value.filter((r) => r.position === 1).length)
+
+const positionText = (p: number) => ((p === 1 ? '右侧活动位' : '轮播图'))
 
 const fetchData = async () => {
   loading.value = true
@@ -157,6 +177,7 @@ const editingId = ref<number | null>(null)
 const dialogForm = reactive({
   title: '',
   imageList: [] as string[],
+  position: 0,
   linkType: 1,
   linkValue: '',
   sortOrder: 0,
@@ -187,6 +208,7 @@ const resetForm = () => {
   Object.assign(dialogForm, {
     title: '',
     imageList: [],
+    position: positionFilter.value === 1 ? 1 : 0,
     linkType: 1,
     linkValue: '',
     sortOrder: 0,
@@ -209,6 +231,7 @@ const handleEdit = (row: any) => {
   Object.assign(dialogForm, {
     title: row.title,
     imageList: row.imageUrl ? [row.imageUrl] : [],
+    position: row.position ?? 0,
     linkType: row.linkType ?? 1,
     linkValue: row.linkValue || '',
     sortOrder: row.sortOrder || 0,
@@ -253,6 +276,7 @@ const submitForm = async () => {
       const payload = {
         title: dialogForm.title,
         imageUrl: dialogForm.imageList[0] || '',
+        position: dialogForm.position,
         linkType: dialogForm.linkType,
         linkValue: dialogForm.linkValue,
         sortOrder: dialogForm.sortOrder,
@@ -282,6 +306,12 @@ onMounted(fetchData)
 .page-container {
   .search-card {
     margin-bottom: 16px;
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
   }
 }
 </style>

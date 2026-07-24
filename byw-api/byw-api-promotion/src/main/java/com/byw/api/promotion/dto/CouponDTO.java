@@ -18,4 +18,6 @@ public class CouponDTO implements Serializable {
     private LocalDateTime startTime;
     private LocalDateTime endTime;
     private Integer status;
+    /** 是否新人专享：0普通 1新人专享 */
+    private Integer newUser;
 }

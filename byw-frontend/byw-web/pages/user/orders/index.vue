@@ -185,34 +185,10 @@
           </div>
         </div>
 
-        <!-- 分页 -->
-        <div v-if="totalPages > 1" class="mt-6 flex justify-center gap-2">
-          <button
-            :disabled="currentPage <= 1"
-            class="px-4 py-2 border rounded text-sm disabled:opacity-50 hover:border-primary hover:text-primary transition-colors"
-            @click="currentPage--"
-          >
-            上一页
-          </button>
-          <button
-            v-for="page in totalPages"
-            :key="page"
-            :class="[
-              'px-4 py-2 border rounded text-sm transition-colors',
-              page === currentPage ? 'bg-primary text-white border-primary' : 'hover:border-primary hover:text-primary'
-            ]"
-            @click="currentPage = page"
-          >
-            {{ page }}
-          </button>
-          <button
-            :disabled="currentPage >= totalPages"
-            class="px-4 py-2 border rounded text-sm disabled:opacity-50 hover:border-primary hover:text-primary transition-colors"
-            @click="currentPage++"
-          >
-            下一页
-          </button>
-        </div>
+        <!-- 加载更多触发器 & 状态 -->
+        <div ref="loadMoreTrigger" class="h-px"></div>
+        <div v-if="loadingMore" class="mt-4 py-2 text-center text-sm text-gray-400">加载中...</div>
+        <div v-else-if="orders.length > 0 && !hasMore" class="mt-4 py-2 text-center text-xs text-gray-300">没有更多了</div>
       </div>
     </div>
 
@@ -262,7 +238,11 @@ const sidebarMenu = [
 const activeTab = ref((route.query.status as string) || 'all')
 const reviewSubTab = ref('pending') // pending=待评价, reviewed=已评价
 const currentPage = ref(1)
-const totalPages = ref(1)
+const pageSize = 10
+const total = ref(0)
+const loadingMore = ref(false)
+const loadMoreTrigger = ref<HTMLElement | null>(null)
+let observer: IntersectionObserver | null = null
 
 const reviewSubTabs = [
   { label: '待评价', value: 'pending' },
@@ -305,7 +285,39 @@ const orders = ref<any[]>([])
 // 已评价订单的评价摘要：orderNo -> { rating, content, appendContent }
 const reviewSummaries = ref<Record<string, any>>({})
 
-const fetchOrders = async () => {
+// 将后端订单数据映射为列表展示结构
+function mapOrder(o: any) {
+  const items = (o.items && o.items.length ? o.items : [{
+    productId: o.productId,
+    productImage: o.productImage,
+    productName: o.productName,
+    skuName: '',
+    price: o.totalAmount,
+    quantity: 1
+  }])
+  const totalQuantity = items.reduce((s: number, it: any) => s + (it.quantity || 0), 0)
+  return {
+    id: o.id,
+    orderNo: o.orderNo,
+    date: o.createdAt,
+    createdAt: o.createdAt,
+    status: o.status,
+    reviewed: o.reviewed,
+    statusText: statusTextMap[o.status] || '未知',
+    statusClass: statusClassMap[o.status] || 'text-gray-500',
+    items,
+    // 保留首件商品用于评价等跳转场景
+    productId: items[0]?.productId,
+    productName: items[0]?.productName,
+    quantity: totalQuantity,
+    total: o.payAmount || o.totalAmount
+  }
+}
+
+// 是否还有更多可加载
+const hasMore = computed(() => orders.value.length < total.value)
+
+const fetchOrders = async (append = false) => {
   try {
     // 构建查询参数
     let statusParam: number | undefined = undefined
@@ -318,38 +330,13 @@ const fetchOrders = async () => {
     }
     const data = await get('/order/my-orders', {
       pageNum: currentPage.value,
-      pageSize: 10,
+      pageSize,
       status: statusParam,
       reviewed: reviewedParam
     })
-    orders.value = (data?.list || []).map((o: any) => {
-      const items = (o.items && o.items.length ? o.items : [{
-        productId: o.productId,
-        productImage: o.productImage,
-        productName: o.productName,
-        skuName: '',
-        price: o.totalAmount,
-        quantity: 1
-      }])
-      const totalQuantity = items.reduce((s: number, it: any) => s + (it.quantity || 0), 0)
-      return {
-        id: o.id,
-        orderNo: o.orderNo,
-        date: o.createdAt,
-        createdAt: o.createdAt,
-        status: o.status,
-        reviewed: o.reviewed,
-        statusText: statusTextMap[o.status] || '未知',
-        statusClass: statusClassMap[o.status] || 'text-gray-500',
-        items,
-        // 保留首件商品用于评价等跳转场景
-        productId: items[0]?.productId,
-        productName: items[0]?.productName,
-        quantity: totalQuantity,
-        total: o.payAmount || o.totalAmount
-      }
-    })
-    totalPages.value = Math.ceil((data?.total || 0) / 10)
+    const mapped = (data?.list || []).map(mapOrder)
+    orders.value = append ? [...orders.value, ...mapped] : mapped
+    total.value = data?.total || 0
     // 已评价子筛选：拉取评价摘要用于卡片展示
     if (activeTab.value === 'review' && reviewSubTab.value === 'reviewed') {
       fetchReviewSummaries()
@@ -358,7 +345,19 @@ const fetchOrders = async () => {
     }
   } catch (e) {
     console.error('获取订单列表失败:', e)
-    orders.value = []
+    if (!append) orders.value = []
+  }
+}
+
+// 滚动到底部时加载下一页
+async function loadMore() {
+  if (loadingMore.value || !hasMore.value) return
+  loadingMore.value = true
+  currentPage.value++
+  try {
+    await fetchOrders(true)
+  } finally {
+    loadingMore.value = false
   }
 }
 
@@ -393,8 +392,7 @@ async function fetchOrderCounts() {
       tabs.value[3].count = counts[2] || 0  // 待收货
       tabs.value[4].count = counts[3] || 0  // 待评价
       tabs.value[5].count = counts[4] || 0  // 已取消
-      // “全部订单” tab 显示所有状态总和
-      tabs.value[0].count = Object.values(counts).reduce((a: number, b: number) => a + b, 0)
+      // “全部订单” 不展示数量，订单过多时依靠下拉加载查看
     }
   } catch (e) {
     console.error('获取订单统计失败:', e)
@@ -457,10 +455,16 @@ onMounted(() => {
   countdownTimer = setInterval(() => {
     now.value = Date.now()
   }, 1000)
+  // 观察底部触发器，进入视口即加载下一页
+  observer = new IntersectionObserver((entries) => {
+    if (entries[0]?.isIntersecting) loadMore()
+  }, { rootMargin: '200px' })
+  if (loadMoreTrigger.value) observer.observe(loadMoreTrigger.value)
 })
 
 onUnmounted(() => {
   if (countdownTimer) clearInterval(countdownTimer)
+  if (observer) observer.disconnect()
 })
 
 const confirmDialog = ref<{ title: string; message: string; onConfirm: () => void } | null>(null)

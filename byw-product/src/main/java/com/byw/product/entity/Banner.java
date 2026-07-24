@@ -25,6 +25,9 @@ public class Banner implements Serializable {
     /** 跳转值:关键词/商品ID/分类名/URL */
     private String linkValue;
 
+    /** 展示位置:0轮播 1右侧活动位 */
+    private Integer position;
+
     /** 排序,越小越靠前 */
     private Integer sortOrder;
 

@@ -4,9 +4,9 @@
     <div class="bg-gradient-to-r from-primary-500 to-primary-700 py-6">
       <div class="max-w-5xl mx-auto px-4">
         <h1 class="text-2xl font-bold text-white flex items-center gap-2">
-          <span>💰</span> 领券中心
+          <span>{{ isNewScene ? '🎁' : '💰' }}</span> {{ pageTitle }}
         </h1>
-        <p class="text-white/80 text-sm mt-1">优惠好礼，领取后下单更省</p>
+        <p class="text-white/80 text-sm mt-1">{{ pageSubtitle }}</p>
       </div>
     </div>
 
@@ -20,7 +20,7 @@
       <!-- 空状态 -->
       <div v-else-if="!coupons.length" class="text-center py-20 text-gray-400">
         <p class="text-5xl mb-4">🎟️</p>
-        <p class="text-lg">暂无可领优惠券</p>
+        <p class="text-lg">{{ isNewScene ? '暂无新人专享券' : '暂无可领优惠券' }}</p>
         <p class="text-sm mt-2">稍后再来看看吧</p>
       </div>
 
@@ -106,9 +106,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { get, post } from '~/utils/request'
 import { useUserStore } from '~/stores/user'
+
+const route = useRoute()
+// 场景区分：scene=new 为新人专享（只展示新人券），否则为领券中心（只展示普通券）
+const isNewScene = computed(() => route.query.scene === 'new')
+const pageTitle = computed(() => (isNewScene.value ? '新人专享' : '领券中心'))
+const pageSubtitle = computed(() =>
+  isNewScene.value ? '新用户专属福利，仅限首次下单前领取' : '优惠好礼，领取后下单更省')
 
 const toast = reactive({ visible: false, message: '', type: 'success' as 'success' | 'error' })
 let toastTimer: ReturnType<typeof setTimeout> | null = null
@@ -139,7 +146,8 @@ const loading = ref(true)
 const fetchCoupons = async () => {
   loading.value = true
   try {
-    const data = await get<any[]>('/coupon/list')
+    // scene=new 请求新人券(newUser=1)，否则请求普通券(newUser=0)
+    const data = await get<any[]>('/coupon/list', { newUser: isNewScene.value ? 1 : 0 })
     coupons.value = (data || []).map(c => ({ ...c, _claiming: false }))
   } catch (e) {
     console.error('获取优惠券失败:', e)

@@ -8,7 +8,6 @@ import com.byw.common.core.result.R;
 import com.byw.common.security.annotation.RequireLogin;
 import com.byw.common.security.context.UserContext;
 import com.byw.review.document.ReviewDetail;
-import com.byw.review.entity.Review;
 import com.byw.review.service.ReviewService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -175,7 +174,7 @@ public class ReviewController {
     @Operation(summary = "获取我的评价列表")
     @RequireLogin
     @GetMapping("/my-reviews")
-    public R<PageResult<Review>> myReviews(
+    public R<PageResult<Map<String, Object>>> myReviews(
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "10") Integer pageSize,
             @RequestParam(required = false) Boolean hasImage) {

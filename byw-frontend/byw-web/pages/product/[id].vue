@@ -30,7 +30,26 @@
     </nav>
 
     <!-- 商品详情主体 -->
-    <div class="bg-white rounded-lg p-4 sm:p-6">
+    <div class="bg-white rounded-lg p-4 sm:p-6 relative">
+      <!-- 收藏按钮（卡片右上角） -->
+      <button
+        class="absolute top-4 right-4 z-10 w-10 h-10 rounded-full border flex items-center justify-center transition-colors"
+        :class="favorited ? 'border-primary text-primary bg-primary-50' : 'border-gray-200 text-gray-400 bg-white hover:border-primary hover:text-primary'"
+        :aria-label="favorited ? '取消收藏' : '收藏'"
+        :title="favorited ? '已收藏' : '收藏'"
+        @click="onToggleFavorite"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          class="h-5 w-5"
+          :fill="favorited ? 'currentColor' : 'none'"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+        </svg>
+      </button>
       <div class="flex flex-col md:flex-row gap-6 md:gap-8">
         <!-- 左侧图片画廊 -->
         <div class="w-full md:w-96 md:flex-shrink-0">
@@ -226,6 +245,9 @@ import { useCartStore } from '~/stores/cart'
 const route = useRoute()
 const cartStore = useCartStore()
 const productId = computed(() => Number(route.params.id))
+
+const { isFavorited, toggleFavorite, loadFavoriteIds } = useFavorites()
+const favorited = computed(() => isFavorited(productId.value))
 
 const currentImageIndex = ref(0)
 const quantity = ref(1)
@@ -427,6 +449,15 @@ function handleBuyNow() {
   })
 }
 
+// 收藏/取消收藏
+async function onToggleFavorite() {
+  const wasFavorited = favorited.value
+  const nowFavorited = await toggleFavorite(productId.value)
+  if (nowFavorited !== wasFavorited) {
+    showToast(nowFavorited ? '已收藏' : '已取消收藏', 'success')
+  }
+}
+
 // 路由参数变化时重新加载（SPA 内切换商品）
 watch(() => route.params.id, () => {
   currentImageIndex.value = 0
@@ -445,6 +476,7 @@ onMounted(() => {
   fetchProduct()
   fetchReviews()
   fetchReviewStats()
+  loadFavoriteIds()
 })
 </script>
 

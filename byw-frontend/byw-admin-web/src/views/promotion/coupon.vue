@@ -40,6 +40,12 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column prop="newUser" label="新人专享" width="100">
+          <template #default="{ row }">
+            <el-tag v-if="row.newUser === 1" type="danger">新人专享</el-tag>
+            <el-tag v-else type="info">普通券</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" size="small" text @click="handleEdit(row)">编辑</el-button>
@@ -83,6 +89,10 @@
         </el-form-item>
         <el-form-item label="发放数量" prop="totalCount">
           <el-input-number v-model="form.totalCount" :min="1" :max="999999" />
+        </el-form-item>
+        <el-form-item label="新人专享">
+          <el-switch v-model="form.newUser" :active-value="1" :inactive-value="0" />
+          <span style="margin-left:8px;color:#909399;">开启后仅限无历史订单的新用户领取</span>
         </el-form-item>
         <el-form-item label="有效期" prop="timeRange">
           <el-date-picker
@@ -143,6 +153,7 @@ const form = reactive({
   value: 10,
   minAmount: 0,
   totalCount: 100,
+  newUser: 0,
   timeRange: [] as string[]
 })
 
@@ -157,7 +168,7 @@ const rules = {
 const handleAdd = () => {
   dialogType.value = 'add'
   editingId.value = null
-  Object.assign(form, { name: '', type: 'FIXED', value: 10, minAmount: 0, totalCount: 100, timeRange: [] })
+  Object.assign(form, { name: '', type: 'FIXED', value: 10, minAmount: 0, totalCount: 100, newUser: 0, timeRange: [] })
   dialogVisible.value = true
 }
 
@@ -167,6 +178,7 @@ const handleEdit = (row: any) => {
   Object.assign(form, {
     name: row.name, type: row.type, value: row.value,
     minAmount: row.minAmount, totalCount: row.totalCount,
+    newUser: row.newUser === 1 ? 1 : 0,
     timeRange: [row.startTime, row.endTime]
   })
   dialogVisible.value = true
@@ -194,6 +206,7 @@ const submitForm = async () => {
         discountValue: form.value,
         minAmount: form.minAmount,
         totalCount: form.totalCount,
+        newUser: form.newUser,
         startTime: form.timeRange[0],
         endTime: form.timeRange[1]
       }

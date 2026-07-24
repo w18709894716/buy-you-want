@@ -44,6 +44,10 @@
             <artifactId>byw-api-user</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.byw</groupId>
+            <artifactId>byw-api-product</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>

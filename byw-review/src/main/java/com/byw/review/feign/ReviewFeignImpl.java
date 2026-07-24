@@ -4,15 +4,11 @@ import com.byw.api.review.ReviewFeignClient;
 import com.byw.api.review.dto.ReviewStatsDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.review.entity.Review;
 import com.byw.review.service.ReviewService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/feign/review")
@@ -40,24 +36,7 @@ public class ReviewFeignImpl implements ReviewFeignClient {
             @RequestParam(defaultValue = "10") Integer pageSize,
             @RequestParam(required = false) Integer rating,
             @RequestParam(required = false) Integer status) {
-        PageResult<Review> result = reviewService.adminListReviews(pageNum, pageSize, rating, status);
-        // 转换为前端期望的字段格式
-        List<Map<String, Object>> mappedList = result.getList().stream().map(r -> {
-            Map<String, Object> map = new HashMap<>();
-            map.put("id", r.getId());
-            map.put("orderNo", r.getOrderNo());
-            map.put("userId", r.getUserId());
-            map.put("username", "用户" + r.getUserId());
-            map.put("productId", r.getProductId());
-            map.put("productName", "商品#" + r.getProductId());
-            map.put("rating", r.getRating());
-            map.put("content", r.getContent());
-            map.put("hasImage", r.getHasImage());
-            map.put("visible", r.getStatus() != null && r.getStatus() == 1);
-            map.put("created", r.getCreatedAt() != null ? r.getCreatedAt().toString() : "");
-            return map;
-        }).collect(Collectors.toList());
-        return R.ok(PageResult.of(mappedList, result.getTotal(), pageNum, pageSize));
+        return R.ok(reviewService.adminListReviews(pageNum, pageSize, rating, status));
     }
 
     @Override

@@ -1,3 +1,8 @@
+/* 全局根字号：以 rem 为基准成比例放大字体与间距（默认16px → 17px） */
+html {
+  font-size: 17px;
+}
+
 /* 隐藏滚动条但保留滚动功能 */
 .scrollbar-hide {
   -ms-overflow-style: none;

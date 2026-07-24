@@ -36,5 +36,8 @@ public class ReviewDetail {
 
     private List<String> appendImages;
 
+    /** 0隐藏 1显示，与MySQL Review.status同步，用于C端过滤隐藏评价 */
+    private Integer status;
+
     private LocalDateTime createdAt;
 }

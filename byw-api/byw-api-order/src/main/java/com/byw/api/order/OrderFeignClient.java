@@ -48,6 +48,9 @@ public interface OrderFeignClient {
     @PostMapping("/feign/order/update-reviewed")
     R<Boolean> updateReviewed(@RequestParam("orderNo") String orderNo, @RequestParam("reviewed") Integer reviewed);
 
+    @GetMapping("/feign/order/count-by-user")
+    R<Long> countUserOrders(@RequestParam("userId") Long userId);
+
     @Data
     class OrderStatsDTO implements Serializable {
         private Long totalOrders;

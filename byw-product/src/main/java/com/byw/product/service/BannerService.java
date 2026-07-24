@@ -13,4 +13,10 @@ public interface BannerService extends IService<Banner> {
      * 定时上下线由查询时按时间过滤实现，无需定时任务
      */
     List<Banner> listActiveBanners();
+
+    /**
+     * 按展示位置获取当前生效的列表
+     * @param position 0轮播 1右侧活动位；为 null 时返回全部生效项
+     */
+    List<Banner> listActiveBanners(Integer position);
 }

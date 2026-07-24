@@ -9,6 +9,10 @@ export default <Config>{
   ],
   theme: {
     extend: {
+      maxWidth: {
+        // 整站主容器宽度：默认 7xl(1280px) 拓宽至 1440px，减少两侧留白
+        '7xl': '1440px',
+      },
       colors: {
         primary: {
           50: '#fff1f0',

@@ -17,6 +17,24 @@
       >
         {{ product.promotion }}
       </span>
+      <!-- 收藏按钮 -->
+      <button
+        class="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/80 backdrop-blur flex items-center justify-center shadow-sm hover:bg-white transition-colors"
+        :aria-label="favorited ? '取消收藏' : '收藏'"
+        @click.prevent.stop="onToggleFavorite"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          class="w-4 h-4 transition-colors"
+          :class="favorited ? 'text-primary' : 'text-gray-400'"
+          :fill="favorited ? 'currentColor' : 'none'"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+        </svg>
+      </button>
     </div>
 
     <!-- 商品信息 -->
@@ -52,9 +70,22 @@ interface Product {
   shopName?: string
 }
 
-defineProps<{
+const props = defineProps<{
   product: Product
 }>()
+
+const { isFavorited, toggleFavorite, loadFavoriteIds } = useFavorites()
+
+const currentProductId = computed(() => Number(props.product.productId || props.product.id))
+const favorited = computed(() => isFavorited(currentProductId.value))
+
+async function onToggleFavorite() {
+  await toggleFavorite(currentProductId.value)
+}
+
+onMounted(() => {
+  loadFavoriteIds()
+})
 
 function formatPrice(price: number): string {
   if (price == null) return '0.00'

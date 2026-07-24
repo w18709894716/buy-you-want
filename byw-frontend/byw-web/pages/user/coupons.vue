@@ -78,8 +78,8 @@
                 </p>
               </div>
               <div class="flex items-center justify-between mt-2">
-                <span v-if="isExpired(coupon.endTime)" class="text-xs text-red-400">已过期</span>
-                <span v-else-if="activeTab === 'used'" class="text-xs text-gray-400">已使用</span>
+                <span v-if="activeTab === 'used'" class="text-xs text-gray-400">已使用</span>
+                <span v-else-if="isExpired(coupon.endTime)" class="text-xs text-red-400">已过期</span>
                 <span v-else class="text-xs text-primary">可使用</span>
               </div>
             </div>
@@ -118,17 +118,18 @@ const tabs = [
 ]
 
 const activeTab = ref('available')
-const coupons = ref<any[]>([])
+const unusedCoupons = ref<any[]>([])
+const usedCoupons = ref<any[]>([])
 
 const filteredCoupons = computed(() => {
   if (activeTab.value === 'available') {
-    return coupons.value.filter(c => !isExpired(c.endTime))
+    return unusedCoupons.value.filter(c => !isExpired(c.endTime))
   }
   if (activeTab.value === 'expired') {
-    return coupons.value.filter(c => isExpired(c.endTime))
+    return unusedCoupons.value.filter(c => isExpired(c.endTime))
   }
-  // used - 暂时返回空（后端暂无已使用状态字段）
-  return []
+  // used - 已使用（status=1）
+  return usedCoupons.value
 })
 
 function isExpired(endTime: string): boolean {
@@ -142,7 +143,12 @@ function formatDate(dt: string): string {
 
 async function fetchCoupons() {
   try {
-    coupons.value = await get<any[]>('/coupon/my-coupons', { status: 0 })
+    const [unused, used] = await Promise.all([
+      get<any[]>('/coupon/my-coupons', { status: 0 }),
+      get<any[]>('/coupon/my-coupons', { status: 1 }),
+    ])
+    unusedCoupons.value = unused || []
+    usedCoupons.value = used || []
   } catch (e) {
     console.error(e)
   }
