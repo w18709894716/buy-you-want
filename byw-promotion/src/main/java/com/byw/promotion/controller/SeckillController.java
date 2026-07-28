@@ -5,6 +5,7 @@ import com.byw.api.product.dto.ProductDTO;
 import com.byw.api.product.dto.SkuDTO;
 import com.byw.api.promotion.dto.SeckillActivityDetailDTO;
 import com.byw.common.core.result.R;
+import com.byw.common.security.annotation.Public;
 import com.byw.common.security.annotation.RequireLogin;
 import com.byw.common.security.context.UserContext;
 import com.byw.promotion.entity.SeckillActivity;
@@ -32,6 +33,7 @@ public class SeckillController {
 
     @Operation(summary = "获取秒杀活动列表")
     @GetMapping("/list")
+    @Public
     public R<List<SeckillActivity>> list() {
         return R.ok(seckillService.getSeckillList());
     }
@@ -47,6 +49,7 @@ public class SeckillController {
 
     @Operation(summary = "秒杀活动列表(含商品信息)")
     @GetMapping("/list/detail")
+    @Public
     public R<List<SeckillActivityDetailDTO>> listDetail() {
         List<SeckillActivity> activities = seckillService.getSeckillList();
         LocalDateTime now = LocalDateTime.now();

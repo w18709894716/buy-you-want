@@ -76,11 +76,24 @@ R.fail(ResultCode)        // 失败，使用枚举
 - **7xxx**: 评价模块
 - **9xxx**: 系统级
 
-## 认证方式
-- 登录成功后返回 JWT Token
-- 请求时携带：`Authorization: Bearer {token}`
-- Gateway 的 AuthGlobalFilter 统一校验 Token
-- 白名单路径（如 `/auth/login`, `/auth/register`）无需 Token
+## 认证与角色（RBAC）
+- 登录成功后返回 JWT Token，请求时携带：`Authorization: Bearer {token}`
+- Gateway 的 AuthGlobalFilter 统一校验 Token，并将解析出的用户身份（用户ID/角色/shop_id 等）通过请求头透传给下游服务
+- 白名单路径（如 `/auth/login`、`/auth/register`）无需 Token
+
+### RBAC 四角色
+用户身份由 `t_user.role` / `t_merchant_account.role` 描述，共四种角色：
+
+| 角色 | 说明 |
+|------|------|
+| user | 普通用户（C 端） |
+| platform_admin | 平台管理员（管理后台） |
+| merchant_owner | 商家主账号（商家端，可管理本店全部业务与员工） |
+| merchant_staff | 商家员工（商家端，受限权限） |
+
+- 鉴权由 `byw-common-security` 提供：Gateway 透传身份头，各服务通过 `UserContext` 获取当前用户与角色
+- 提供 `@RequireAdmin` / `@RequireRole` 等注解拦截器在接口层做角色校验
+- 商家端业务（byw-merchant BFF）统一按 `shop_id` 隔离，确保商家仅可访问本店数据
 
 ## Gateway 路由规则
 
@@ -94,6 +107,7 @@ R.fail(ResultCode)        // 失败，使用枚举
 | /api/category/** | byw-product | 分类相关 |
 | /api/search/** | byw-product | 搜索相关 |
 | /api/brand/** | byw-product | 品牌相关 |
+| /api/banner/** | byw-product | 首页 Banner |
 | /api/cart/** | byw-cart | 购物车 |
 | /api/order/** | byw-order | 订单相关 |
 | /api/pay/** | byw-pay | 支付相关 |
@@ -102,6 +116,11 @@ R.fail(ResultCode)        // 失败，使用枚举
 | /api/promotion/** | byw-promotion | 营销相关 |
 | /api/coupon/** | byw-promotion | 优惠券 |
 | /api/seckill/** | byw-promotion | 秒杀 |
+| /api/file/** | byw-file | 文件/图片上传 |
+| /api/shop/** | byw-shop | 店铺与商家账号 |
+| /api/merchant/** | byw-merchant | 商家端 BFF |
+
+> **结算服务（byw-settle）无对外网关路由**，仅由 byw-merchant / byw-admin BFF 通过 Feign 内部调用（余额、佣金规则、提现与审批）。
 
 ## API 文档
 

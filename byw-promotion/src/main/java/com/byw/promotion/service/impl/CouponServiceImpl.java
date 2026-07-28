@@ -4,7 +4,10 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.byw.api.order.OrderFeignClient;
 import com.byw.api.promotion.dto.CouponDTO;
 import com.byw.api.promotion.dto.UserCouponDTO;
+import com.byw.api.shop.ShopFeignClient;
+import com.byw.api.shop.dto.ShopDTO;
 import com.byw.common.core.exception.BusinessException;
+import com.byw.common.core.result.R;
 import com.byw.common.redis.util.RedisUtil;
 import com.byw.promotion.entity.Coupon;
 import com.byw.promotion.entity.CouponRecord;
@@ -31,6 +34,7 @@ public class CouponServiceImpl implements CouponService {
     private final CouponRecordMapper couponRecordMapper;
     private final RedisUtil redisUtil;
     private final OrderFeignClient orderFeignClient;
+    private final ShopFeignClient shopFeignClient;
 
     private static final String COUPON_CLAIM_KEY = "coupon:claim:";
 
@@ -45,7 +49,36 @@ public class CouponServiceImpl implements CouponService {
                         .eq(newUser != null && newUser == 1, Coupon::getNewUser, 1)
                         .and(newUser != null && newUser == 0,
                                 w -> w.ne(Coupon::getNewUser, 1).or().isNull(Coupon::getNewUser))
+                        // 领券中心只展示平台券，店铺券在对应店铺商品详情页弹框领取
+                        .and(w -> w.isNull(Coupon::getShopId).or().eq(Coupon::getShopId, 0L))
                         .apply("claimed_count < total_count"));
+    }
+
+    @Override
+    public List<Coupon> listShopClaimable(Long shopId, Long userId) {
+        if (shopId == null || shopId == 0) {
+            return List.of();
+        }
+        List<Coupon> coupons = couponMapper.selectList(
+                new LambdaQueryWrapper<Coupon>()
+                        .eq(Coupon::getStatus, 1)
+                        .eq(Coupon::getShopId, shopId)
+                        .le(Coupon::getStartTime, LocalDateTime.now())
+                        .ge(Coupon::getEndTime, LocalDateTime.now())
+                        .apply("claimed_count < total_count"));
+        if (coupons.isEmpty() || userId == null) {
+            return coupons;
+        }
+        // 过滤掉当前用户已领取的券，避免重复弹框提示
+        java.util.Set<Long> claimedIds = couponRecordMapper.selectList(
+                        new LambdaQueryWrapper<CouponRecord>()
+                                .eq(CouponRecord::getUserId, userId)
+                                .in(CouponRecord::getCouponId,
+                                        coupons.stream().map(Coupon::getId).collect(java.util.stream.Collectors.toList())))
+                .stream().map(CouponRecord::getCouponId).collect(java.util.stream.Collectors.toSet());
+        return coupons.stream()
+                .filter(c -> !claimedIds.contains(c.getId()))
+                .collect(java.util.stream.Collectors.toList());
     }
 
     @Override
@@ -183,6 +216,8 @@ public class CouponServiceImpl implements CouponService {
         }
         // 查询优惠券模板详情
         List<UserCouponDTO> result = new java.util.ArrayList<>();
+        // 同批次相同店铺仅查一次名称
+        java.util.Map<Long, String> shopNameCache = new java.util.HashMap<>();
         for (CouponRecord record : records) {
             Coupon coupon = couponMapper.selectById(record.getCouponId());
             if (coupon == null) continue;
@@ -195,9 +230,31 @@ public class CouponServiceImpl implements CouponService {
             dto.setMinAmount(coupon.getMinAmount());
             dto.setStartTime(coupon.getStartTime());
             dto.setEndTime(coupon.getEndTime());
+            // 店铺券透出归属店铺，供前端按店限制使用范围
+            if (coupon.getShopId() != null && coupon.getShopId() != 0) {
+                dto.setShopId(coupon.getShopId());
+                dto.setShopName(resolveShopName(coupon.getShopId(), shopNameCache));
+            }
             result.add(dto);
         }
         return result;
+    }
+
+    /**
+     * 查询店铺名称，结果缓存避免重复远程调用；失败时返回 null 不阻断列表
+     */
+    private String resolveShopName(Long shopId, java.util.Map<Long, String> cache) {
+        return cache.computeIfAbsent(shopId, sid -> {
+            try {
+                R<ShopDTO> resp = shopFeignClient.getShopById(sid);
+                if (resp != null && resp.isSuccess() && resp.getData() != null) {
+                    return resp.getData().getName();
+                }
+            } catch (Exception e) {
+                log.warn("获取店铺名称失败: shopId={}, error={}", sid, e.getMessage());
+            }
+            return null;
+        });
     }
 
     // ==================== 私有方法 ====================

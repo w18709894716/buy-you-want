@@ -7,7 +7,8 @@ export const useUserStore = defineStore('user', () => {
   const username = ref<string>(localStorage.getItem('admin_username') || '')
 
   const login = async (loginForm: { username: string; password: string }) => {
-    const data: any = await request.post('/admin/auth/login', loginForm)
+    // 专用管理员登录接口，服务端校验 role 必须为 platform_admin
+    const data: any = await request.post('/auth/admin/login', loginForm)
     token.value = data.token
     username.value = data.username || loginForm.username
     localStorage.setItem('admin_token', data.token)

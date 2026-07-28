@@ -2,6 +2,7 @@ package com.byw.promotion.controller;
 
 import com.byw.api.promotion.dto.UserCouponDTO;
 import com.byw.common.core.result.R;
+import com.byw.common.security.annotation.Public;
 import com.byw.common.security.annotation.RequireLogin;
 import com.byw.common.security.context.UserContext;
 import com.byw.promotion.entity.Coupon;
@@ -23,8 +24,16 @@ public class CouponController {
 
     @Operation(summary = "获取可用优惠券列表")
     @GetMapping("/list")
+    @Public
     public R<List<Coupon>> list(@RequestParam(value = "newUser", required = false) Integer newUser) {
         return R.ok(couponService.listAvailable(newUser));
+    }
+
+    @Operation(summary = "获取指定店铺可领取的店铺券")
+    @GetMapping("/shop/{shopId}")
+    @RequireLogin
+    public R<List<Coupon>> shopClaimable(@PathVariable Long shopId) {
+        return R.ok(couponService.listShopClaimable(shopId, UserContext.getUserId()));
     }
 
     @Operation(summary = "领取优惠券")

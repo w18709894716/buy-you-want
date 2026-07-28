@@ -11,7 +11,14 @@ import java.util.List;
 public class OrderDetailDTO implements Serializable {
     private Long id;
     private String orderNo;
+    /** 父订单号（子订单指向父订单；父订单本身为空） */
+    private String parentOrderNo;
+    /** 是否父订单：0子/普通订单 1父订单 */
+    private Integer isParent;
     private Long userId;
+    private Long shopId;
+    /** 归属店铺名称（拆单后子订单展示用） */
+    private String shopName;
     private BigDecimal totalAmount;
     private BigDecimal payAmount;
     private BigDecimal freightAmount;
@@ -33,6 +40,7 @@ public class OrderDetailDTO implements Serializable {
     public static class OrderItemDTO implements Serializable {
         private Long id;
         private Long productId;
+        private Long shopId;
         private Long skuId;
         private String productName;
         private String skuName;

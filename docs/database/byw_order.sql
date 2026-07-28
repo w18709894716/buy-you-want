@@ -5,7 +5,10 @@ DROP TABLE IF EXISTS t_order;
 CREATE TABLE t_order (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     order_no VARCHAR(64) NOT NULL UNIQUE,
+    parent_order_no VARCHAR(64) COMMENT '父订单号(子订单指向父订单;父订单为空)',
+    is_parent TINYINT NOT NULL DEFAULT 0 COMMENT '是否父订单 0子/普通订单 1父订单(仅聚合支付)',
     user_id BIGINT NOT NULL,
+    shop_id BIGINT NOT NULL DEFAULT 1 COMMENT '归属店铺ID(拆单后每子订单归属单一店铺)',
     total_amount DECIMAL(10,2) NOT NULL,
     pay_amount DECIMAL(10,2),
     freight_amount DECIMAL(10,2) DEFAULT 0.00,
@@ -26,6 +29,8 @@ CREATE TABLE t_order (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted TINYINT DEFAULT 0,
     INDEX idx_user_id (user_id),
+    INDEX idx_shop_id (shop_id),
+    INDEX idx_parent_order_no (parent_order_no),
     INDEX idx_status (status),
     INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -36,6 +41,7 @@ CREATE TABLE t_order_item (
     order_id BIGINT NOT NULL,
     order_no VARCHAR(64) NOT NULL,
     user_id BIGINT NOT NULL,
+    shop_id BIGINT NOT NULL DEFAULT 1 COMMENT '归属店铺ID(多租户维度)',
     product_id BIGINT NOT NULL,
     sku_id BIGINT NOT NULL,
     product_name VARCHAR(200),

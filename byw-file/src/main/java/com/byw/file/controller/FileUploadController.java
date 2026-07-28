@@ -1,6 +1,7 @@
 package com.byw.file.controller;
 
 import com.byw.common.core.result.R;
+import com.byw.common.security.annotation.Public;
 import com.byw.file.service.FileService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -21,6 +22,10 @@ public class FileUploadController {
 
     private final FileService fileService;
 
+    /**
+     * 免登录上传：商家入驻等游客场景需上传资质材料（byw-shop 侧提交接口同为 @Public）
+     */
+    @Public
     @Operation(summary = "上传单个文件")
     @PostMapping("/upload")
     public R<String> upload(@RequestPart("file") MultipartFile file,

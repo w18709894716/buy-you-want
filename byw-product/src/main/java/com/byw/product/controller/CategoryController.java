@@ -1,6 +1,7 @@
 package com.byw.product.controller;
 
 import com.byw.common.core.result.R;
+import com.byw.common.security.annotation.Public;
 import com.byw.common.security.annotation.RequireAdmin;
 import com.byw.product.entity.Category;
 import com.byw.product.service.CategoryService;
@@ -21,6 +22,7 @@ public class CategoryController {
 
     @Operation(summary = "获取分类树")
     @GetMapping("/tree")
+    @Public
     public R<List<Category>> getCategoryTree() {
         return R.ok(categoryService.getCategoryTree());
     }

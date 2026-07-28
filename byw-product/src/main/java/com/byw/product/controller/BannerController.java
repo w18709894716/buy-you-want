@@ -1,6 +1,7 @@
 package com.byw.product.controller;
 
 import com.byw.common.core.result.R;
+import com.byw.common.security.annotation.Public;
 import com.byw.product.entity.Banner;
 import com.byw.product.service.BannerService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -17,6 +18,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/banner")
 @RequiredArgsConstructor
+@Public
 public class BannerController {
 
     private final BannerService bannerService;

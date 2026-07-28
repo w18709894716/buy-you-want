@@ -40,7 +40,7 @@
 
 ### 初始化数据库
 
-项目包含 8 个 SQL 脚本，按以下顺序执行：
+项目包含 10 个建库 SQL 脚本，按以下顺序执行：
 
 ```bash
 mysql -u root -p < docs/database/byw_user.sql
@@ -51,7 +51,11 @@ mysql -u root -p < docs/database/byw_pay.sql
 mysql -u root -p < docs/database/byw_logistics.sql
 mysql -u root -p < docs/database/byw_review.sql
 mysql -u root -p < docs/database/byw_promotion.sql
+mysql -u root -p < docs/database/byw_shop.sql
+mysql -u root -p < docs/database/byw_settle.sql
 ```
+
+> 存量环境升级需补执行增量迁移脚本（migration_shop_tenancy.sql / migration_product_audit.sql / migration_order_split.sql），详见 [后端启动 - 初始化数据库](./backend-startup.md)。
 
 也可以在 Navicat 或 DBeaver 中打开并逐个执行每个 SQL 文件。
 
@@ -61,7 +65,8 @@ mysql -u root -p < docs/database/byw_promotion.sql
 SHOW DATABASES;
 -- 应看到以下数据库:
 -- byw_user, byw_product, byw_cart, byw_order,
--- byw_pay, byw_logistics, byw_review, byw_promotion
+-- byw_pay, byw_logistics, byw_review, byw_promotion,
+-- byw_shop, byw_settle
 ```
 
 ---
@@ -319,9 +324,36 @@ minio:
   access-key: ${MINIO_ACCESS_KEY:minioadmin}
   secret-key: ${MINIO_SECRET_KEY:minioadmin}
   bucket-name: ${MINIO_BUCKET:byw-files}
+  # 对外访问地址：留空时回退到 endpoint
+  public-url: ${MINIO_PUBLIC_URL:}
 ```
 
 可通过环境变量覆盖默认值。
+
+- `endpoint`：byw-file 服务通过它连接 MinIO（内网可达即可）。
+- `public-url`：**拼接返回给浏览器的文件 URL** 时使用，需浏览器可达。留空时自动回退到 `endpoint`，本地开发无需配置。
+
+### 生产部署：对外访问地址与历史图片域名替换
+
+上传成功后返回的文件 URL 会**整段存入数据库**（如 `t_brand.logo`、`t_product.main_image` 等）。本地开发存的是 `http://localhost:9000/...`，直接上生产会因域名不可达而裂图。
+
+1. **新数据**：部署时设置环境变量指向对外域名（或走 Nginx/网关代理 MinIO），之后新上传文件的 URL 自动使用对外地址：
+   ```bash
+   MINIO_PUBLIC_URL=https://cdn.example.com
+   ```
+2. **历史数据**：之前已存入库、带 `http://localhost:9000` 的旧 URL **不会自动更新**，需按涉及的表字段批量替换（执行前先备份）：
+   ```sql
+   -- 示例：将本地域名替换为对外域名
+   UPDATE byw_product.t_brand
+     SET logo = REPLACE(logo, 'http://localhost:9000', 'https://cdn.example.com')
+     WHERE logo LIKE 'http://localhost:9000%';
+   UPDATE byw_product.t_product
+     SET main_image = REPLACE(main_image, 'http://localhost:9000', 'https://cdn.example.com')
+     WHERE main_image LIKE 'http://localhost:9000%';
+   -- 其余存储图片 URL 的字段（如 sub_images、t_shop.logo、评价图片等）同理处理
+   ```
+
+> **提示**：本地开发无需处理历史数据；由于 `public-url` 留空时回退到 `endpoint`，行为与以往完全一致。
 
 ---
 

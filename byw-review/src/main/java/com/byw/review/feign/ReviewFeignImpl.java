@@ -4,6 +4,7 @@ import com.byw.api.review.ReviewFeignClient;
 import com.byw.api.review.dto.ReviewStatsDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
+import com.byw.common.security.annotation.Public;
 import com.byw.review.service.ReviewService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -13,6 +14,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/feign/review")
 @RequiredArgsConstructor
+@Public
 public class ReviewFeignImpl implements ReviewFeignClient {
 
     private final ReviewService reviewService;
@@ -50,6 +52,13 @@ public class ReviewFeignImpl implements ReviewFeignClient {
     @DeleteMapping("/admin/{id}")
     public R<Void> adminDeleteReview(@PathVariable("id") Long id) {
         reviewService.adminDeleteReview(id);
+        return R.ok();
+    }
+
+    @Override
+    @PutMapping("/{id}/reply")
+    public R<Void> replyReview(@PathVariable("id") Long id, @RequestParam("content") String content) {
+        reviewService.replyReview(id, content);
         return R.ok();
     }
 }

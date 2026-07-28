@@ -5,6 +5,7 @@ import com.byw.api.cart.dto.CartItemDTO;
 import com.byw.cart.entity.CartItem;
 import com.byw.cart.service.CartService;
 import com.byw.common.core.result.R;
+import com.byw.common.security.annotation.Public;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.web.bind.annotation.*;
@@ -15,6 +16,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/feign/cart")
 @RequiredArgsConstructor
+@Public
 public class CartFeignImpl implements CartFeignClient {
 
     private final CartService cartService;

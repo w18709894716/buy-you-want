@@ -16,6 +16,9 @@ public class Sku implements Serializable {
 
     private Long productId;
 
+    /** 归属店铺ID（多租户维度，冗余自商品便于按店铺聚合） */
+    private Long shopId;
+
     private String skuCode;
 
     private String skuName;

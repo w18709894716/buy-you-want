@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.byw.api.product.ProductFeignClient;
 import com.byw.api.product.dto.SkuDTO;
 import com.byw.api.product.dto.ProductDTO;
+import com.byw.api.shop.ShopFeignClient;
+import com.byw.api.shop.dto.ShopDTO;
 import com.byw.cart.entity.CartItem;
 import com.byw.cart.mapper.CartItemMapper;
 import com.byw.cart.service.CartService;
@@ -17,6 +19,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -25,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 public class CartServiceImpl extends ServiceImpl<CartItemMapper, CartItem> implements CartService {
 
     private final ProductFeignClient productFeignClient;
+    private final ShopFeignClient shopFeignClient;
     private final RedisUtil redisUtil;
 
     private static final String CART_COUNT_KEY = "cart:count:";
@@ -62,6 +68,7 @@ public class CartServiceImpl extends ServiceImpl<CartItemMapper, CartItem> imple
             existItem.setPrice(sku.getPrice());
             existItem.setSkuName(sku.getSkuName());
             existItem.setSpecData(sku.getSpecData());
+            existItem.setShopId(sku.getShopId());
             if (productName != null) existItem.setProductName(productName);
             if (image != null) existItem.setProductImage(image);
             updateById(existItem);
@@ -74,6 +81,7 @@ public class CartServiceImpl extends ServiceImpl<CartItemMapper, CartItem> imple
             existItem.setSpecData(sku.getSpecData());
             existItem.setProductImage(image);
             existItem.setProductId(sku.getProductId());
+            existItem.setShopId(sku.getShopId());
             baseMapper.restoreById(existItem);
         } else {
             // 不存在则新增
@@ -81,6 +89,7 @@ public class CartServiceImpl extends ServiceImpl<CartItemMapper, CartItem> imple
             cartItem.setUserId(userId);
             cartItem.setSkuId(skuId);
             cartItem.setProductId(sku.getProductId());
+            cartItem.setShopId(sku.getShopId());
             cartItem.setSkuName(sku.getSkuName());
             cartItem.setProductName(productName);
             cartItem.setSpecData(sku.getSpecData());
@@ -124,9 +133,40 @@ public class CartServiceImpl extends ServiceImpl<CartItemMapper, CartItem> imple
 
     @Override
     public List<CartItem> getCartItems(Long userId) {
-        return list(new LambdaQueryWrapper<CartItem>()
+        List<CartItem> items = list(new LambdaQueryWrapper<CartItem>()
                 .eq(CartItem::getUserId, userId)
                 .orderByDesc(CartItem::getCreatedAt));
+        fillShopNames(items);
+        return items;
+    }
+
+    /** 批量回填购物车项归属店铺名称，供前端按店铺分组展示；失败时静默跳过 */
+    private void fillShopNames(List<CartItem> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        List<Long> shopIds = items.stream()
+                .map(CartItem::getShopId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (shopIds.isEmpty()) {
+            return;
+        }
+        try {
+            R<List<ShopDTO>> shopResult = shopFeignClient.getShopsByIds(shopIds);
+            if (shopResult.isSuccess() && shopResult.getData() != null) {
+                Map<Long, String> shopNameMap = shopResult.getData().stream()
+                        .collect(Collectors.toMap(ShopDTO::getId, ShopDTO::getName, (a, b) -> a));
+                for (CartItem item : items) {
+                    if (item.getShopId() != null) {
+                        item.setShopName(shopNameMap.get(item.getShopId()));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("回填购物车店铺名称失败: {}", e.getMessage());
+        }
     }
 
     @Override
@@ -196,6 +236,7 @@ public class CartServiceImpl extends ServiceImpl<CartItemMapper, CartItem> imple
             oldItem.setSpecData(newSku.getSpecData());
             oldItem.setPrice(newSku.getPrice());
             oldItem.setProductId(newSku.getProductId());
+            oldItem.setShopId(newSku.getShopId());
             if (productName != null) oldItem.setProductName(productName);
             if (image != null) oldItem.setProductImage(image);
             updateById(oldItem);

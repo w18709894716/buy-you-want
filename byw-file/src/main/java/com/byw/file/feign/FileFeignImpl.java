@@ -2,6 +2,7 @@ package com.byw.file.feign;
 
 import com.byw.api.file.FileFeignClient;
 import com.byw.common.core.result.R;
+import com.byw.common.security.annotation.Public;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -13,6 +14,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/feign/file")
 @RequiredArgsConstructor
+@Public
 public class FileFeignImpl implements FileFeignClient {
 
     private final FileService fileService;

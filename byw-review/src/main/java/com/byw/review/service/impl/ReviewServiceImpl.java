@@ -64,6 +64,8 @@ public class ReviewServiceImpl implements ReviewService {
         review.setOrderNo(reviewDetail.getOrderId());
         review.setUserId(reviewDetail.getUserId());
         review.setProductId(reviewDetail.getProductId());
+        review.setSkuId(reviewDetail.getSkuId());
+        review.setShopId(resolveShopId(reviewDetail.getProductId(), new HashMap<>()));
         review.setRating(rating);
         review.setContent(content);
         review.setIsAnonymous(isAnonymous != null ? isAnonymous : 0);
@@ -245,7 +247,10 @@ public class ReviewServiceImpl implements ReviewService {
 
     @Override
     public PageResult<Map<String, Object>> adminListReviews(Integer pageNum, Integer pageSize, Integer rating, Integer status) {
+        // 商家上下文：仅返回本店评价；平台管理员 shopId 为空则不过滤
+        Long shopId = com.byw.common.security.context.UserContext.getShopId();
         LambdaQueryWrapper<Review> wrapper = new LambdaQueryWrapper<Review>()
+                .eq(shopId != null, Review::getShopId, shopId)
                 .eq(rating != null, Review::getRating, rating)
                 .eq(status != null, Review::getStatus, status)
                 .orderByDesc(Review::getCreatedAt);
@@ -279,10 +284,34 @@ public class ReviewServiceImpl implements ReviewService {
             map.put("appendContent", appendContent);
             map.put("appendImages", appendImages != null ? appendImages : Collections.emptyList());
             map.put("hasAppend", appendContent != null && !appendContent.isBlank());
+            // 商家回复（MySQL 为权威数据源）
+            map.put("merchantReply", r.getMerchantReply());
+            map.put("repliedAt", r.getRepliedAt());
             return map;
         }).collect(Collectors.toList());
 
         return PageResult.of(list, reviewPage.getTotal(), pageNum, pageSize);
+    }
+
+    /**
+     * 按商品ID反查归属店铺，结果缓存避免重复远程调用；
+     * 失败时返回 null，由数据库默认值兜底（不阻断用户提交评价）
+     */
+    private Long resolveShopId(Long productId, Map<Long, Long> cache) {
+        if (productId == null) {
+            return null;
+        }
+        return cache.computeIfAbsent(productId, pid -> {
+            try {
+                R<ProductDTO> resp = productFeignClient.getProductById(pid);
+                if (resp != null && resp.getData() != null) {
+                    return resp.getData().getShopId();
+                }
+            } catch (Exception e) {
+                log.warn("获取商品归属店铺失败: productId={}, error={}", pid, e.getMessage());
+            }
+            return null;
+        });
     }
 
     /**
@@ -392,12 +421,42 @@ public class ReviewServiceImpl implements ReviewService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public void replyReview(Long reviewId, String content) {
+        Review review = reviewMapper.selectById(reviewId);
+        if (review == null) {
+            throw new BusinessException("评价不存在");
+        }
+        // 商家仅能回复本店评价
+        Long shopId = com.byw.common.security.context.UserContext.getShopId();
+        if (shopId != null && !shopId.equals(review.getShopId())) {
+            throw new BusinessException("无权回复其他店铺的评价");
+        }
+        Review update = new Review();
+        update.setId(reviewId);
+        update.setMerchantReply(content);
+        java.time.LocalDateTime repliedAt = java.time.LocalDateTime.now();
+        update.setRepliedAt(repliedAt);
+        reviewMapper.updateById(update);
+        // 同步到 MongoDB 明细，保证 C 端商品评价/订单评价能看到商家回复
+        try {
+            mongoTemplate.updateMulti(buildDetailQuery(review),
+                    new Update().set("merchantReply", content).set("repliedAt", repliedAt),
+                    ReviewDetail.class);
+        } catch (Exception e) {
+            log.warn("同步商家回复到MongoDB失败: reviewId={}, error={}", reviewId, e.getMessage());
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public void createBatchReviews(Long userId, String orderNo, List<ReviewDetail> reviewDetails) {
         // 1. 检查是否已评价
         if (reviewExists(orderNo)) {
             throw new BusinessException("该订单已评价");
         }
 
+        // 同单内相同商品仅反查一次归属店铺
+        Map<Long, Long> shopIdCache = new HashMap<>();
         for (ReviewDetail detail : reviewDetails) {
             detail.setOrderId(orderNo);
             detail.setUserId(userId);
@@ -408,6 +467,7 @@ public class ReviewServiceImpl implements ReviewService {
             review.setUserId(userId);
             review.setProductId(detail.getProductId());
             review.setSkuId(detail.getSkuId());
+            review.setShopId(resolveShopId(detail.getProductId(), shopIdCache));
             review.setRating(detail.getRating());
             review.setContent(detail.getContent());
             review.setIsAnonymous(detail.getIsAnonymous() != null ? detail.getIsAnonymous() : 0);
@@ -475,6 +535,9 @@ public class ReviewServiceImpl implements ReviewService {
             map.put("appendContent", appendContent);
             map.put("appendImages", appendImages != null ? appendImages : Collections.emptyList());
             map.put("hasAppend", appendContent != null && !appendContent.isBlank());
+            // 商家回复（MySQL 为权威数据源）
+            map.put("merchantReply", r.getMerchantReply());
+            map.put("repliedAt", r.getRepliedAt());
             return map;
         }).collect(Collectors.toList());
 

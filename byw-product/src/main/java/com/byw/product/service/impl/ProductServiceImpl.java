@@ -23,6 +23,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
 
         LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Product::getStatus, 1);
+        wrapper.eq(Product::getAuditStatus, 1);
 
         if (StringUtils.hasText(keyword)) {
             wrapper.and(w -> w.like(Product::getName, keyword)

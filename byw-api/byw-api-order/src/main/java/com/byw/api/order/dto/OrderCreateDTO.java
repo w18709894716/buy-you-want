@@ -18,6 +18,8 @@ public class OrderCreateDTO implements Serializable {
     public static class OrderItemDTO implements Serializable {
         private Long productId;
         private Long skuId;
+        /** 归属店铺ID（下单时按此字段拆分子订单；前端可不传，后端会从商品服务回填） */
+        private Long shopId;
         private String productName;
         private String skuName;
         private String productImage;

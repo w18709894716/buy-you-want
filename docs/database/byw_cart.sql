@@ -7,6 +7,7 @@ CREATE TABLE t_cart_item (
     user_id BIGINT NOT NULL,
     sku_id BIGINT NOT NULL,
     product_id BIGINT NOT NULL,
+    shop_id BIGINT NOT NULL DEFAULT 1 COMMENT '归属店铺ID(用于购物车按店铺分组)',
     sku_name VARCHAR(200),
     product_name VARCHAR(200),
     spec_data VARCHAR(500),
@@ -18,5 +19,6 @@ CREATE TABLE t_cart_item (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted TINYINT DEFAULT 0,
     UNIQUE KEY uk_user_sku (user_id, sku_id),
-    INDEX idx_user_id (user_id)
+    INDEX idx_user_id (user_id),
+    INDEX idx_shop_id (shop_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

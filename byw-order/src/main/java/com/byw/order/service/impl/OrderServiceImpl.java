@@ -9,8 +9,11 @@ import com.byw.api.logistics.dto.ShipRequestDTO;
 import com.byw.api.order.dto.OrderCreateDTO;
 import com.byw.api.order.dto.OrderDetailDTO;
 import com.byw.api.product.ProductFeignClient;
+import com.byw.api.product.dto.SkuDTO;
 import com.byw.api.product.dto.SkuStockDeductDTO;
 import com.byw.api.promotion.PromotionFeignClient;
+import com.byw.api.shop.ShopFeignClient;
+import com.byw.api.shop.dto.ShopDTO;
 import com.byw.api.user.UserFeignClient;
 import com.byw.api.user.dto.AddressDTO;
 import com.byw.common.core.exception.BusinessException;
@@ -51,6 +54,7 @@ public class OrderServiceImpl implements OrderService {
     private final UserFeignClient userFeignClient;
     private final LogisticsFeignClient logisticsFeignClient;
     private final OrderEventProducer orderEventProducer;
+    private final ShopFeignClient shopFeignClient;
 
     /** 雪花ID计数器，用于生成唯一订单号 */
     private static final AtomicLong SEQUENCE = new AtomicLong(0);
@@ -58,87 +62,159 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public String createOrder(OrderCreateDTO createDTO) {
-        // 1. 生成订单号: 日期 + 雪花序列
-        String orderNo = generateOrderNo();
         Long userId = createDTO.getUserId();
-
-        // 2. 计算订单金额并构建订单项
-        BigDecimal totalAmount = BigDecimal.ZERO;
-        List<OrderItem> orderItems = new java.util.ArrayList<>();
-
-        for (OrderCreateDTO.OrderItemDTO itemDTO : createDTO.getItems()) {
-            BigDecimal subtotal = itemDTO.getPrice().multiply(BigDecimal.valueOf(itemDTO.getQuantity()));
-            totalAmount = totalAmount.add(subtotal);
-
-            OrderItem orderItem = new OrderItem();
-            orderItem.setOrderNo(orderNo);
-            orderItem.setUserId(userId);
-            orderItem.setProductId(itemDTO.getProductId());
-            orderItem.setSkuId(itemDTO.getSkuId());
-            orderItem.setProductName(itemDTO.getProductName());
-            orderItem.setSkuName(itemDTO.getSkuName());
-            orderItem.setProductImage(itemDTO.getProductImage());
-            orderItem.setPrice(itemDTO.getPrice());
-            orderItem.setQuantity(itemDTO.getQuantity());
-            orderItem.setSubtotal(subtotal);
-            orderItems.add(orderItem);
+        List<OrderCreateDTO.OrderItemDTO> items = createDTO.getItems();
+        if (items == null || items.isEmpty()) {
+            throw new BusinessException("订单商品不能为空");
         }
 
-        // 3. 使用优惠券
-        BigDecimal discountAmount = BigDecimal.ZERO;
+        // 1. 回填每个下单项的店铺ID（前端可不传，从商品服务批量查询回填）
+        backfillShopId(items);
+
+        // 2. 按店铺分组（LinkedHashMap 保序，便于末店取余额分摊优惠）
+        java.util.Map<Long, List<OrderCreateDTO.OrderItemDTO>> shopGroups = items.stream()
+                .collect(Collectors.groupingBy(OrderCreateDTO.OrderItemDTO::getShopId,
+                        java.util.LinkedHashMap::new, Collectors.toList()));
+
+        // 3. 计算订单总额（跨店铺合计）
+        BigDecimal grandTotal = items.stream()
+                .map(i -> i.getPrice().multiply(BigDecimal.valueOf(i.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // 4. 使用优惠券（整单一次核销，得到总优惠额）
+        // 店铺券仅限券归属店铺的商品：以该店小计核销门槛/折扣，优惠只落到该店子订单
+        BigDecimal totalDiscount = BigDecimal.ZERO;
+        Long couponShopId = null; // 非空表示店铺券及其归属店铺；null 表示平台券或未用券
         if (createDTO.getCouponId() != null) {
-            R<BigDecimal> couponResult = promotionFeignClient.useCoupon(
-                    createDTO.getCouponId(), userId, totalAmount);
-            if (couponResult.isSuccess() && couponResult.getData() != null) {
-                discountAmount = couponResult.getData();
-            }
-        }
-
-        // 4. 计算实付金额
-        BigDecimal payAmount = totalAmount.subtract(discountAmount).max(BigDecimal.ZERO);
-
-        // 5. 创建订单
-        Order order = new Order();
-        order.setOrderNo(orderNo);
-        order.setUserId(userId);
-        order.setTotalAmount(totalAmount);
-        order.setPayAmount(payAmount);
-        order.setFreightAmount(BigDecimal.ZERO);
-        order.setDiscountAmount(discountAmount);
-        order.setCouponId(createDTO.getCouponId());
-        order.setStatus(0); // 待付款
-        order.setReviewed(0); // 未评价
-        order.setRemark(createDTO.getRemark());
-
-        // 解析收货地址
-        if (createDTO.getAddressId() != null) {
+            boolean couponUsable = true;
             try {
-                R<AddressDTO> addrResult = userFeignClient.getAddressById(createDTO.getAddressId());
-                if (addrResult.isSuccess() && addrResult.getData() != null) {
-                    AddressDTO addr = addrResult.getData();
-                    order.setReceiverName(addr.getReceiverName());
-                    order.setReceiverPhone(addr.getReceiverPhone());
-                    order.setReceiverAddress(
-                            (addr.getProvince() != null ? addr.getProvince() : "") +
-                            (addr.getCity() != null ? addr.getCity() : "") +
-                            (addr.getDistrict() != null ? addr.getDistrict() : "") +
-                            (addr.getDetailAddress() != null ? addr.getDetailAddress() : ""));
+                R<com.byw.api.promotion.dto.CouponDTO> couponInfo =
+                        promotionFeignClient.getCouponById(createDTO.getCouponId());
+                if (couponInfo.isSuccess() && couponInfo.getData() != null) {
+                    Long cShopId = couponInfo.getData().getShopId();
+                    if (cShopId != null && cShopId != 0) {
+                        couponShopId = cShopId;
+                    }
+                } else {
+                    couponUsable = false;
+                    log.warn("查询优惠券详情失败，本单跳过用券: couponId={}", createDTO.getCouponId());
                 }
             } catch (Exception e) {
-                log.warn("获取收货地址失败，addressId={}: {}", createDTO.getAddressId(), e.getMessage());
+                couponUsable = false;
+                log.warn("查询优惠券详情异常，本单跳过用券: couponId={}, error={}", createDTO.getCouponId(), e.getMessage());
+            }
+            BigDecimal couponBase = grandTotal;
+            if (couponUsable && couponShopId != null) {
+                List<OrderCreateDTO.OrderItemDTO> couponShopItems = shopGroups.get(couponShopId);
+                if (couponShopItems == null) {
+                    throw new BusinessException("所选优惠券仅限指定店铺商品使用，请重新选择");
+                }
+                couponBase = couponShopItems.stream()
+                        .map(i -> i.getPrice().multiply(BigDecimal.valueOf(i.getQuantity())))
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+            }
+            if (couponUsable) {
+                R<BigDecimal> couponResult = promotionFeignClient.useCoupon(
+                        createDTO.getCouponId(), userId, couponBase);
+                if (couponResult.isSuccess() && couponResult.getData() != null) {
+                    totalDiscount = couponResult.getData();
+                }
             }
         }
 
-        orderMapper.insert(order);
+        // 5. 解析收货地址（父订单与各子订单共用）
+        String[] receiver = resolveReceiver(createDTO.getAddressId());
 
-        // 6. 设置orderId并批量插入订单项
-        for (OrderItem item : orderItems) {
-            item.setOrderId(order.getId());
-            orderItemMapper.insert(item);
+        // 6. 生成父订单号并创建父订单（聚合支付，无明细，不归属单一店铺）
+        String parentOrderNo = generateOrderNo();
+        BigDecimal parentPayAmount = grandTotal.subtract(totalDiscount).max(BigDecimal.ZERO);
+        Order parent = new Order();
+        parent.setOrderNo(parentOrderNo);
+        parent.setParentOrderNo(null);
+        parent.setIsParent(1);
+        parent.setUserId(userId);
+        parent.setShopId(null);
+        parent.setTotalAmount(grandTotal);
+        parent.setPayAmount(parentPayAmount);
+        parent.setFreightAmount(BigDecimal.ZERO);
+        parent.setDiscountAmount(totalDiscount);
+        parent.setCouponId(createDTO.getCouponId());
+        parent.setStatus(0); // 待付款
+        parent.setReviewed(0);
+        parent.setRemark(createDTO.getRemark());
+        applyReceiver(parent, receiver);
+        orderMapper.insert(parent);
+        saveStatusLog(parent.getId(), null, 0, "系统", "创建父订单");
+
+        // 7. 逐店铺创建子订单（优惠券按金额比例分摊，末店取余额消除舍入误差）
+        BigDecimal allocatedDiscount = BigDecimal.ZERO;
+        int shopIndex = 0;
+        int shopCount = shopGroups.size();
+        for (java.util.Map.Entry<Long, List<OrderCreateDTO.OrderItemDTO>> entry : shopGroups.entrySet()) {
+            shopIndex++;
+            Long shopId = entry.getKey();
+            List<OrderCreateDTO.OrderItemDTO> shopItems = entry.getValue();
+
+            BigDecimal shopTotal = shopItems.stream()
+                    .map(i -> i.getPrice().multiply(BigDecimal.valueOf(i.getQuantity())))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            // 分摊优惠：店铺券全额落到券归属店铺；平台券非末店按比例、末店取剩余，确保子订单优惠合计=父订单总优惠
+            BigDecimal shopDiscount;
+            if (couponShopId != null) {
+                shopDiscount = couponShopId.equals(shopId) ? totalDiscount : BigDecimal.ZERO;
+            } else if (shopIndex == shopCount) {
+                shopDiscount = totalDiscount.subtract(allocatedDiscount).max(BigDecimal.ZERO);
+            } else if (grandTotal.compareTo(BigDecimal.ZERO) > 0) {
+                shopDiscount = totalDiscount.multiply(shopTotal)
+                        .divide(grandTotal, 2, java.math.RoundingMode.HALF_UP);
+                allocatedDiscount = allocatedDiscount.add(shopDiscount);
+            } else {
+                shopDiscount = BigDecimal.ZERO;
+            }
+            BigDecimal shopPayAmount = shopTotal.subtract(shopDiscount).max(BigDecimal.ZERO);
+
+            String childOrderNo = generateOrderNo();
+            Order child = new Order();
+            child.setOrderNo(childOrderNo);
+            child.setParentOrderNo(parentOrderNo);
+            child.setIsParent(0);
+            child.setUserId(userId);
+            child.setShopId(shopId);
+            child.setTotalAmount(shopTotal);
+            child.setPayAmount(shopPayAmount);
+            child.setFreightAmount(BigDecimal.ZERO);
+            child.setDiscountAmount(shopDiscount);
+            child.setCouponId(null); // 优惠券归属父订单，子订单仅记录分摊金额
+            child.setStatus(0); // 待付款（父订单支付成功后联动置1）
+            child.setReviewed(0);
+            child.setRemark(createDTO.getRemark());
+            applyReceiver(child, receiver);
+            orderMapper.insert(child);
+
+            for (OrderCreateDTO.OrderItemDTO itemDTO : shopItems) {
+                BigDecimal subtotal = itemDTO.getPrice().multiply(BigDecimal.valueOf(itemDTO.getQuantity()));
+                OrderItem orderItem = new OrderItem();
+                orderItem.setOrderId(child.getId());
+                orderItem.setOrderNo(childOrderNo);
+                orderItem.setUserId(userId);
+                orderItem.setShopId(shopId);
+                orderItem.setProductId(itemDTO.getProductId());
+                orderItem.setSkuId(itemDTO.getSkuId());
+                orderItem.setProductName(itemDTO.getProductName());
+                orderItem.setSkuName(itemDTO.getSkuName());
+                orderItem.setProductImage(itemDTO.getProductImage());
+                orderItem.setPrice(itemDTO.getPrice());
+                orderItem.setQuantity(itemDTO.getQuantity());
+                orderItem.setSubtotal(subtotal);
+                orderItem.setShipStatus(0);
+                orderItemMapper.insert(orderItem);
+            }
+            saveStatusLog(child.getId(), null, 0, "系统", "创建子订单");
         }
 
-        // 7. 扣减库存
-        List<SkuStockDeductDTO> deductList = createDTO.getItems().stream()
+        // 8. 扣减库存（全部明细一次性扣减）
+        List<SkuStockDeductDTO> deductList = items.stream()
                 .map(item -> new SkuStockDeductDTO(item.getSkuId(), item.getQuantity()))
                 .collect(Collectors.toList());
         R<Boolean> stockResult = productFeignClient.deductStock(deductList);
@@ -148,23 +224,80 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException(msg);
         }
 
-        // 8. 清除购物车中已下单商品
-        List<Long> skuIds = createDTO.getItems().stream()
+        // 9. 清除购物车中已下单商品
+        List<Long> skuIds = items.stream()
                 .map(OrderCreateDTO.OrderItemDTO::getSkuId)
                 .collect(Collectors.toList());
         cartFeignClient.clearCartItems(userId, skuIds);
 
-        // 9. 保存状态日志
-        saveStatusLog(order.getId(), null, 0, "系统", "创建订单");
+        // 10. 发送订单创建事件 + 超时未支付自动取消延迟消息（均以父订单为维度）
+        orderEventProducer.sendOrderCreateEvent(parentOrderNo, userId);
+        orderEventProducer.sendOrderTimeoutCancelEvent(parentOrderNo);
 
-        // 10. 发送订单创建RocketMQ消息
-        orderEventProducer.sendOrderCreateEvent(orderNo, userId);
+        log.info("订单创建成功: parentOrderNo={}, userId={}, 拆分店铺数={}", parentOrderNo, userId, shopCount);
+        return parentOrderNo;
+    }
 
-        // 11. 发送15分钟延迟消息，超时未支付自动取消
-        orderEventProducer.sendOrderTimeoutCancelEvent(orderNo);
+    /** 回填下单项店铺ID：前端未传时从商品服务批量查询；仍缺失则兜底为自营店铺1 */
+    private void backfillShopId(List<OrderCreateDTO.OrderItemDTO> items) {
+        List<Long> missingSkuIds = items.stream()
+                .filter(i -> i.getShopId() == null)
+                .map(OrderCreateDTO.OrderItemDTO::getSkuId)
+                .distinct()
+                .collect(Collectors.toList());
+        if (!missingSkuIds.isEmpty()) {
+            try {
+                R<List<SkuDTO>> skuResult = productFeignClient.getSkuByIds(missingSkuIds);
+                if (skuResult.isSuccess() && skuResult.getData() != null) {
+                    java.util.Map<Long, Long> skuShopMap = skuResult.getData().stream()
+                            .filter(s -> s.getShopId() != null)
+                            .collect(Collectors.toMap(SkuDTO::getId, SkuDTO::getShopId, (a, b) -> a));
+                    for (OrderCreateDTO.OrderItemDTO item : items) {
+                        if (item.getShopId() == null) {
+                            item.setShopId(skuShopMap.get(item.getSkuId()));
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("回填订单项店铺ID失败: {}", e.getMessage());
+            }
+        }
+        // 兜底：仍为空的默认归属自营店铺1，避免分组时 NPE
+        for (OrderCreateDTO.OrderItemDTO item : items) {
+            if (item.getShopId() == null) {
+                item.setShopId(1L);
+            }
+        }
+    }
 
-        log.info("订单创建成功: orderNo={}, userId={}", orderNo, userId);
-        return orderNo;
+    /** 解析收货地址，返回 [收货人, 电话, 完整地址]；获取失败时返回全 null 数组 */
+    private String[] resolveReceiver(Long addressId) {
+        String[] receiver = new String[3];
+        if (addressId == null) {
+            return receiver;
+        }
+        try {
+            R<AddressDTO> addrResult = userFeignClient.getAddressById(addressId);
+            if (addrResult.isSuccess() && addrResult.getData() != null) {
+                AddressDTO addr = addrResult.getData();
+                receiver[0] = addr.getReceiverName();
+                receiver[1] = addr.getReceiverPhone();
+                receiver[2] = (addr.getProvince() != null ? addr.getProvince() : "") +
+                        (addr.getCity() != null ? addr.getCity() : "") +
+                        (addr.getDistrict() != null ? addr.getDistrict() : "") +
+                        (addr.getDetailAddress() != null ? addr.getDetailAddress() : "");
+            }
+        } catch (Exception e) {
+            log.warn("获取收货地址失败，addressId={}: {}", addressId, e.getMessage());
+        }
+        return receiver;
+    }
+
+    /** 将解析后的收货信息写入订单 */
+    private void applyReceiver(Order order, String[] receiver) {
+        order.setReceiverName(receiver[0]);
+        order.setReceiverPhone(receiver[1]);
+        order.setReceiverAddress(receiver[2]);
     }
 
     @Override
@@ -173,13 +306,17 @@ public class OrderServiceImpl implements OrderService {
         List<OrderItem> items = orderItemMapper.selectList(
                 new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderNo, orderNo));
 
-        return buildOrderDetailDTO(order, items);
+        OrderDetailDTO dto = buildOrderDetailDTO(order, items);
+        fillShopNames(java.util.Collections.singletonList(dto));
+        return dto;
     }
 
     @Override
     public PageResult<OrderDetailDTO> getUserOrders(Long userId, Integer status, Integer reviewed, Integer pageNum, Integer pageSize) {
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<Order>()
                 .eq(Order::getUserId, userId)
+                // 仅展示子订单/独立订单，父订单仅用于聚合支付不出现在列表
+                .eq(Order::getIsParent, 0)
                 .eq(status != null, Order::getStatus, status)
                 // reviewed=0 精确匹配待评价；reviewed>=1 视为已评价（含已追评 2）
                 .eq(reviewed != null && reviewed == 0, Order::getReviewed, 0)
@@ -195,6 +332,7 @@ public class OrderServiceImpl implements OrderService {
             return buildOrderDetailDTO(order, items);
         }).collect(Collectors.toList());
 
+        fillShopNames(dtoList);
         return PageResult.of(dtoList, orderPage.getTotal(), pageNum, pageSize);
     }
 
@@ -209,37 +347,83 @@ public class OrderServiceImpl implements OrderService {
     public void cancelOrder(String orderNo, String reason, String operator) {
         Order order = getOrderByNo(orderNo);
 
-        // 只有待付款和待发货状态可以取消
+        // 父订单：联动取消其全部未完成子订单，再取消父订单本身
+        if (order.getIsParent() != null && order.getIsParent() == 1) {
+            List<Order> children = orderMapper.selectList(
+                    new LambdaQueryWrapper<Order>().eq(Order::getParentOrderNo, orderNo));
+            for (Order child : children) {
+                if (child.getStatus() != null && (child.getStatus() == 0 || child.getStatus() == 1)) {
+                    doCancelChild(child, reason, operator);
+                }
+            }
+            cancelParentRecord(order, reason, operator);
+            return;
+        }
+
+        // 子订单 / 独立订单：仅待付款或待发货状态可取消
         if (order.getStatus() != 0 && order.getStatus() != 1) {
             throw new BusinessException("当前订单状态不可取消");
         }
+        doCancelChild(order, reason, operator);
 
+        // 若属于拆单：当同父下所有子订单均已取消时，联动取消父订单并释放优惠券
+        if (order.getParentOrderNo() != null) {
+            Order parent = orderMapper.selectOne(
+                    new LambdaQueryWrapper<Order>().eq(Order::getOrderNo, order.getParentOrderNo()));
+            if (parent != null && parent.getStatus() != null
+                    && (parent.getStatus() == 0 || parent.getStatus() == 1)) {
+                List<Order> siblings = orderMapper.selectList(
+                        new LambdaQueryWrapper<Order>().eq(Order::getParentOrderNo, parent.getOrderNo()));
+                boolean allCanceled = siblings.stream()
+                        .allMatch(s -> s.getStatus() != null && s.getStatus() == 4);
+                if (allCanceled) {
+                    cancelParentRecord(parent, reason, operator);
+                }
+            }
+        }
+    }
+
+    /** 取消单个子订单/独立订单：释放本单明细库存与自持优惠券 */
+    private void doCancelChild(Order order, String reason, String operator) {
         Integer fromStatus = order.getStatus();
         order.setStatus(4); // 已取消
         order.setCancelTime(LocalDateTime.now());
         order.setCancelReason(reason);
         orderMapper.updateById(order);
 
-        // 释放库存
+        // 释放本单明细库存
         List<OrderItem> items = orderItemMapper.selectList(
-                new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderNo, orderNo));
-        List<SkuStockDeductDTO> releaseList = items.stream()
-                .map(item -> new SkuStockDeductDTO(item.getSkuId(), item.getQuantity()))
-                .collect(Collectors.toList());
-        productFeignClient.releaseStock(releaseList);
+                new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderNo, order.getOrderNo()));
+        if (!items.isEmpty()) {
+            List<SkuStockDeductDTO> releaseList = items.stream()
+                    .map(item -> new SkuStockDeductDTO(item.getSkuId(), item.getQuantity()))
+                    .collect(Collectors.toList());
+            productFeignClient.releaseStock(releaseList);
+        }
 
-        // 释放优惠券
+        // 释放优惠券：仅独立订单自身持券时释放；拆单子订单优惠券归属父订单，不在此处理
         if (order.getCouponId() != null) {
             promotionFeignClient.releaseCoupon(order.getCouponId(), order.getUserId());
         }
 
-        // 保存状态日志
         saveStatusLog(order.getId(), fromStatus, 4, operator, reason);
+        orderEventProducer.sendOrderStatusChangeEvent(order.getOrderNo(), fromStatus, 4);
+        log.info("订单取消成功: orderNo={}, operator={}", order.getOrderNo(), operator);
+    }
 
-        // 发送状态变更事件
-        orderEventProducer.sendOrderStatusChangeEvent(orderNo, fromStatus, 4);
+    /** 取消父订单记录本身：父订单无明细，仅释放整单优惠券 */
+    private void cancelParentRecord(Order parent, String reason, String operator) {
+        Integer fromStatus = parent.getStatus();
+        parent.setStatus(4);
+        parent.setCancelTime(LocalDateTime.now());
+        parent.setCancelReason(reason);
+        orderMapper.updateById(parent);
 
-        log.info("订单取消成功: orderNo={}, operator={}", orderNo, operator);
+        if (parent.getCouponId() != null) {
+            promotionFeignClient.releaseCoupon(parent.getCouponId(), parent.getUserId());
+        }
+        saveStatusLog(parent.getId(), fromStatus, 4, operator, reason);
+        log.info("父订单取消成功: parentOrderNo={}, operator={}", parent.getOrderNo(), operator);
     }
 
     @Override
@@ -278,6 +462,55 @@ public class OrderServiceImpl implements OrderService {
 
         saveStatusLog(order.getId(), fromStatus, status, "系统", "状态更新");
         orderEventProducer.sendOrderStatusChangeEvent(orderNo, fromStatus, status);
+
+        // 父订单支付成功：联动其所有子订单置为待发货(1)
+        if (status != null && status == 1 && order.getIsParent() != null && order.getIsParent() == 1) {
+            List<Order> children = orderMapper.selectList(
+                    new LambdaQueryWrapper<Order>().eq(Order::getParentOrderNo, orderNo));
+            LocalDateTime payTime = order.getPayTime();
+            for (Order child : children) {
+                if (child.getStatus() != null && child.getStatus() != 0) {
+                    continue; // 已流转的子订单不重复处理
+                }
+                Integer childFrom = child.getStatus();
+                child.setStatus(1);
+                child.setPayTime(payTime);
+                orderMapper.updateById(child);
+                saveStatusLog(child.getId(), childFrom, 1, "系统", "父订单支付成功");
+                orderEventProducer.sendOrderStatusChangeEvent(child.getOrderNo(), childFrom, 1);
+            }
+            log.info("父订单支付成功联动子订单: parentOrderNo={}, 子订单数={}", orderNo, children.size());
+
+            // 销量累加：仅首次 0->1 生效，明细在子订单上
+            if (fromStatus == null || fromStatus == 0) {
+                increaseProductSales(children.stream().map(Order::getOrderNo).collect(Collectors.toList()));
+            }
+        } else if (status != null && status == 1 && (fromStatus == null || fromStatus == 0)) {
+            // 非父订单（如秒杀单）支付成功：直接按自身明细累加销量
+            increaseProductSales(List.of(orderNo));
+        }
+    }
+
+    /**
+     * 按订单明细累加商品销量；失败仅记日志不阻断支付主流程
+     */
+    private void increaseProductSales(List<String> orderNos) {
+        if (orderNos == null || orderNos.isEmpty()) {
+            return;
+        }
+        try {
+            List<OrderItem> items = orderItemMapper.selectList(
+                    new LambdaQueryWrapper<OrderItem>().in(OrderItem::getOrderNo, orderNos));
+            if (items.isEmpty()) {
+                return;
+            }
+            List<SkuStockDeductDTO> salesList = items.stream()
+                    .map(i -> new SkuStockDeductDTO(i.getSkuId(), i.getQuantity()))
+                    .collect(Collectors.toList());
+            productFeignClient.increaseSales(salesList);
+        } catch (Exception e) {
+            log.warn("累加商品销量失败: orderNos={}, err={}", orderNos, e.getMessage());
+        }
     }
 
     @Override
@@ -359,6 +592,8 @@ public class OrderServiceImpl implements OrderService {
         List<Order> orders = orderMapper.selectList(
                 new LambdaQueryWrapper<Order>()
                         .eq(Order::getUserId, userId)
+                        // 仅统计子订单/独立订单，排除仅聚合支付的父订单
+                        .eq(Order::getIsParent, 0)
                         .in(Order::getStatus, 0, 1, 2, 3, 4)
                         .select(Order::getStatus, Order::getReviewed));
 
@@ -432,5 +667,34 @@ public class OrderServiceImpl implements OrderService {
         dto.setItems(itemDTOs);
 
         return dto;
+    }
+
+    /** 批量回填订单归属店铺名称（拆单后子订单展示用），失败时静默跳过不影响主流程 */
+    private void fillShopNames(List<OrderDetailDTO> dtoList) {
+        if (dtoList == null || dtoList.isEmpty()) {
+            return;
+        }
+        List<Long> shopIds = dtoList.stream()
+                .map(OrderDetailDTO::getShopId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (shopIds.isEmpty()) {
+            return;
+        }
+        try {
+            R<List<ShopDTO>> shopResult = shopFeignClient.getShopsByIds(shopIds);
+            if (shopResult.isSuccess() && shopResult.getData() != null) {
+                java.util.Map<Long, String> shopNameMap = shopResult.getData().stream()
+                        .collect(Collectors.toMap(ShopDTO::getId, ShopDTO::getName, (a, b) -> a));
+                for (OrderDetailDTO dto : dtoList) {
+                    if (dto.getShopId() != null) {
+                        dto.setShopName(shopNameMap.get(dto.getShopId()));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("回填订单店铺名称失败: {}", e.getMessage());
+        }
     }
 }

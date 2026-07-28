@@ -2,6 +2,7 @@ package com.byw.product.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.byw.common.core.result.R;
+import com.byw.common.security.annotation.Public;
 import com.byw.common.security.annotation.RequireAdmin;
 import com.byw.product.entity.Brand;
 import com.byw.product.service.BrandService;
@@ -22,6 +23,7 @@ public class BrandController {
 
     @Operation(summary = "获取品牌列表")
     @GetMapping("/list")
+    @Public
     public R<List<Brand>> listBrands() {
         LambdaQueryWrapper<Brand> wrapper = new LambdaQueryWrapper<>();
         wrapper.orderByAsc(Brand::getSortOrder);

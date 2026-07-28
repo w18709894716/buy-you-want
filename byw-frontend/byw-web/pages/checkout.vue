@@ -60,22 +60,30 @@
             商品清单
           </h3>
           <div class="divide-y">
-            <div v-for="item in orderItems" :key="item.cartId" class="py-3 flex items-center gap-4">
-              <img
-                :src="item.image || 'https://via.placeholder.com/60x60?text=商品'"
-                :alt="item.productName"
-                class="w-16 h-16 object-cover rounded"
-              />
-              <div class="flex-1 min-w-0">
-                <p class="text-sm text-gray-800 truncate">{{ item.productName }}</p>
-                <div class="flex items-center gap-2 mt-1">
-                  <span class="text-xs text-gray-400">{{ formatSpecs(item.specData) || '默认规格' }}</span>
-                  <button class="text-xs text-primary hover:text-primary-600" @click="openSpecSwitcher(item)">更换</button>
+            <div v-for="group in orderShopGroups" :key="group.shopId" class="py-2">
+              <div class="flex items-center gap-2 py-2 text-sm font-medium text-gray-700">
+                <svg class="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                {{ group.shopName }}
+              </div>
+              <div class="divide-y">
+                <div v-for="item in group.items" :key="item.cartId" class="py-3 flex items-center gap-4">
+                  <img
+                    :src="item.image || 'https://via.placeholder.com/60x60?text=商品'"
+                    :alt="item.productName"
+                    class="w-16 h-16 object-cover rounded"
+                  />
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm text-gray-800 truncate">{{ item.productName }}</p>
+                    <div class="flex items-center gap-2 mt-1">
+                      <span class="text-xs text-gray-400">{{ formatSpecs(item.specData) || '默认规格' }}</span>
+                      <button class="text-xs text-primary hover:text-primary-600" @click="openSpecSwitcher(item)">更换</button>
+                    </div>
+                  </div>
+                  <div class="text-sm text-gray-800">¥{{ item.price.toFixed(2) }}</div>
+                  <div class="text-sm text-gray-500">x{{ item.quantity }}</div>
+                  <div class="text-sm font-bold text-primary">¥{{ (item.price * item.quantity).toFixed(2) }}</div>
                 </div>
               </div>
-              <div class="text-sm text-gray-800">¥{{ item.price.toFixed(2) }}</div>
-              <div class="text-sm text-gray-500">x{{ item.quantity }}</div>
-              <div class="text-sm font-bold text-primary">¥{{ (item.price * item.quantity).toFixed(2) }}</div>
             </div>
           </div>
         </div>
@@ -336,6 +344,7 @@
                   <div class="flex-1 min-w-0">
                     <p class="text-sm font-medium text-gray-800">{{ coupon.name }}</p>
                     <p class="text-xs text-gray-400 mt-0.5">{{ coupon.minAmount > 0 ? '满¥' + coupon.minAmount.toFixed(0) + '可用' : '无门槛' }}</p>
+                    <p v-if="coupon.shopId" class="text-xs text-orange-500 mt-0.5">仅限「{{ coupon.shopName || '指定店铺' }}」商品</p>
                   </div>
                   <span class="text-xs text-green-500 flex-shrink-0">省¥{{ calcCouponDiscount(coupon).toFixed(2) }}</span>
                 </label>
@@ -515,33 +524,65 @@ async function fetchAddresses(preferId: number | null = null) {
 // ===== 计算属性（提前定义，优惠券逻辑依赖） =====
 const subtotal = computed(() => orderItems.value.reduce((sum, item) => sum + item.price * item.quantity, 0))
 
+// 结算页商品按店铺分组展示（保持勾选顺序）
+const orderShopGroups = computed(() => {
+  const groups: any[] = []
+  const indexMap = new Map<number, number>()
+  orderItems.value.forEach(item => {
+    const sid = item.shopId ?? 0
+    if (!indexMap.has(sid)) {
+      indexMap.set(sid, groups.length)
+      groups.push({ shopId: sid, shopName: item.shopName || '自营', items: [] })
+    }
+    groups[indexMap.get(sid)!].items.push(item)
+  })
+  return groups
+})
+
 // ===== 优惠券 =====
 const userCoupons = ref<any[]>([])
 const selectedCouponId = ref<number | null>(null)
 const showCouponPicker = ref(false)
 const appliedCoupon = ref<{ name: string; discount: number; condition: string } | null>(null)
 
+// 券的可用金额基数：店铺券取该店商品小计，平台券取全单合计
+function couponBaseAmount(coupon: any): number {
+  if (coupon.shopId) {
+    return orderItems.value
+      .filter(item => item.shopId === coupon.shopId)
+      .reduce((sum, item) => sum + item.price * item.quantity, 0)
+  }
+  return subtotal.value
+}
+
 // 判断优惠券是否可用
 function isCouponAvailable(coupon: any): boolean {
   // 检查是否过期
   if (coupon.endTime && new Date(coupon.endTime) < new Date()) return false
-  // 检查是否满足门槛
-  if (coupon.minAmount && coupon.minAmount > 0 && subtotal.value < coupon.minAmount) return false
+  const base = couponBaseAmount(coupon)
+  // 店铺券：订单里必须包含该店铺的商品
+  if (coupon.shopId && base <= 0) return false
+  // 检查是否满足门槛（店铺券以该店小计计算）
+  if (coupon.minAmount && coupon.minAmount > 0 && base < coupon.minAmount) return false
   return true
 }
 
 // 获取不可用原因
 function getUnavailableReason(coupon: any): string {
   if (coupon.endTime && new Date(coupon.endTime) < new Date()) return '已过期'
-  if (coupon.minAmount && coupon.minAmount > 0 && subtotal.value < coupon.minAmount) {
-    return `还差¥${(coupon.minAmount - subtotal.value).toFixed(2)}可用`
+  const base = couponBaseAmount(coupon)
+  if (coupon.shopId && base <= 0) {
+    return `仅限「${coupon.shopName || '指定店铺'}」商品使用`
+  }
+  if (coupon.minAmount && coupon.minAmount > 0 && base < coupon.minAmount) {
+    return `${coupon.shopId ? '该店商品' : ''}还差¥${(coupon.minAmount - base).toFixed(2)}可用`
   }
   return '不可用'
 }
 
-// 计算优惠券可省金额
+// 计算优惠券可省金额（店铺券仅基于该店商品小计）
 function calcCouponDiscount(coupon: any): number {
-  const orderAmount = subtotal.value
+  const orderAmount = couponBaseAmount(coupon)
   if (coupon.type === 1) { // 满减券
     if (orderAmount >= (coupon.minAmount || 0)) return Math.min(coupon.discountValue, orderAmount)
   } else if (coupon.type === 2) { // 折扣券
@@ -585,7 +626,8 @@ function autoSelectBestCoupon() {
 function selectCoupon(coupon: any) {
   selectedCouponId.value = coupon.couponId
   const discount = calcCouponDiscount(coupon)
-  const condition = coupon.minAmount > 0 ? `满¥${coupon.minAmount.toFixed(0)}可用` : '无门槛'
+  const scopeLabel = coupon.shopId ? `仅限「${coupon.shopName || '指定店铺'}」商品，` : ''
+  const condition = scopeLabel + (coupon.minAmount > 0 ? `满¥${coupon.minAmount.toFixed(0)}可用` : '无门槛')
   appliedCoupon.value = discount > 0
     ? { name: coupon.name, discount: Math.round(discount * 100) / 100, condition }
     : null
@@ -693,6 +735,7 @@ async function payNow() {
       items: orderItems.value.map(item => ({
         productId: item.productId,
         skuId: item.skuId,
+        shopId: item.shopId,
         productName: item.productName,
         skuName: formatSpecs(item.specData) || '默认规格',
         productImage: item.image,

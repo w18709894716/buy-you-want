@@ -1,0 +1,37 @@
+/* 商家中心全局主题：沿用 C 端(byw-web)设计语言，与平台管理端形成视觉区分 */
+
+/* Element Plus 主色换为品牌红，色阶复用 C 端 tailwind primary 色板（danger 保持默认，避免与删除类操作混淆） */
+:root {
+  --el-color-primary: #ff2d21;
+  --el-color-primary-light-3: #ff5c52;
+  --el-color-primary-light-5: #ff968e;
+  --el-color-primary-light-7: #ffc1ba;
+  --el-color-primary-light-8: #ffddd9;
+  --el-color-primary-light-9: #fff1f0;
+  --el-color-primary-dark-2: #ed1308;
+  --el-border-radius-base: 8px;
+  --el-font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+body {
+  margin: 0;
+  font-family: var(--el-font-family);
+  background-color: #f7f8fa;
+}
+
+/* C 端质感：白色圆角卡片 + 浅投影，hover 微提升 */
+.el-card {
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: box-shadow 0.2s;
+
+  &:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.07);
+  }
+}
+
+/* 表格：表头浅灰底 */
+.el-table th.el-table__cell {
+  background-color: #fafafa;
+}

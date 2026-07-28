@@ -27,7 +27,7 @@ public class AdminProductController {
                                           @RequestParam(defaultValue = "10") Integer pageSize,
                                           @RequestParam(required = false) String keyword,
                                           @RequestParam(required = false) Integer status) {
-        return productFeignClient.listProducts(pageNum, pageSize, keyword, status);
+        return productFeignClient.listProducts(pageNum, pageSize, keyword, status, null);
     }
 
     @GetMapping("/{productId}")
@@ -35,24 +35,24 @@ public class AdminProductController {
         return productFeignClient.getProductById(productId);
     }
 
-    @PostMapping
-    public R<Long> createProduct(@RequestBody ProductDTO productDTO) {
-        return productFeignClient.createProduct(productDTO);
+    // 商品的增/改/删/上下架已迁移至商家后台 byw-merchant（MerchantProductController），
+    // 平台侧仅保留商品列表与详情的监管查看能力。
+
+    // ========== 商品审核 ==========
+
+    @GetMapping("/audit/list")
+    public R<PageResult<ProductDTO>> auditList(@RequestParam(defaultValue = "1") Integer pageNum,
+                                               @RequestParam(defaultValue = "10") Integer pageSize,
+                                               @RequestParam(required = false) Integer auditStatus,
+                                               @RequestParam(required = false) String keyword) {
+        return productFeignClient.listAuditProducts(pageNum, pageSize, auditStatus, keyword);
     }
 
-    @PutMapping("/{productId}")
-    public R<Boolean> updateProduct(@PathVariable Long productId, @RequestBody ProductDTO productDTO) {
-        return productFeignClient.updateProduct(productId, productDTO);
-    }
-
-    @DeleteMapping("/{productId}")
-    public R<Boolean> deleteProduct(@PathVariable Long productId) {
-        return productFeignClient.deleteProduct(productId);
-    }
-
-    @PutMapping("/{productId}/status")
-    public R<Void> toggleProductStatus(@PathVariable Long productId) {
-        return productFeignClient.toggleProductStatus(productId);
+    @PutMapping("/{productId}/audit")
+    public R<Boolean> audit(@PathVariable Long productId,
+                            @RequestParam Integer auditStatus,
+                            @RequestParam(required = false) String rejectReason) {
+        return productFeignClient.auditProduct(productId, auditStatus, rejectReason);
     }
 
     // ========== 分类管理 ==========

@@ -24,6 +24,8 @@
 | Sentinel | — | 流量控制、熔断降级、系统负载保护 |
 
 > 注：Spring Data Elasticsearch、Spring Data MongoDB 版本由 Spring Boot 3.2.5 BOM 统一管理，Sentinel 版本由 Spring Cloud Alibaba 2023.0.1.0 BOM 管理。
+>
+> 定时任务：结算分账（byw-settle）采用 Spring `@Scheduled` 实现 T+N 冷静期入账扫描，未引入独立调度中间件（如 xxl-job）。
 
 ## 前端技术栈
 
@@ -51,6 +53,20 @@
 | Axios | ^1.6.8 | HTTP 请求客户端 |
 | Vue Router | ^4.3.0 | 官方路由管理 |
 | TypeScript | ^5.4.5 | 类型安全支持 |
+
+### 商家端（byw-merchant-web）
+
+| 技术 | 版本 | 说明 |
+|------|------|------|
+| Vue | ^3.4.x | 渐进式前端框架（Composition API） |
+| Element Plus | ^2.7.x | Vue3 企业级 UI 组件库 |
+| Vite | ^5.2.x | 前端构建工具，dev 端口 :5175 |
+| Pinia | ^2.1.x | 状态管理 |
+| Axios | ^1.6.x | HTTP 请求客户端（baseURL=/api，经网关转发至 byw-merchant） |
+| Vue Router | ^4.3.x | 官方路由管理 |
+| TypeScript | ^5.4.x | 类型安全支持 |
+
+> 商家端面向入驻商家，提供店铺资料、商品发布/送审、订单发货、评价回复、结算与提现等工作台功能，所有数据受 `shop_id` 隔离。
 
 ## 中间件
 

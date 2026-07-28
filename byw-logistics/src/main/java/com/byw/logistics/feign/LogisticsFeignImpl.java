@@ -5,6 +5,7 @@ import com.byw.api.logistics.dto.LogisticsDTO;
 import com.byw.api.logistics.dto.ShipRequestDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
+import com.byw.common.security.annotation.Public;
 import com.byw.logistics.entity.LogisticsOrder;
 import com.byw.logistics.entity.LogisticsTrace;
 import com.byw.logistics.service.LogisticsService;
@@ -19,6 +20,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/feign/logistics")
 @RequiredArgsConstructor
+@Public
 public class LogisticsFeignImpl implements LogisticsFeignClient {
 
     private final LogisticsService logisticsService;

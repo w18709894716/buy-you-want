@@ -88,7 +88,8 @@ def main():
     services = [
         "byw-gateway", "byw-auth", "byw-user", "byw-product",
         "byw-cart", "byw-order", "byw-pay", "byw-logistics",
-        "byw-review", "byw-promotion", "byw-admin",
+        "byw-review", "byw-promotion", "byw-file", "byw-shop",
+        "byw-settle", "byw-admin", "byw-merchant",
     ]
 
     # ===== 停止 Java 微服务（通过窗口标题查找 CMD 窗口）=====
@@ -116,7 +117,7 @@ def main():
     # ===== 停止前端（通过端口查找）=====
     print("\n\033[36m========== 停止前端 ==========\033[0m")
     frontend_killed = 0
-    for port, name in [(3000, "byw-web :3000"), (5173, "byw-admin-web :5173")]:
+    for port, name in [(3000, "byw-web :3000"), (5174, "byw-admin-web :5174"), (5175, "byw-merchant-web :5175")]:
         # 先尝试通过窗口标题查找
         title_name = name.split()[0]  # "byw-web" or "byw-admin-web"
         pids = find_pids_by_window_title(title_name)

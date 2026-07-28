@@ -1,6 +1,7 @@
 package com.byw.promotion.controller;
 
 import com.byw.common.core.result.R;
+import com.byw.common.security.annotation.Public;
 import com.byw.common.security.annotation.RequireLogin;
 import com.byw.common.security.context.UserContext;
 import com.byw.promotion.entity.GroupBuyActivity;
@@ -22,6 +23,7 @@ public class GroupBuyController {
 
     @Operation(summary = "获取拼团活动列表")
     @GetMapping("/list")
+    @Public
     public R<List<GroupBuyActivity>> list() {
         return R.ok(groupBuyService.listActivities());
     }

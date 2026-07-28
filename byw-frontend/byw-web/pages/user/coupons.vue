@@ -73,6 +73,7 @@
             <div class="flex-1 p-3 flex flex-col justify-between">
               <div>
                 <p class="text-sm font-medium text-gray-800">{{ coupon.name }}</p>
+                <p v-if="coupon.shopId" class="text-xs text-orange-500 mt-1">仅限「{{ coupon.shopName || '指定店铺' }}」商品使用</p>
                 <p class="text-xs text-gray-400 mt-1">
                   有效期：{{ formatDate(coupon.startTime) }} ~ {{ formatDate(coupon.endTime) }}
                 </p>

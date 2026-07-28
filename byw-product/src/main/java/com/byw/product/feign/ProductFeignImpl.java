@@ -10,8 +10,11 @@ import com.byw.api.product.dto.CategoryDTO;
 import com.byw.api.product.dto.ProductDTO;
 import com.byw.api.product.dto.SkuDTO;
 import com.byw.api.product.dto.SkuStockDeductDTO;
+import com.byw.api.shop.ShopFeignClient;
+import com.byw.api.shop.dto.ShopDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
+import com.byw.common.security.annotation.Public;
 import com.byw.product.entity.Brand;
 import com.byw.product.entity.Banner;
 import com.byw.product.entity.Category;
@@ -24,6 +27,7 @@ import com.byw.product.service.CategoryService;
 import com.byw.product.service.ProductService;
 import com.byw.product.service.SkuService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -35,9 +39,11 @@ import java.util.stream.Collectors;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+@Slf4j
 @RestController
 @RequestMapping("/feign/product")
 @RequiredArgsConstructor
+@Public
 public class ProductFeignImpl implements ProductFeignClient {
 
     private final ProductService productService;
@@ -46,6 +52,7 @@ public class ProductFeignImpl implements ProductFeignClient {
     private final CategoryService categoryService;
     private final BrandService brandService;
     private final BannerService bannerService;
+    private final ShopFeignClient shopFeignClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
@@ -64,6 +71,17 @@ public class ProductFeignImpl implements ProductFeignClient {
             return skuDTO;
         }).collect(Collectors.toList());
         dto.setSkus(skuDTOs);
+        // 回填归属店铺名称，供用户端详情页展示；失败时静默跳过
+        if (product.getShopId() != null) {
+            try {
+                R<ShopDTO> shopResult = shopFeignClient.getShopById(product.getShopId());
+                if (shopResult.isSuccess() && shopResult.getData() != null) {
+                    dto.setShopName(shopResult.getData().getName());
+                }
+            } catch (Exception e) {
+                log.warn("回填商品店铺名称失败: productId={}, {}", productId, e.getMessage());
+            }
+        }
         return R.ok(dto);
     }
 
@@ -100,6 +118,24 @@ public class ProductFeignImpl implements ProductFeignClient {
     }
 
     @Override
+    @PostMapping("/increase-sales")
+    public R<Boolean> increaseSales(@RequestBody List<SkuStockDeductDTO> items) {
+        // 支付成功后累加商品销量：按 SKU 归属商品聚合数量后累加
+        java.util.Map<Long, Integer> productQty = new java.util.HashMap<>();
+        for (SkuStockDeductDTO dto : items) {
+            if (dto.getSkuId() == null || dto.getQuantity() == null || dto.getQuantity() <= 0) continue;
+            Sku sku = skuService.getById(dto.getSkuId());
+            if (sku == null || sku.getProductId() == null) continue;
+            productQty.merge(sku.getProductId(), dto.getQuantity(), Integer::sum);
+        }
+        productQty.forEach((productId, qty) -> productService.update(
+                new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Product>()
+                        .eq(Product::getId, productId)
+                        .setSql("sales_count = IFNULL(sales_count, 0) + " + qty)));
+        return R.ok(true);
+    }
+
+    @Override
     @PostMapping("/sku/release-stock")
     public R<Boolean> releaseStock(@RequestBody List<SkuStockDeductDTO> deductList) {
         try {
@@ -124,13 +160,20 @@ public class ProductFeignImpl implements ProductFeignClient {
     public R<PageResult<ProductDTO>> listProducts(@RequestParam(value = "pageNum", defaultValue = "1") Integer pageNum,
                                                   @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,
                                                   @RequestParam(value = "keyword", required = false) String keyword,
-                                                  @RequestParam(value = "status", required = false) Integer status) {
+                                                  @RequestParam(value = "status", required = false) Integer status,
+                                                  @RequestParam(value = "auditStatus", required = false) Integer auditStatus) {
         LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
+        // 商家上下文：仅返回本店商品；平台管理员 shopId 为空则不过滤
+        Long shopId = com.byw.common.security.context.UserContext.getShopId();
+        wrapper.eq(shopId != null, Product::getShopId, shopId);
         if (keyword != null && !keyword.isEmpty()) {
             wrapper.like(Product::getName, keyword);
         }
         if (status != null) {
             wrapper.eq(Product::getStatus, status);
+        }
+        if (auditStatus != null) {
+            wrapper.eq(Product::getAuditStatus, auditStatus);
         }
         wrapper.orderByDesc(Product::getCreatedAt);
         IPage<Product> page = productService.page(new Page<>(pageNum, pageSize), wrapper);
@@ -165,9 +208,13 @@ public class ProductFeignImpl implements ProductFeignClient {
     public R<Long> createProduct(@RequestBody ProductDTO productDTO) {
         Product product = new Product();
         BeanUtils.copyProperties(productDTO, product);
+        // 新建商品统一进入待审核，且强制下架，审核通过后商家方可上架
+        product.setAuditStatus(0);
+        product.setRejectReason(null);
+        product.setStatus(2);
         productService.save(product);
-        // 保存 SKU
-        saveSkus(product.getId(), productDTO.getSkus());
+        // 保存 SKU（携带归属店铺，保证多租户维度一致）
+        saveSkus(product.getId(), product.getShopId(), productDTO.getSkus());
         return R.ok(product.getId());
     }
 
@@ -176,16 +223,29 @@ public class ProductFeignImpl implements ProductFeignClient {
     public R<Boolean> updateProduct(@PathVariable("productId") Long productId, @RequestBody ProductDTO productDTO) {
         Product product = productService.getById(productId);
         if (product == null) return R.fail("商品不存在");
+        // 商家上下文：只能改本店商品，且不允许篡改归属店铺
+        Long ctxShopId = com.byw.common.security.context.UserContext.getShopId();
+        if (ctxShopId != null && !ctxShopId.equals(product.getShopId())) {
+            return R.fail("无权操作其他店铺的商品");
+        }
+        Long originalShopId = product.getShopId();
         BeanUtils.copyProperties(productDTO, product);
         product.setId(productId);
+        if (ctxShopId != null) {
+            product.setShopId(originalShopId);
+            // 商家修改商品内容后需重新审核：重置为待审核并强制下架，清空驳回原因
+            product.setAuditStatus(0);
+            product.setRejectReason(null);
+            product.setStatus(2);
+        }
         productService.updateById(product);
         // 更新 SKU：按 specData 匹配，已有则更新，没有则新增
-        updateSkus(productId, productDTO.getSkus());
+        updateSkus(productId, product.getShopId(), productDTO.getSkus());
         return R.ok(true);
     }
 
     /** 更新 SKU 列表（按 product_id + skuCode 匹配已有记录） */
-    private void updateSkus(Long productId, List<SkuDTO> skuDTOs) {
+    private void updateSkus(Long productId, Long shopId, List<SkuDTO> skuDTOs) {
         if (skuDTOs == null || skuDTOs.isEmpty()) return;
 
         // 收集前端传来的所有 SKU 编码
@@ -226,7 +286,8 @@ public class ProductFeignImpl implements ProductFeignClient {
                     .eq(Sku::getSkuCode, skuCode));
 
             if (existing != null) {
-                // 已有：更新属性
+                // 已有：更新属性（同步修正归属店铺，修复存量 SKU shop_id 缺失）
+                existing.setShopId(shopId);
                 existing.setSpecData(dto.getSpecData());
                 existing.setSkuName(buildSkuName(dto.getSpecData()));
                 existing.setPrice(dto.getPrice());
@@ -238,6 +299,7 @@ public class ProductFeignImpl implements ProductFeignClient {
                 // 没有：新增
                 Sku sku = new Sku();
                 sku.setProductId(productId);
+                sku.setShopId(shopId);
                 sku.setSkuCode(skuCode);
                 sku.setSkuName(buildSkuName(dto.getSpecData()));
                 sku.setSpecData(dto.getSpecData());
@@ -266,13 +328,14 @@ public class ProductFeignImpl implements ProductFeignClient {
     }
 
     /** 保存 SKU 列表 */
-    private void saveSkus(Long productId, List<SkuDTO> skuDTOs) {
+    private void saveSkus(Long productId, Long shopId, List<SkuDTO> skuDTOs) {
         if (skuDTOs == null || skuDTOs.isEmpty()) return;
         List<Sku> skuList = new ArrayList<>();
         for (int i = 0; i < skuDTOs.size(); i++) {
             SkuDTO dto = skuDTOs.get(i);
             Sku sku = new Sku();
             sku.setProductId(productId);
+            sku.setShopId(shopId);
             String skuCode = dto.getSkuCode();
             if (skuCode == null || skuCode.isBlank()) {
                 skuCode = "SKU-" + productId + "-" + (i + 1);
@@ -305,6 +368,14 @@ public class ProductFeignImpl implements ProductFeignClient {
     @Override
     @DeleteMapping("/{productId}")
     public R<Boolean> deleteProduct(@PathVariable("productId") Long productId) {
+        Long ctxShopId = com.byw.common.security.context.UserContext.getShopId();
+        if (ctxShopId != null) {
+            Product product = productService.getById(productId);
+            if (product == null) return R.fail("商品不存在");
+            if (!ctxShopId.equals(product.getShopId())) {
+                return R.fail("无权操作其他店铺的商品");
+            }
+        }
         return R.ok(productService.removeById(productId));
     }
 
@@ -313,10 +384,84 @@ public class ProductFeignImpl implements ProductFeignClient {
     public R<Void> toggleProductStatus(@PathVariable("productId") Long productId) {
         Product product = productService.getById(productId);
         if (product == null) return R.fail("商品不存在");
+        Long ctxShopId = com.byw.common.security.context.UserContext.getShopId();
+        if (ctxShopId != null && !ctxShopId.equals(product.getShopId())) {
+            return R.fail("无权操作其他店铺的商品");
+        }
         // 1=上架 -> 2=下架, 其他 -> 1=上架
-        product.setStatus(product.getStatus() == 1 ? 2 : 1);
+        boolean willOnShelf = product.getStatus() == null || product.getStatus() != 1;
+        // 上架前必须已审核通过
+        if (willOnShelf && (product.getAuditStatus() == null || product.getAuditStatus() != 1)) {
+            return R.fail("商品未通过审核，无法上架");
+        }
+        product.setStatus(willOnShelf ? 1 : 2);
         productService.updateById(product);
         return R.ok();
+    }
+
+    @Override
+    @GetMapping("/audit/list")
+    public R<PageResult<ProductDTO>> listAuditProducts(@RequestParam(value = "pageNum", defaultValue = "1") Integer pageNum,
+                                                       @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,
+                                                       @RequestParam(value = "auditStatus", required = false) Integer auditStatus,
+                                                       @RequestParam(value = "keyword", required = false) String keyword) {
+        // 平台审核视图：不按店铺过滤
+        LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
+        if (auditStatus != null) {
+            wrapper.eq(Product::getAuditStatus, auditStatus);
+        }
+        if (keyword != null && !keyword.isEmpty()) {
+            wrapper.like(Product::getName, keyword);
+        }
+        // 待审核优先，其余按创建时间倒序
+        wrapper.orderByAsc(Product::getAuditStatus).orderByDesc(Product::getCreatedAt);
+        IPage<Product> page = productService.page(new Page<>(pageNum, pageSize), wrapper);
+        List<ProductDTO> dtoList = page.getRecords().stream().map(product -> {
+            ProductDTO dto = new ProductDTO();
+            BeanUtils.copyProperties(product, dto);
+            return dto;
+        }).collect(Collectors.toList());
+        return R.ok(PageResult.of(dtoList, page.getTotal(), pageNum, pageSize));
+    }
+
+    @Override
+    @PutMapping("/{productId}/audit")
+    public R<Boolean> auditProduct(@PathVariable("productId") Long productId,
+                                   @RequestParam("auditStatus") Integer auditStatus,
+                                   @RequestParam(value = "rejectReason", required = false) String rejectReason) {
+        Product product = productService.getById(productId);
+        if (product == null) return R.fail("商品不存在");
+        if (auditStatus == null || (auditStatus != 1 && auditStatus != 2)) {
+            return R.fail("审核状态非法");
+        }
+        product.setAuditStatus(auditStatus);
+        if (auditStatus == 2) {
+            // 驳回：记录原因并强制下架
+            product.setRejectReason(rejectReason);
+            product.setStatus(2);
+        } else {
+            // 通过：清空驳回原因（是否上架由商家自行决定）
+            product.setRejectReason(null);
+        }
+        productService.updateById(product);
+        return R.ok(true);
+    }
+
+    @Override
+    @PutMapping("/{productId}/submit")
+    public R<Boolean> submitProductForAudit(@PathVariable("productId") Long productId) {
+        Product product = productService.getById(productId);
+        if (product == null) return R.fail("商品不存在");
+        Long ctxShopId = com.byw.common.security.context.UserContext.getShopId();
+        if (ctxShopId != null && !ctxShopId.equals(product.getShopId())) {
+            return R.fail("无权操作其他店铺的商品");
+        }
+        // 重新提交审核：重置为待审核，清空驳回原因（保持下架直至审核通过后上架）
+        product.setAuditStatus(0);
+        product.setRejectReason(null);
+        product.setStatus(2);
+        productService.updateById(product);
+        return R.ok(true);
     }
 
     @Override

@@ -18,9 +18,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 # ===== 服务定义 =====
 BATCH_1 = ["byw-gateway", "byw-auth"]
-BATCH_2 = ["byw-user", "byw-product"]
+BATCH_2 = ["byw-user", "byw-product", "byw-shop"]
 BATCH_3 = ["byw-cart", "byw-order", "byw-pay",
-           "byw-logistics", "byw-review", "byw-promotion", "byw-file", "byw-admin"]
+           "byw-logistics", "byw-review", "byw-promotion", "byw-file",
+           "byw-settle", "byw-admin", "byw-merchant"]
 
 ALL_JAVA_SERVICES = BATCH_1 + BATCH_2 + BATCH_3
 
@@ -29,6 +30,7 @@ PORTS = {
     "byw-product": 8083, "byw-cart": 8084, "byw-order": 8085,
     "byw-pay": 8086, "byw-logistics": 8087, "byw-review": 8088,
     "byw-promotion": 8089, "byw-admin": 8090, "byw-file": 8091,
+    "byw-shop": 8092, "byw-merchant": 8093, "byw-settle": 8094,
 }
 
 # 全局变量：存储正在运行的服务进程
@@ -106,7 +108,7 @@ def stop_service(name: str) -> bool:
             del running_services[name]
         return True
     # 前端备用：通过端口查找
-    frontend_ports = {"byw-web": 3000, "byw-admin-web": 5173}
+    frontend_ports = {"byw-web": 3000, "byw-admin-web": 5174, "byw-merchant-web": 5175}
     if name in frontend_ports:
         port_pids = find_pids_by_port(frontend_ports[name])
         for pid in port_pids:
@@ -201,7 +203,7 @@ def show_status():
             status = "\033[33m外部运行\033[0m" if pids else "\033[37m未启动\033[0m"
         print(f"    {name:18} :{str(port):5}  {status}")
     # 前端
-    frontend = [("byw-web", 3000), ("byw-admin-web", 5173)]
+    frontend = [("byw-web", 3000), ("byw-admin-web", 5174), ("byw-merchant-web", 5175)]
     for name, port in frontend:
         if name in running_services:
             proc = running_services[name]
@@ -281,8 +283,10 @@ def main():
         stage("阶段 3/3 - 启动前端")
         web_dir = os.path.join(ROOT, "byw-frontend", "byw-web")
         admin_dir = os.path.join(ROOT, "byw-frontend", "byw-admin-web")
+        merchant_dir = os.path.join(ROOT, "byw-frontend", "byw-merchant-web")
         all_procs.append(start_frontend("byw-web", web_dir))
         all_procs.append(start_frontend("byw-admin-web", admin_dir))
+        all_procs.append(start_frontend("byw-merchant-web", merchant_dir))
     else:
         stage("阶段 3/3 - 前端 (已跳过)")
 
@@ -296,11 +300,13 @@ def main():
     print("    Gateway  :8080    Auth      :8081    User     :8082")
     print("    Product  :8083    Cart      :8084    Order    :8085")
     print("    Pay      :8086    Logistics :8087    Review   :8088")
-    print("    Promotion:8089    Admin     :8090")
+    print("    Promotion:8089    Admin     :8090    File     :8091")
+    print("    Shop     :8092    Merchant  :8093    Settle   :8094")
     print()
     print("  \033[33m前端:\033[0m")
-    print("    byw-web       http://localhost:3000")
-    print("    byw-admin-web http://localhost:5173")
+    print("    byw-web          http://localhost:3000")
+    print("    byw-admin-web    http://localhost:5174")
+    print("    byw-merchant-web http://localhost:5175")
     print()
     print("  \033[37m输入 'help' 查看可用命令\033[0m")
     print()
@@ -333,7 +339,7 @@ def interactive_mode(all_procs: list):
                 for name in list(running_services.keys()):
                     stop_service(name)
                 # 前端备用停止：通过端口查找（以防 npm 修改窗口标题导致未匹配）
-                for port, name in [(3000, "byw-web"), (5173, "byw-admin-web")]:
+                for port, name in [(3000, "byw-web"), (5174, "byw-admin-web"), (5175, "byw-merchant-web")]:
                     if name not in running_services:
                         pids = find_pids_by_port(port)
                         for pid in pids:
@@ -355,7 +361,8 @@ def interactive_mode(all_procs: list):
                     print(f"    {name} (:{PORTS[name]})")
                 print("\n  \033[36m前端:\033[0m")
                 print("    byw-web (:3000)")
-                print("    byw-admin-web (:5173)")
+                print("    byw-admin-web (:5174)")
+                print("    byw-merchant-web (:5175)")
                 print()
 
             elif action == "restart" and len(parts) >= 2:

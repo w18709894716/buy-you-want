@@ -4,8 +4,11 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.byw.api.product.dto.CategoryDTO;
 import com.byw.api.product.dto.ProductDTO;
 import com.byw.api.product.dto.SkuDTO;
+import com.byw.api.shop.ShopFeignClient;
+import com.byw.api.shop.dto.ShopDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
+import com.byw.common.security.annotation.Public;
 import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.byw.product.entity.Category;
 import com.byw.product.entity.Product;
@@ -14,6 +17,7 @@ import com.byw.product.service.CategoryService;
 import com.byw.product.service.ProductService;
 import com.byw.product.service.SkuService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,14 +28,17 @@ import java.math.BigDecimal;
 /**
  * 用户端商品接口（公开接口，无需登录）
  */
+@Slf4j
 @RestController
 @RequestMapping("/product")
 @RequiredArgsConstructor
+@Public
 public class ProductController {
 
     private final ProductService productService;
     private final CategoryService categoryService;
     private final SkuService skuService;
+    private final ShopFeignClient shopFeignClient;
 
     /** 分类树 */
     @SentinelResource(value = "category:tree", fallback = "categoryTreeFallback")
@@ -88,6 +95,7 @@ public class ProductController {
 
         LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Product::getStatus, 1); // 只查上架商品
+        wrapper.eq(Product::getAuditStatus, 1); // 且已审核通过
 
         // 按分类名称查询，包含子分类
         if (category != null && !category.isBlank()) {
@@ -182,6 +190,11 @@ public class ProductController {
     public R<ProductDTO> getProductDetail(@PathVariable Long productId) {
         Product product = productService.getById(productId);
         if (product == null) return R.fail("商品不存在");
+        // 仅对买家展示已上架且审核通过的商品
+        if (product.getStatus() == null || product.getStatus() != 1
+                || product.getAuditStatus() == null || product.getAuditStatus() != 1) {
+            return R.fail("商品不存在或已下架");
+        }
         ProductDTO dto = new ProductDTO();
         BeanUtils.copyProperties(product, dto);
         // 加载 SKU
@@ -197,6 +210,17 @@ public class ProductController {
         skuList.stream().map(Sku::getPrice)
                 .min(java.math.BigDecimal::compareTo)
                 .ifPresent(dto::setMinPrice);
+        // 回填归属店铺名称，供用户端详情页展示；失败时静默跳过
+        if (product.getShopId() != null) {
+            try {
+                R<ShopDTO> shopResult = shopFeignClient.getShopById(product.getShopId());
+                if (shopResult.isSuccess() && shopResult.getData() != null) {
+                    dto.setShopName(shopResult.getData().getName());
+                }
+            } catch (Exception e) {
+                log.warn("回填商品店铺名称失败: productId={}, {}", productId, e.getMessage());
+            }
+        }
         return R.ok(dto);
     }
 

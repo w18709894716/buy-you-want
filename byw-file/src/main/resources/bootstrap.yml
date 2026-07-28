@@ -24,3 +24,5 @@ minio:
   access-key: ${MINIO_ACCESS_KEY:minioadmin}
   secret-key: ${MINIO_SECRET_KEY:minioadmin}
   bucket-name: ${MINIO_BUCKET:byw-files}
+  # 对外访问地址：留空时回退到 endpoint；生产环境填对外域名(如 https://cdn.example.com)或走网关/Nginx 代理
+  public-url: ${MINIO_PUBLIC_URL:}

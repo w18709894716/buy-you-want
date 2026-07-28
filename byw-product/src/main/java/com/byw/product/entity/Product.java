@@ -17,6 +17,9 @@ public class Product implements Serializable {
 
     private String subtitle;
 
+    /** 归属店铺ID（多租户维度） */
+    private Long shopId;
+
     private Long categoryId;
 
     private Long brandId;
@@ -28,6 +31,12 @@ public class Product implements Serializable {
     private String detailHtml;
 
     private Integer status;
+
+    /** 审核状态：0待审核 1审核通过 2审核驳回 */
+    private Integer auditStatus;
+
+    /** 审核驳回原因（auditStatus=2 时有效） */
+    private String rejectReason;
 
     private Integer salesCount;
 

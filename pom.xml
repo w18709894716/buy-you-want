@@ -17,6 +17,7 @@
         <module>byw-gateway</module>
         <module>byw-auth</module>
         <module>byw-user</module>
+        <module>byw-shop</module>
         <module>byw-product</module>
         <module>byw-cart</module>
         <module>byw-order</module>
@@ -26,6 +27,8 @@
         <module>byw-promotion</module>
         <module>byw-file</module>
         <module>byw-admin</module>
+        <module>byw-merchant</module>
+        <module>byw-settle</module>
     </modules>
 
     <properties>
@@ -205,6 +208,11 @@
             </dependency>
             <dependency>
                 <groupId>com.byw</groupId>
+                <artifactId>byw-api-shop</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.byw</groupId>
                 <artifactId>byw-api-product</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -241,6 +249,11 @@
             <dependency>
                 <groupId>com.byw</groupId>
                 <artifactId>byw-api-file</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.byw</groupId>
+                <artifactId>byw-api-settle</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>

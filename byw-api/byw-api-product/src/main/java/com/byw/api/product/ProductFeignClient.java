@@ -28,6 +28,9 @@ public interface ProductFeignClient {
     @PostMapping("/feign/product/sku/deduct-stock")
     R<Boolean> deductStock(@RequestBody List<SkuStockDeductDTO> deductList);
 
+    @PostMapping("/feign/product/increase-sales")
+    R<Boolean> increaseSales(@RequestBody List<SkuStockDeductDTO> items);
+
     @PostMapping("/feign/product/sku/release-stock")
     R<Boolean> releaseStock(@RequestBody List<SkuStockDeductDTO> deductList);
 
@@ -38,7 +41,8 @@ public interface ProductFeignClient {
     R<PageResult<ProductDTO>> listProducts(@RequestParam(value = "pageNum", defaultValue = "1") Integer pageNum,
                                            @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,
                                            @RequestParam(value = "keyword", required = false) String keyword,
-                                           @RequestParam(value = "status", required = false) Integer status);
+                                           @RequestParam(value = "status", required = false) Integer status,
+                                           @RequestParam(value = "auditStatus", required = false) Integer auditStatus);
 
     @PostMapping("/feign/product")
     R<Long> createProduct(@RequestBody ProductDTO productDTO);
@@ -51,6 +55,25 @@ public interface ProductFeignClient {
 
     @PutMapping("/feign/product/{productId}/status")
     R<Void> toggleProductStatus(@PathVariable("productId") Long productId);
+
+    // ========== 商品审核工作流 ==========
+
+    /** 平台：审核商品列表（不按店铺过滤，可按审核状态/关键词筛选） */
+    @GetMapping("/feign/product/audit/list")
+    R<PageResult<ProductDTO>> listAuditProducts(@RequestParam(value = "pageNum", defaultValue = "1") Integer pageNum,
+                                                @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,
+                                                @RequestParam(value = "auditStatus", required = false) Integer auditStatus,
+                                                @RequestParam(value = "keyword", required = false) String keyword);
+
+    /** 平台：审核商品（auditStatus=1 通过 / 2 驳回，驳回时携带 rejectReason） */
+    @PutMapping("/feign/product/{productId}/audit")
+    R<Boolean> auditProduct(@PathVariable("productId") Long productId,
+                            @RequestParam("auditStatus") Integer auditStatus,
+                            @RequestParam(value = "rejectReason", required = false) String rejectReason);
+
+    /** 商家：提交/重新提交审核（重置为待审核） */
+    @PutMapping("/feign/product/{productId}/submit")
+    R<Boolean> submitProductForAudit(@PathVariable("productId") Long productId);
 
     @GetMapping("/feign/product/count")
     R<Long> countProducts();

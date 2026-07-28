@@ -29,26 +29,6 @@ public class AdminOrderController {
         return orderFeignClient.getOrderDetail(orderNo);
     }
 
-    /**
-     * 订单发货（整单，兼容旧接口）
-     */
-    @PutMapping("/{orderNo}/ship")
-    public R<Boolean> ship(@PathVariable String orderNo,
-                           @RequestParam(required = false) String company,
-                           @RequestParam(required = false) String trackingNo) {
-        // 更新订单状态为已发货 (status=2)
-        // TODO: 同时创建物流记录（company, trackingNo）
-        return orderFeignClient.updateOrderStatus(orderNo, 2);
-    }
-
-    /**
-     * 拆分发货：对勾选的订单明细发货
-     */
-    @PostMapping("/{orderNo}/ship-items")
-    public R<Boolean> shipItems(@PathVariable String orderNo,
-                                @RequestParam String company,
-                                @RequestParam(required = false) String trackingNo,
-                                @RequestBody java.util.List<Long> itemIds) {
-        return orderFeignClient.shipItems(orderNo, company, trackingNo, itemIds);
-    }
+    // 订单发货（整单/拆分）已迁移至商家后台 byw-merchant（MerchantOrderController），
+    // 平台侧仅保留订单列表与详情的监管查看能力。
 }

@@ -17,6 +17,14 @@ interface RequestOptions extends Parameters<typeof $fetch>[1] {
 
 const TOKEN_KEY = 'byw_token'
 
+/** 无需登录即可浏览的公开页面（与 middleware/auth.ts 共用） */
+const PUBLIC_PATHS = ['/', '/login', '/register', '/search', '/seckill', '/coupons']
+
+/** 当前路径是否为公开页面 */
+export function isPublicPath(path: string): boolean {
+  return PUBLIC_PATHS.includes(path) || path.startsWith('/product/')
+}
+
 /** 获取 token */
 export function getToken(): string | null {
   if (import.meta.server) return null
@@ -84,11 +92,15 @@ export async function request<T = any>(
     // 业务错误
     throw new Error(response.message || '请求失败')
   } catch (error: any) {
-    // 401 处理：清除 token 并跳转登录
+    // 401 处理：清除失效 token；仅受保护页面跳登录，公开页面（如首页/商品页）只提示不强跳
     if (error?.response?.status === 401 || error?.statusCode === 401) {
       clearToken()
       if (import.meta.client) {
-        navigateTo('/login')
+        if (!isPublicPath(window.location.pathname)) {
+          navigateTo('/login')
+        } else {
+          throw new Error('请先登录')
+        }
       }
     }
     // 尝试从响应体中提取业务错误信息

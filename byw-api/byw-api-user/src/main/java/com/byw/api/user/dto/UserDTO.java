@@ -18,5 +18,6 @@ public class UserDTO implements Serializable {
     private Integer gender;
     private Integer status;
     private Integer userLevel;
+    private String role;
     private LocalDateTime createdAt;
 }

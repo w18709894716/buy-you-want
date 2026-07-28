@@ -65,13 +65,15 @@ python docs/scripts/start_all.py --skip-build --skip-frontend
 
 阶段 2: Java 微服务（按依赖顺序分 3 批）
   ├─ 第 1 批: byw-gateway, byw-auth
-  ├─ 第 2 批: byw-user, byw-product
+  ├─ 第 2 批: byw-user, byw-product, byw-shop
   └─ 第 3 批: byw-cart, byw-order, byw-pay, byw-logistics,
-              byw-review, byw-promotion, byw-admin
+              byw-review, byw-promotion, byw-file,
+              byw-settle, byw-admin, byw-merchant
 
 阶段 3: 前端应用
-  ├─ byw-web       http://localhost:3000
-  └─ byw-admin-web http://localhost:5173
+  ├─ byw-web          http://localhost:3000
+  ├─ byw-admin-web    http://localhost:5174
+  └─ byw-merchant-web http://localhost:5175
 ```
 
 ---
@@ -101,10 +103,11 @@ python docs/scripts/start_all.py --skip-build --skip-frontend
 后端微服务:
 byw-gateway    byw-auth       byw-user       byw-product
 byw-cart       byw-order      byw-pay        byw-logistics
-byw-review     byw-promotion  byw-admin
+byw-review     byw-promotion  byw-file       byw-shop
+byw-settle     byw-admin      byw-merchant
 
 前端:
-byw-web        byw-admin-web
+byw-web        byw-admin-web  byw-merchant-web
 ```
 
 ### 交互示例
@@ -170,8 +173,8 @@ python docs/scripts/stop_all.py
 
 ### 功能说明
 
-- 停止所有 Java 微服务（11 个）
-- 停止前端开发服务器（byw-web、byw-admin-web）
+- 停止所有 Java 微服务（15 个）
+- 停止前端开发服务器（byw-web、byw-admin-web、byw-merchant-web）
 - **关闭所有 CMD 窗口**（通过窗口标题查找进程）
 
 ### 查找策略
@@ -199,8 +202,13 @@ python docs/scripts/stop_all.py
 | byw-review | 8088 | 评价服务 |
 | byw-promotion | 8089 | 营销服务 |
 | byw-admin | 8090 | 管理后台服务 |
+| byw-file | 8091 | 文件服务 |
+| byw-shop | 8092 | 店铺服务 |
+| byw-merchant | 8093 | 商家端 BFF |
+| byw-settle | 8094 | 结算分账服务 |
 | byw-web | 3000 | 用户端前端 |
-| byw-admin-web | 5173 | 管理端前端 |
+| byw-admin-web | 5174 | 管理端前端 |
+| byw-merchant-web | 5175 | 商家端前端 |
 
 ---
 

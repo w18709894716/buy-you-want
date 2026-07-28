@@ -39,5 +39,11 @@ public class ReviewDetail {
     /** 0隐藏 1显示，与MySQL Review.status同步，用于C端过滤隐藏评价 */
     private Integer status;
 
+    /** 商家回复内容，与MySQL Review.merchantReply同步，用于C端展示 */
+    private String merchantReply;
+
+    /** 商家回复时间，与MySQL Review.repliedAt同步 */
+    private LocalDateTime repliedAt;
+
     private LocalDateTime createdAt;
 }

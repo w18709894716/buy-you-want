@@ -71,6 +71,11 @@ public class PayServiceImpl implements PayService {
     }
 
     @Override
+    public Long getPayOrderUserId(String payNo) {
+        return getPayOrderByNo(payNo).getUserId();
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public void handlePayCallback(String channel, String payNo, String tradeNo, String callbackContent) {
         PayOrder payOrder = getPayOrderByNo(payNo);

@@ -7,6 +7,7 @@ graph TB
     subgraph 客户端层
         A1[用户端 Nuxt.js SSR :3000]
         A2[管理端 Vue3 + Element Plus :5174]
+        A3[商家端 Vue3 + Element Plus :5175]
     end
 
     subgraph 接入层
@@ -26,6 +27,10 @@ graph TB
         C8[byw-review 评价系统 :8088]
         C9[byw-promotion 营销中心 :8089]
         C10[byw-admin 管理BFF :8090]
+        C11[byw-file 文件服务 :8091]
+        C12[byw-shop 店铺中心 :8092]
+        C13[byw-merchant 商家BFF :8093]
+        C14[byw-settle 结算分账 :8094]
     end
 
     subgraph 基础设施层
@@ -40,14 +45,15 @@ graph TB
 
     A1 --> B1
     A2 --> B1
+    A3 --> B1
     B1 --> B2
     B1 --> B3
-    B1 --> C1 & C2 & C3 & C4 & C5 & C6 & C7 & C8 & C9 & C10
+    B1 --> C1 & C2 & C3 & C4 & C5 & C6 & C7 & C8 & C9 & C10 & C11 & C12 & C13
 
-    C1 & C2 & C3 & C4 & C5 & C6 & C7 & C8 & C9 & C10 --> D1
-    C1 & C2 & C3 & C4 & C5 & C6 & C7 & C8 & C9 --> D2
-    C1 & C2 & C3 & C4 & C5 & C6 & C7 & C8 & C9 --> D3
-    C5 & C6 & C7 & C9 --> D4
+    C1 & C2 & C3 & C4 & C5 & C6 & C7 & C8 & C9 & C10 & C11 & C12 & C13 & C14 --> D1
+    C1 & C2 & C3 & C4 & C5 & C6 & C7 & C8 & C9 & C12 --> D2
+    C1 & C2 & C3 & C4 & C5 & C6 & C7 & C8 & C9 & C12 & C14 --> D3
+    C5 & C6 & C7 & C9 & C14 --> D4
     C3 --> D5
     C8 --> D6
     C5 --> D7
@@ -65,9 +71,13 @@ graph TB
 | byw-order | 8085 | 订单创建、状态机、超时取消、Seata 事务 | MySQL, Redis, RocketMQ, Seata, Nacos |
 | byw-pay | 8086 | 支付策略、模拟回调、支付流水 | MySQL, Redis, RocketMQ, Nacos |
 | byw-logistics | 8087 | 发货管理、物流跟踪、状态更新 | MySQL, RocketMQ, Nacos |
-| byw-review | 8088 | 评价管理、评分统计 | MySQL, MongoDB, Redis, Nacos |
+| byw-review | 8088 | 评价管理、评分统计、商家回复 | MySQL, MongoDB, Redis, Nacos |
 | byw-promotion | 8089 | 优惠券、秒杀（Lua预扣+限流）、拼团 | MySQL, Redis, RocketMQ, Nacos |
 | byw-admin | 8090 | 管理后台 BFF 聚合层 | Nacos |
+| byw-file | 8091 | 文件/图片上传（MinIO） | MinIO, Nacos |
+| byw-shop | 8092 | 店铺管理、商家账号与入驻审核 | MySQL, Redis, Nacos |
+| byw-merchant | 8093 | 商家端 BFF 聚合层 | Nacos |
+| byw-settle | 8094 | 结算分账、佣金规则、余额与提现（@Scheduled T+N） | MySQL, RocketMQ, Nacos |
 | byw-common | — | 公共工具模块（8 个子模块） | — |
 
 ## 服务间通信
@@ -77,7 +87,9 @@ graph TB
 - Order → Product（校验商品、扣减库存）
 - Order → Cart（清空已结算商品）
 - Order → Promotion（核销优惠券）
-- Admin → 各业务服务（聚合查询）
+- Admin / Merchant（BFF）→ 各业务服务（聚合查询，商家端受 shop_id 隔离）
+- Merchant BFF / Admin BFF → Settle（结算余额、佣金规则、提现与审批，仅 Feign 内部调用）
+- Order / Product → Shop（校验店铺、回填 shop_id）
 
 ### 异步调用（RocketMQ）
 通过 RocketMQ 发布/订阅事件，实现跨服务最终一致性和削峰填谷：
@@ -85,6 +97,8 @@ graph TB
 - **库存扣减** → Promotion 秒杀预扣 → Order 异步创建订单
 - **物流状态变更** → Logistics 发送事件 → Order 更新物流状态
 - **订单完成** → Order 发送事件 → Review 开放评价入口、Promotion 结算优惠券
+- **确认收货** → Order 发送事件 → Settle 消费并按分类佣金率创建结算单（T+N 冷静期后入账）
+- **确认收货** → Order 发送事件 → Settle 消费并按分类佣金率创建结算单（T+N 冷静期后入账）
 
 ## 核心业务流程
 
@@ -177,6 +191,56 @@ sequenceDiagram
     end
 ```
 
+### 4. 多商家拆单下单流程
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant GW as Gateway
+    participant O as Order服务
+    participant P as Product服务
+
+    U->>GW: POST /api/order/create（多店铺购物车）
+    GW->>O: 转发请求
+    Note over O: 购物车项按 shop_id 分组
+    O->>O: 创建父订单（is_parent=1，聚合支付总额/收货地址/优惠券）
+    loop 每个店铺
+        O->>P: Feign 校验商品与扣减库存
+        O->>O: 创建子订单（is_parent=0，归属单一 shop_id，含明细）
+    end
+    Note over O: Seata AT 事务保障父子订单一致性
+    O-->>U: 返回父订单号与支付信息（支付以父订单聚合，履约按子订单独立进行）
+```
+
+### 5. 结算分账流程
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant O as Order服务
+    participant MQ as RocketMQ
+    participant S as Settle服务
+    participant SC as 定时扫描 @Scheduled
+    participant M as 商家
+    participant A as 平台审批
+
+    U->>O: 确认收货（子订单）
+    O->>MQ: 发布确认收货事件
+    MQ->>S: 消费事件
+    S->>S: 按分类佣金率算佣，创建结算单（待结算/冷静期冻结）
+    Note over SC,S: 收货 + T+N 到期
+    SC->>S: 扫描到期结算单
+    S->>S: 转入可用余额（pending → available，记余额流水）
+    M->>S: 发起提现
+    S->>S: 冻结提现金额（available → frozen）
+    A->>S: 审批提现
+    alt 通过
+        S->>S: 打款（frozen → withdrawn）
+    else 驳回
+        S->>S: 解冻（frozen → available）
+    end
+```
+
 ## Gateway 路由规则
 
 | 路径前缀 | 目标服务 | 备注 |
@@ -197,3 +261,9 @@ sequenceDiagram
 | `/api/promotion/**` | byw-promotion | StripPrefix=1 |
 | `/api/coupon/**` | byw-promotion | StripPrefix=1 |
 | `/api/seckill/**` | byw-promotion | StripPrefix=1 |
+| `/api/banner/**` | byw-product | StripPrefix=1 |
+| `/api/file/**` | byw-file | StripPrefix=1 |
+| `/api/shop/**` | byw-shop | StripPrefix=1 |
+| `/api/merchant/**` | byw-merchant | 商家端 BFF，StripPrefix=1 |
+
+> 结算服务 byw-settle 无对外网关路由，仅由 byw-merchant / byw-admin 通过 Feign（`/feign/settle/**`）内部调用。

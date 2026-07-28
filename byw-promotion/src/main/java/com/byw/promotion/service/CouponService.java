@@ -16,6 +16,13 @@ public interface CouponService {
     List<Coupon> listAvailable(Integer newUser);
 
     /**
+     * 获取指定店铺可领取的店铺券（有余量、在有效期、且当前用户未领过）
+     * @param shopId 店铺ID
+     * @param userId 当前用户ID，用于排除已领取的券
+     */
+    List<Coupon> listShopClaimable(Long shopId, Long userId);
+
+    /**
      * 领取优惠券
      */
     void claimCoupon(Long userId, Long couponId);

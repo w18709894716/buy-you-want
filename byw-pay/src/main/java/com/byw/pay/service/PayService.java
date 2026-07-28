@@ -17,6 +17,11 @@ public interface PayService {
     Integer getPayStatus(String payNo);
 
     /**
+     * 获取支付单归属用户ID（供控制层做归属校验）
+     */
+    Long getPayOrderUserId(String payNo);
+
+    /**
      * 处理支付回调
      */
     void handlePayCallback(String channel, String payNo, String tradeNo, String callbackContent);

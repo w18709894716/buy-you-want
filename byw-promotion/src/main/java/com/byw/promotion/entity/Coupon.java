@@ -35,6 +35,9 @@ public class Coupon {
     /** 是否新人专享：0普通 1新人专享 */
     private Integer newUser;
 
+    /** 归属店铺ID：null或0平台券(全场通用) 其他为店铺券 */
+    private Long shopId;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 

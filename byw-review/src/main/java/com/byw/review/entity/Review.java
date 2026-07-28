@@ -18,6 +18,9 @@ public class Review {
 
     private Long productId;
 
+    /** 归属店铺ID（多租户维度） */
+    private Long shopId;
+
     private Long skuId;
 
     /** 1-5星 */
@@ -31,6 +34,12 @@ public class Review {
 
     /** 0隐藏 1显示 */
     private Integer status;
+
+    /** 商家回复内容 */
+    private String merchantReply;
+
+    /** 商家回复时间 */
+    private LocalDateTime repliedAt;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;

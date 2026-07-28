@@ -6,9 +6,27 @@
       <div class="bg-gray-100 text-xs text-gray-500 hidden sm:block">
         <div class="max-w-7xl mx-auto px-4 flex justify-between items-center h-8">
           <div>
-            <span v-if="userStore.username">
-              欢迎回来，<span class="text-primary">{{ userStore.nickname || userStore.username }}</span>
-            </span>
+            <!-- 已登录：悬浮用户名展开退出登录，箭头提示可展开 -->
+            <div v-if="userStore.username" class="relative group inline-block">
+              <span class="inline-flex items-center gap-1 h-8 cursor-pointer select-none">
+                欢迎回来，<span class="text-primary">{{ userStore.nickname || userStore.username }}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+                  class="w-3 h-3 text-gray-400 transition-transform duration-200 group-hover:rotate-180 group-hover:text-primary">
+                  <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                </svg>
+              </span>
+              <!-- 下拉面板：右对齐紧贴用户名下方，顶部直角与用户名区域连为一体 -->
+              <div class="absolute right-0 top-full hidden group-hover:block z-50">
+                <div class="bg-white rounded-b shadow-md border border-gray-100">
+                  <button
+                    class="whitespace-nowrap px-3 py-1.5 text-xs text-gray-500 hover:text-red-500 transition-colors"
+                    @click="handleLogout"
+                  >
+                    退出登录
+                  </button>
+                </div>
+              </div>
+            </div>
             <span v-else>
               <NuxtLink to="/login" class="hover:text-primary">登录</NuxtLink>
               <span class="mx-2">|</span>
@@ -16,6 +34,7 @@
             </span>
           </div>
           <div class="flex items-center gap-4">
+            <a :href="merchantApplyUrl" target="_blank" class="hover:text-primary">商家入驻</a>
             <NuxtLink to="/user/orders" class="hover:text-primary">我的订单</NuxtLink>
             <NuxtLink to="/user" class="hover:text-primary">个人中心</NuxtLink>
           </div>
@@ -129,6 +148,8 @@ import { get } from '~/utils/request'
 const userStore = useUserStore()
 const cartStore = useCartStore()
 const route = useRoute()
+// 商家入驻已迁至商家中心（byw-merchant-web），导航外链跳转
+const merchantApplyUrl = `${useRuntimeConfig().public.merchantWebUrl}/apply`
 
 // 导航高亮状态：首页仅在根路径高亮，分类仅在搜索页且 category 参数匹配时高亮
 const isHome = computed(() => route.path === '/')
@@ -137,6 +158,11 @@ const activeCategory = computed(() =>
 )
 
 const categories = ref<{ id: number; name: string }[]>([])
+
+// 退出登录：清空登录态并跳转登录页（store 内部处理）
+function handleLogout() {
+  userStore.logout()
+}
 
 async function fetchNavCategories() {
   try {

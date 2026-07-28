@@ -15,6 +15,9 @@ public class CartItem {
 
     private Long userId;
 
+    /** 归属店铺ID（用于购物车按店铺分组） */
+    private Long shopId;
+
     private Long skuId;
 
     private Long productId;
@@ -32,6 +35,10 @@ public class CartItem {
     private BigDecimal price;
 
     private Integer selected;
+
+    /** 店铺名称（购物车分组展示用，非持久化字段） */
+    @TableField(exist = false)
+    private String shopName;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;

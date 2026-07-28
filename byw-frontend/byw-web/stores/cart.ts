@@ -4,12 +4,20 @@ interface CartItem {
   cartId: number
   skuId: number
   productId: number
+  shopId: number
+  shopName: string
   productName: string
   image: string
   price: number
   quantity: number
   specData: string
   checked: boolean
+}
+
+interface CartShopGroup {
+  shopId: number
+  shopName: string
+  items: CartItem[]
 }
 
 interface CartState {
@@ -48,6 +56,21 @@ export const useCartStore = defineStore('cart', {
     checkedItems: (state): CartItem[] => {
       return state.items.filter(item => item.checked)
     },
+
+    /** 按店铺分组的购物车（保持后端返回顺序） */
+    shopGroups: (state): CartShopGroup[] => {
+      const groups: CartShopGroup[] = []
+      const indexMap = new Map<number, number>()
+      state.items.forEach(item => {
+        const sid = item.shopId ?? 0
+        if (!indexMap.has(sid)) {
+          indexMap.set(sid, groups.length)
+          groups.push({ shopId: sid, shopName: item.shopName || '自营', items: [] })
+        }
+        groups[indexMap.get(sid)!].items.push(item)
+      })
+      return groups
+    },
   },
 
   actions: {
@@ -59,6 +82,8 @@ export const useCartStore = defineStore('cart', {
           cartId: item.id,
           skuId: item.skuId,
           productId: item.productId,
+          shopId: item.shopId,
+          shopName: item.shopName || '自营',
           productName: item.productName || item.skuName,
           image: item.productImage,
           price: item.price,
@@ -67,11 +92,16 @@ export const useCartStore = defineStore('cart', {
           checked: item.selected === 1,
         }))
       } catch {
-        // 未登录时使用本地缓存
-        const cached = localStorage.getItem('byw_cart')
-        if (cached) {
-          this.items = JSON.parse(cached)
-        }
+        // 未登录/接口异常时使用本地缓存
+        this.restoreLocal()
+      }
+    },
+
+    /** 从本地缓存恢复购物车（未登录场景，不发起接口请求） */
+    restoreLocal() {
+      const cached = localStorage.getItem('byw_cart')
+      if (cached) {
+        this.items = JSON.parse(cached)
       }
     },
 
@@ -139,6 +169,14 @@ export const useCartStore = defineStore('cart', {
     saveLocal() {
       if (import.meta.client) {
         localStorage.setItem('byw_cart', JSON.stringify(this.items))
+      }
+    },
+
+    /** 清空购物车状态（退出登录时调用，避免残留上一个用户的数据） */
+    clear() {
+      this.items = []
+      if (import.meta.client) {
+        localStorage.removeItem('byw_cart')
       }
     },
   },

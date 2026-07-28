@@ -75,6 +75,10 @@
               <!-- 订单头部 -->
               <div class="flex flex-wrap items-center justify-between text-sm text-gray-500 mb-3 pb-3 border-b border-gray-100 gap-2">
                 <div class="flex items-center gap-2 sm:gap-4 flex-wrap">
+                  <span v-if="order.shopName" class="flex items-center gap-1 text-gray-700 font-medium">
+                    <svg class="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                    {{ order.shopName }}
+                  </span>
                   <span>订单号：{{ order.orderNo || order.id }}</span>
                   <span>{{ order.date }}</span>
                 </div>
@@ -121,6 +125,9 @@
                 <p class="text-sm text-gray-600 line-clamp-2">{{ reviewSummaries[order.orderNo].content || '（未填写评价内容）' }}</p>
                 <p v-if="reviewSummaries[order.orderNo].appendContent" class="text-xs text-gray-500 mt-1 line-clamp-2">
                   <span class="text-primary">追评：</span>{{ reviewSummaries[order.orderNo].appendContent }}
+                </p>
+                <p v-if="reviewSummaries[order.orderNo].merchantReply" class="text-xs text-gray-500 mt-1 line-clamp-2">
+                  <span class="text-orange-500">商家回复：</span>{{ reviewSummaries[order.orderNo].merchantReply }}
                 </p>
               </div>
 
@@ -299,6 +306,7 @@ function mapOrder(o: any) {
   return {
     id: o.id,
     orderNo: o.orderNo,
+    shopName: o.shopName,
     date: o.createdAt,
     createdAt: o.createdAt,
     status: o.status,
@@ -373,7 +381,8 @@ async function fetchReviewSummaries() {
         reviewSummaries.value[o.orderNo] = {
           rating: first.rating || 0,
           content: first.content || '',
-          appendContent: first.appendContent || ''
+          appendContent: first.appendContent || '',
+          merchantReply: first.merchantReply || ''
         }
       }
     } catch (e) {

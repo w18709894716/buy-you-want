@@ -31,7 +31,14 @@ public class UserController {
     @Operation(summary = "根据ID获取用户")
     @GetMapping("/{userId}")
     public R<User> getUserById(@PathVariable Long userId) {
-        return R.ok(userService.getById(userId));
+        User user = userService.getById(userId);
+        if (user != null) {
+            // 公开端点：裁剪敏感字段，仅保留展示所需的公开信息
+            user.setPassword(null);
+            user.setPhone(null);
+            user.setEmail(null);
+        }
+        return R.ok(user);
     }
 
     @Operation(summary = "更新用户信息")

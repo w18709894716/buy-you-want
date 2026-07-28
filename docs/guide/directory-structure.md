@@ -26,7 +26,10 @@ buy-you-want/
 │   ├── byw-api-pay/                       # 支付服务接口：PayFeignClient + PayOrderDTO
 │   ├── byw-api-logistics/                 # 物流服务接口：LogisticsFeignClient + LogisticsDTO/LogisticsTrackDTO
 │   ├── byw-api-review/                    # 评价服务接口：ReviewFeignClient + ReviewDTO
-│   └── byw-api-promotion/                 # 营销服务接口：PromotionFeignClient + CouponDTO
+│   ├── byw-api-promotion/                 # 营销服务接口：PromotionFeignClient + CouponDTO
+│   ├── byw-api-shop/                      # 店铺服务接口：ShopFeignClient + ShopDTO/MerchantAccountDTO
+│   ├── byw-api-file/                      # 文件服务接口：FileFeignClient
+│   └── byw-api-settle/                    # 结算服务接口：SettleFeignClient + 结算/余额/提现 DTO
 │
 ├── byw-gateway/                           # Spring Cloud Gateway 网关 (:8080)
 │   └── ...                                #   路由配置、JWT 全局过滤器、跨域配置、Sentinel 限流
@@ -35,7 +38,10 @@ buy-you-want/
 │   └── ...                                #   登录、注册、Token 刷新、验证码
 │
 ├── byw-user/                              # 用户中心 (:8082)
-│   └── ...                                #   用户 CRUD、收货地址管理、会员等级
+│   └── ...                                #   用户 CRUD、收货地址管理、会员等级、RBAC 角色(role)
+│
+├── byw-shop/                              # 店铺中心 (:8092)
+│   └── ...                                #   店铺管理、商家账号、入驻审核（t_shop / t_merchant_account）
 │
 ├── byw-product/                           # 商品中心 (:8083)
 │   └── ...                                #   三级分类、品牌管理、SPU/SKU 管理、ES 搜索同步、库存管理
@@ -61,6 +67,15 @@ buy-you-want/
 ├── byw-admin/                             # 管理后台 BFF 层 (:8090)
 │   └── ...                                #   聚合各微服务接口，为管理端提供统一 API
 │
+├── byw-file/                              # 文件服务 (:8091)
+│   └── ...                                #   图片/文件上传（MinIO）
+│
+├── byw-merchant/                          # 商家端 BFF 层 (:8093)
+│   └── ...                                #   聚合商家业务（商品/订单/评价/结算），受 shop_id 隔离
+│
+├── byw-settle/                            # 结算分账 (:8094)
+│   └── ...                                #   佣金规则、结算单、余额与提现、@Scheduled T+N 入账扫描
+│
 ├── byw-frontend/
 │   ├── byw-web/                           # Nuxt.js 3 用户端（SSR 服务端渲染）
 │   │   ├── pages/                         #   页面：首页、商品详情、购物车、订单、个人中心
@@ -70,25 +85,36 @@ buy-you-want/
 │   │   ├── plugins/                       #   插件配置
 │   │   ├── middleware/                    #   路由中间件（鉴权拦截）
 │   │   └── utils/                         #   工具函数
-│   └── byw-admin-web/                     # Vue3 + Element Plus 管理端（Vite）
+│   ├── byw-admin-web/                     # Vue3 + Element Plus 管理端（Vite, dev :5174）
+│   │   └── src/
+│   │       ├── views/                     #   页面：Dashboard、商品/订单/用户管理、店铺/商家审核、佣金/提现
+│   │       ├── components/                #   通用组件
+│   │       ├── router/                    #   路由配置
+│   │       ├── stores/                    #   Pinia 状态管理
+│   │       ├── api/                       #   Axios 接口封装
+│   │       └── utils/                     #   工具函数
+│   └── byw-merchant-web/                  # Vue3 + Element Plus 商家端（Vite, dev :5175）
 │       └── src/
-│           ├── views/                     #   页面：Dashboard、商品管理、订单管理、用户管理
-│           ├── components/                #   通用组件
+│           ├── views/                     #   页面：店铺资料、商品发布/送审、订单/发货、评价回复、结算/提现
 │           ├── router/                    #   路由配置
-│           ├── stores/                    #   Pinia 状态管理
-│           ├── api/                       #   Axios 接口封装
-│           └── utils/                     #   工具函数
+│           ├── layout/                    #   布局与菜单
+│           └── utils/                     #   request 封装（baseURL=/api）
 │
 └── docs/
     ├── database/                          # SQL 建库建表脚本
-    │   ├── byw_user.sql                   #   用户库：user、address、member_level
-    │   ├── byw_product.sql                #   商品库：category、brand、spu、sku、sku_stock
-    │   ├── byw_cart.sql                   #   购物车库：cart_item
-    │   ├── byw_order.sql                  #   订单库：order_info、order_item
+    │   ├── byw_user.sql                   #   用户库：user（含 role）、address、member_level
+    │   ├── byw_product.sql                #   商品库：category、brand、spu（含 shop_id/audit_status）、sku、sku_stock
+    │   ├── byw_cart.sql                   #   购物车库：cart_item（含 shop_id）
+    │   ├── byw_order.sql                  #   订单库：order_info（含 shop_id/parent_order_no/is_parent）、order_item
     │   ├── byw_pay.sql                    #   支付库：pay_order、pay_record
     │   ├── byw_logistics.sql              #   物流库：logistics_info、logistics_track
-    │   ├── byw_review.sql                 #   评价库：review
-    │   └── byw_promotion.sql              #   营销库：coupon、seckill_activity、seckill_order
+    │   ├── byw_review.sql                 #   评价库：review（含 shop_id/merchant_reply）
+    │   ├── byw_promotion.sql              #   营销库：coupon（含 shop_id）、seckill_activity、seckill_order
+    │   ├── byw_shop.sql                   #   店铺库：t_shop、t_merchant_account
+    │   ├── byw_settle.sql                 #   结算库：commission_rule、settle_record、shop_balance、balance_flow、withdraw_record
+    │   ├── migration_shop_tenancy.sql     #   增量：存量库补 shop_id / user.role（阶段一）
+    │   ├── migration_product_audit.sql    #   增量：商品审核字段（阶段四）
+    │   └── migration_order_split.sql      #   增量：拆单父子订单 / 购物车 shop_id（阶段五）
     ├── guide/                             # 项目指南文档
     └── ...
 ```

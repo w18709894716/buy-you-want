@@ -3,6 +3,7 @@ package com.byw.order.controller;
 import com.byw.api.order.dto.OrderCreateDTO;
 import com.byw.api.order.dto.OrderDetailDTO;
 import com.byw.common.core.exception.BusinessException;
+import com.byw.common.core.exception.ResultCode;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
 import com.alibaba.csp.sentinel.annotation.SentinelResource;
@@ -37,7 +38,9 @@ public class OrderController {
     @Operation(summary = "获取订单详情")
     @GetMapping("/detail/{orderNo}")
     public R<OrderDetailDTO> detail(@PathVariable String orderNo) {
-        return R.ok(orderService.getOrderDetail(orderNo));
+        OrderDetailDTO order = orderService.getOrderDetail(orderNo);
+        assertOwner(order == null ? null : order.getUserId());
+        return R.ok(order);
     }
 
     @Operation(summary = "获取我的订单列表")
@@ -55,6 +58,7 @@ public class OrderController {
     @Operation(summary = "取消订单")
     @PostMapping("/cancel/{orderNo}")
     public R<Void> cancel(@PathVariable String orderNo, @RequestParam String reason) {
+        assertOrderOwner(orderNo);
         orderService.cancelOrder(orderNo, reason);
         return R.ok();
     }
@@ -62,6 +66,7 @@ public class OrderController {
     @Operation(summary = "确认收货")
     @PostMapping("/confirm/{orderNo}")
     public R<Void> confirm(@PathVariable String orderNo) {
+        assertOrderOwner(orderNo);
         orderService.confirmReceive(orderNo);
         return R.ok();
     }
@@ -69,6 +74,7 @@ public class OrderController {
     @Operation(summary = "支付订单（模拟）")
     @PostMapping("/pay/{orderNo}")
     public R<Void> pay(@PathVariable String orderNo) {
+        assertOrderOwner(orderNo);
         // TODO: 接入真实支付流程
         orderService.updateStatus(orderNo, 1);
         return R.ok();
@@ -84,8 +90,21 @@ public class OrderController {
     @Operation(summary = "更新订单评价状态")
     @PostMapping("/reviewed/{orderNo}")
     public R<Void> updateReviewed(@PathVariable String orderNo, @RequestParam Integer reviewed) {
+        assertOrderOwner(orderNo);
         orderService.updateReviewed(orderNo, reviewed);
         return R.ok();
+    }
+
+    /** 校验订单归属当前登录用户，不符抛 FORBIDDEN（防越权操作他人订单） */
+    private void assertOrderOwner(String orderNo) {
+        OrderDetailDTO order = orderService.getOrderDetail(orderNo);
+        assertOwner(order == null ? null : order.getUserId());
+    }
+
+    private void assertOwner(Long ownerId) {
+        if (ownerId == null || !ownerId.equals(UserContext.getUserId())) {
+            throw new BusinessException(ResultCode.FORBIDDEN);
+        }
     }
 
     // ========== Sentinel fallback ==========

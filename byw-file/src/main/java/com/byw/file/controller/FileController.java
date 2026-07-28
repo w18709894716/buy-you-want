@@ -2,6 +2,7 @@ package com.byw.file.controller;
 
 import com.byw.api.file.FileFeignClient;
 import com.byw.common.core.result.R;
+import com.byw.common.security.annotation.Public;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,7 @@ import java.util.List;
 @Tag(name = "文件管理", description = "文件上传与删除")
 @RestController
 @RequiredArgsConstructor
+@Public
 public class FileController implements FileFeignClient {
 
     private final FileService fileService;

@@ -19,6 +19,9 @@ public class OrderItem {
 
     private Long userId;
 
+    /** 归属店铺ID（多租户维度） */
+    private Long shopId;
+
     private Long productId;
 
     private Long skuId;

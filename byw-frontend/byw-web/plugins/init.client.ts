@@ -11,6 +11,10 @@ export default defineNuxtPlugin(() => {
 
   // 初始化用户状态（从 token 恢复）
   userStore.init()
-  // 初始化购物车
-  cartStore.getCartList()
+  // 初始化购物车：未登录不请求接口（避免 401），仅恢复本地缓存
+  if (getToken()) {
+    cartStore.getCartList()
+  } else {
+    cartStore.restoreLocal()
+  }
 })

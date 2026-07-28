@@ -3,6 +3,7 @@ package com.byw.pay.feign;
 import com.byw.api.pay.PayFeignClient;
 import com.byw.api.pay.dto.PayOrderDTO;
 import com.byw.common.core.result.R;
+import com.byw.common.security.annotation.Public;
 import com.byw.pay.service.PayService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -12,6 +13,7 @@ import java.math.BigDecimal;
 @RestController
 @RequestMapping("/feign/pay")
 @RequiredArgsConstructor
+@Public
 public class PayFeignImpl implements PayFeignClient {
 
     private final PayService payService;

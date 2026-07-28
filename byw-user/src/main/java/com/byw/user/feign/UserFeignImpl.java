@@ -8,12 +8,14 @@ import com.byw.api.user.dto.AddressDTO;
 import com.byw.api.user.dto.UserDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
+import com.byw.common.security.annotation.Public;
 import com.byw.user.entity.User;
 import com.byw.user.entity.UserAddress;
 import com.byw.user.mapper.UserAddressMapper;
 import com.byw.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
@@ -25,6 +27,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/feign/user")
 @RequiredArgsConstructor
+@Public
 public class UserFeignImpl implements UserFeignClient {
 
     private final UserService userService;
@@ -68,7 +71,19 @@ public class UserFeignImpl implements UserFeignClient {
         } else if (user.getPassword() == null || user.getPassword().isEmpty()) {
             user.setPassword(passwordEncoder.encode("123456"));
         }
-        userService.save(user);
+        try {
+            userService.save(user);
+        } catch (DuplicateKeyException e) {
+            // 并发注册穿透前置校验时，根据冲突的唯一键返回友好提示
+            String msg = e.getMessage() == null ? "" : e.getMessage();
+            if (msg.contains("phone")) {
+                return R.fail("手机号已被注册");
+            }
+            if (msg.contains("username")) {
+                return R.fail("用户名已存在");
+            }
+            return R.fail("账号信息重复，请检查用户名或手机号");
+        }
         return R.ok(user.getId());
     }
 

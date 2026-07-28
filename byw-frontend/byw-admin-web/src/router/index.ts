@@ -24,22 +24,28 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '用户列表' }
       },
       {
+        path: 'shop/merchant',
+        name: 'MerchantAudit',
+        component: () => import('../views/shop/merchant.vue'),
+        meta: { title: '入驻审核' }
+      },
+      {
+        path: 'shop/list',
+        name: 'ShopList',
+        component: () => import('../views/shop/list.vue'),
+        meta: { title: '店铺管理' }
+      },
+      {
         path: 'product/list',
         name: 'ProductList',
         component: () => import('../views/product/list.vue'),
         meta: { title: '商品列表' }
       },
       {
-        path: 'product/add',
-        name: 'ProductAdd',
-        component: () => import('../views/product/add.vue'),
-        meta: { title: '添加商品' }
-      },
-      {
-        path: 'product/add/:id',
-        name: 'ProductEdit',
-        component: () => import('../views/product/add.vue'),
-        meta: { title: '编辑商品' }
+        path: 'product/audit',
+        name: 'ProductAudit',
+        component: () => import('../views/product/audit.vue'),
+        meta: { title: '商品审核' }
       },
       {
         path: 'product/category',
@@ -88,6 +94,18 @@ const routes: RouteRecordRaw[] = [
         name: 'LogisticsList',
         component: () => import('../views/logistics/list.vue'),
         meta: { title: '物流管理' }
+      },
+      {
+        path: 'settle/commission',
+        name: 'CommissionRule',
+        component: () => import('../views/settle/commission.vue'),
+        meta: { title: '佣金规则' }
+      },
+      {
+        path: 'settle/withdraw',
+        name: 'WithdrawAudit',
+        component: () => import('../views/settle/withdraw.vue'),
+        meta: { title: '提现审批' }
       }
     ]
   }

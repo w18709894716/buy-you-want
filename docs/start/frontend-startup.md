@@ -59,6 +59,37 @@ node .output/server/index.mjs
 
 ---
 
+## 商家端（byw-merchant-web）
+
+### 技术栈
+
+- Vue 3.4 + TypeScript
+- Element Plus 2.7（UI 组件库）
+- Vite 5.2（构建工具）
+- Pinia 2.1（状态管理）
+- Axios 1.6（HTTP 客户端）
+
+### 启动步骤
+
+```bash
+cd byw-frontend/byw-merchant-web
+npm install
+npm run dev
+```
+
+访问 http://localhost:5175
+
+### 构建生产版本
+
+```bash
+npm run build
+npm run preview
+```
+
+> 商家端面向入驻商家，提供店铺资料、商品发布/送审、订单发货、评价回复、结算与提现等工作台，请求经网关代理至 byw-merchant。
+
+---
+
 ## 配置后端 API 地址
 
 前端项目中所有 API 请求统一通过 Gateway 入口代理到后端：**http://localhost:8080**
@@ -80,6 +111,22 @@ server: {
 ```
 
 前端请求 `/api/xxx` 会自动代理到 `http://localhost:8080/api/xxx`。
+
+### 商家端（byw-merchant-web）
+
+同样在 `vite.config.ts` 中配置代理，dev 端口为 **5175**，`/api` 代理至 `http://localhost:8080`：
+
+```ts
+server: {
+  port: 5175,
+  proxy: {
+    '/api': {
+      target: 'http://localhost:8080',
+      changeOrigin: true
+    }
+  }
+}
+```
 
 ### 用户端（byw-web）
 
@@ -106,6 +153,6 @@ routeRules: {
 
 ### 端口冲突
 
-- 管理端默认端口 **5174**，用户端默认端口 **3000**
-- 如需修改管理端端口，在 `vite.config.ts` 中修改 `server.port`
+- 管理端默认端口 **5174**、商家端默认端口 **5175**、用户端默认端口 **3000**
+- 如需修改管理端/商家端端口，在各自 `vite.config.ts` 中修改 `server.port`
 - 如需修改用户端端口，在 `nuxt.config.ts` 中配置 `devServer.port`

@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { useCartStore } from '~/stores/cart'
 
 interface UserState {
   token: string | null
@@ -61,19 +62,27 @@ export const useUserStore = defineStore('user', {
         this.nickname = data.nickname
         this.avatar = data.avatar || ''
       } catch {
-        this.logout()
+        // token 失效：静默清理登录态，不强跳登录页（游客可继续浏览）
+        this.reset()
       }
     },
 
-    /** 退出登录 */
-    logout() {
+    /** 清理登录态（不跳转） */
+    reset() {
       this.token = null
       this.userId = null
       this.username = ''
       this.nickname = ''
       this.avatar = ''
       clearToken()
-      navigateTo('/login')
+      // 同步清空购物车，避免残留上一个用户的数据
+      useCartStore().clear()
+    },
+
+    /** 退出登录：回首页继续游客浏览（受保护页面由中间件引导至登录） */
+    logout() {
+      this.reset()
+      navigateTo('/')
     },
   },
 })

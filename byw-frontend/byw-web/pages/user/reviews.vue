@@ -110,6 +110,12 @@
               </div>
             </div>
 
+            <!-- 商家回复 -->
+            <div v-if="review.merchantReply" class="mt-1 mb-2 pl-3 border-l-2 border-orange-300">
+              <p class="text-xs text-orange-500 mb-1">商家回复</p>
+              <p class="text-sm text-gray-700 leading-relaxed">{{ review.merchantReply }}</p>
+            </div>
+
             <!-- 底部信息 -->
             <div class="flex items-center justify-between text-xs text-gray-400">
               <div class="flex items-center gap-3">

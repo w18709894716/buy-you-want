@@ -51,6 +51,11 @@ public interface ReviewService {
     void adminDeleteReview(Long reviewId);
 
     /**
+     * 商家端：回复评价（仅能回复本店评价）
+     */
+    void replyReview(Long reviewId, String content);
+
+    /**
      * 批量创建评价（一个订单多个商品）
      */
     void createBatchReviews(Long userId, String orderNo, java.util.List<ReviewDetail> reviewDetails);

@@ -8,6 +8,7 @@ import com.byw.api.order.dto.OrderCreateDTO;
 import com.byw.api.order.dto.OrderDetailDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
+import com.byw.common.security.annotation.Public;
 import com.byw.order.entity.Order;
 import com.byw.order.entity.OrderItem;
 import com.byw.order.mapper.OrderItemMapper;
@@ -26,6 +27,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/feign/order")
 @RequiredArgsConstructor
+@Public
 public class OrderFeignImpl implements OrderFeignClient {
 
     private final OrderService orderService;
@@ -76,6 +78,11 @@ public class OrderFeignImpl implements OrderFeignClient {
                                                     @RequestParam(value = "statuses", required = false) List<Integer> statuses,
                                                     @RequestParam(value = "orderNo", required = false) String orderNo) {
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
+        // 商家上下文：仅返回本店订单；平台管理员 shopId 为空则不过滤
+        Long shopId = com.byw.common.security.context.UserContext.getShopId();
+        wrapper.eq(shopId != null, Order::getShopId, shopId);
+        // 仅返回子订单/独立订单，排除仅聚合支付的父订单
+        wrapper.eq(Order::getIsParent, 0);
         if (statuses != null && !statuses.isEmpty()) {
             wrapper.in(Order::getStatus, statuses);
         }
@@ -97,13 +104,16 @@ public class OrderFeignImpl implements OrderFeignClient {
     @Override
     @GetMapping("/stats")
     public R<OrderStatsDTO> getOrderStats() {
-        Long totalOrders = orderMapper.selectCount(null);
+        Long totalOrders = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getIsParent, 0)); // 仅统计子订单/独立订单，排除父订单避免重复计数
         BigDecimal totalRevenue = orderMapper.selectList(new LambdaQueryWrapper<Order>()
+                        .eq(Order::getIsParent, 0)
                         .in(Order::getStatus, 1, 2, 3)) // 已付款、已发货、已完成
                 .stream()
                 .map(Order::getPayAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         Long pendingOrders = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getIsParent, 0)
                 .eq(Order::getStatus, 0)); // 待付款
 
         OrderStatsDTO stats = new OrderStatsDTO();
@@ -118,6 +128,7 @@ public class OrderFeignImpl implements OrderFeignClient {
     public R<TodayOrderStatsDTO> getTodayOrderStats() {
         LocalDateTime todayStart = LocalDate.now().atStartOfDay();
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<Order>()
+                .eq(Order::getIsParent, 0) // 排除父订单避免重复计数
                 .ge(Order::getCreatedAt, todayStart);
 
         List<Order> todayOrders = orderMapper.selectList(wrapper);

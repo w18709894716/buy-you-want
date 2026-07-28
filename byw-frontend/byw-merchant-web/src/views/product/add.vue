@@ -3,10 +3,26 @@
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
-          <span>{{ isEdit ? '编辑商品' : '添加商品' }}</span>
+          <span>{{ isEdit ? '编辑商品' : '发布商品' }}</span>
           <el-button @click="$router.back()">返回</el-button>
         </div>
       </template>
+
+      <el-alert
+        v-if="isEdit && auditStatus === 2 && rejectReason"
+        :title="`审核驳回原因：${rejectReason}`"
+        type="error"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 16px;"
+      />
+      <el-alert
+        title="商品提交/修改后将进入平台审核，审核通过后可在商品列表中上架。"
+        type="info"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 16px;"
+      />
 
       <el-form
         ref="formRef"
@@ -49,14 +65,6 @@
               <el-select v-model="formData.brandId" placeholder="请选择品牌" style="width:100%">
                 <el-option v-for="brand in brandOptions" :key="brand.id" :label="brand.name" :value="brand.id" />
               </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="商品状态" prop="status">
-              <el-radio-group v-model="formData.status">
-                <el-radio :value="1">上架</el-radio>
-                <el-radio :value="2">下架</el-radio>
-              </el-radio-group>
             </el-form-item>
           </el-col>
         </el-row>
@@ -109,13 +117,14 @@ const loading = ref(false)
 const specNames = ref<string[]>([])
 
 const isEdit = computed(() => !!route.params.id)
+const auditStatus = ref<number | undefined>(undefined)
+const rejectReason = ref<string>('')
 
 const formData = reactive({
   name: '',
   subtitle: '',
   categoryId: [] as number[],
   brandId: undefined as number | undefined,
-  status: 1,
   images: [] as string[],
   description: '',
   skus: [] as any[]
@@ -146,7 +155,7 @@ const buildTree = (list: any[]): any[] => {
 
 const loadCategories = async () => {
   try {
-    const data: any = await request.get('/admin/product/category/tree')
+    const data: any = await request.get('/merchant/product/category/tree')
     categoryOptions.value = buildTree(data || [])
   } catch (e: any) {
     if (!e._handled) ElMessage.error(e.message || '获取分类失败')
@@ -155,7 +164,7 @@ const loadCategories = async () => {
 
 const loadBrands = async () => {
   try {
-    const data: any = await request.get('/admin/product/brand/list')
+    const data: any = await request.get('/merchant/product/brand/list')
     brandOptions.value = data || []
   } catch (e: any) {
     if (!e._handled) ElMessage.error(e.message || '获取品牌失败')
@@ -180,14 +189,15 @@ const loadProduct = async () => {
   if (!route.params.id) return
   loading.value = true
   try {
-    const data: any = await request.get(`/admin/product/${route.params.id}`)
+    const data: any = await request.get(`/merchant/product/${route.params.id}`)
     // 转换 categoryId 为完整路径（cascader 需要 [parentId, childId] 格式）
     const path = findCategoryPath(categoryOptions.value, data.categoryId)
     formData.categoryId = path || (data.categoryId ? [data.categoryId] : [])
     formData.name = data.name || ''
     formData.subtitle = data.subtitle || ''
     formData.brandId = data.brandId
-    formData.status = data.status ?? 1
+    auditStatus.value = data.auditStatus
+    rejectReason.value = data.rejectReason || ''
     // 转换图片：mainImage + subImages -> images 数组
     const images: string[] = []
     if (data.mainImage) images.push(data.mainImage)
@@ -217,12 +227,12 @@ const loadProduct = async () => {
           skuCode: sku.skuCode || ''
         }
       })
-      const specNames = [...specNameSet]
+      const names = [...specNameSet]
       formData.skus = skus
-      specNames.value = specNames
+      specNames.value = names
       // 等 SkuForm 渲染后设置规格组名称
       await nextTick()
-      skuFormRef.value?.setSpecNames(specNames)
+      skuFormRef.value?.setSpecNames(names)
     } else {
       formData.skus = []
     }
@@ -263,17 +273,17 @@ const handleSubmit = async () => {
         })()
       }
       if (isEdit.value) {
-        await request.put(`/admin/product/${route.params.id}`, payload)
+        await request.put(`/merchant/product/${route.params.id}`, payload)
         ElMessage.success('修改成功')
       } else {
-        await request.post('/admin/product', payload)
-        ElMessage.success('添加成功')
+        await request.post('/merchant/product', payload)
+        ElMessage.success('提交成功')
       }
       // 保持当前页码（编辑场景）
       const returnPage = route.query.page
       router.push(returnPage ? { path: '/product/list', query: { page: returnPage } } : '/product/list')
     } catch (error: any) {
-      if (!error._handled) ElMessage.error(error?.message || (isEdit.value ? '修改失败' : '添加失败'))
+      if (!error._handled) ElMessage.error(error?.message || (isEdit.value ? '修改失败' : '提交失败'))
     } finally {
       submitting.value = false
     }

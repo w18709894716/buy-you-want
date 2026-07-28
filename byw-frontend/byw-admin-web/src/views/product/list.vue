@@ -25,9 +25,6 @@
             <el-icon><Search /></el-icon>搜索
           </el-button>
           <el-button @click="resetSearch">重置</el-button>
-          <el-button type="success" @click="$router.push('/product/add')">
-            <el-icon><Plus /></el-icon>添加商品
-          </el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -45,12 +42,7 @@
         <el-table-column prop="subtitle" label="副标题" min-width="160" show-overflow-tooltip />
         <el-table-column prop="status" label="状态" width="90">
           <template #default="{ row }">
-            <el-tag 
-              :type="statusType(row.status)" 
-              style="cursor: pointer;"
-              @click="handleToggleStatus(row)"
-              :title="row.status === 1 ? '点击下架' : '点击上架'"
-            >
+            <el-tag :type="statusType(row.status)">
               {{ statusLabel(row.status) }}
             </el-tag>
           </template>
@@ -61,12 +53,6 @@
           </template>
         </el-table-column>
         <el-table-column prop="createdAt" label="创建时间" width="170" />
-        <el-table-column label="操作" width="160" fixed="right">
-          <template #default="{ row }">
-            <el-button type="primary" size="small" text @click="handleEdit(row)">编辑</el-button>
-            <el-button type="danger" size="small" text @click="handleDelete(row)">删除</el-button>
-          </template>
-        </el-table-column>
       </el-table>
 
       <!-- 分页 -->
@@ -87,11 +73,10 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import request from '../../utils/request'
 
-const router = useRouter()
 const route = useRoute()
 const loading = ref(false)
 const page = ref(Number(route.query.page) || 1)
@@ -137,33 +122,6 @@ const resetSearch = () => {
   searchForm.status = undefined
   searchForm.categoryId = undefined
   handleSearch()
-}
-
-const handleEdit = (row: any) => {
-  router.push({ path: `/product/add/${row.id}`, query: { page: page.value } })
-}
-
-const handleDelete = async (row: any) => {
-  await ElMessageBox.confirm('确定要删除该商品吗？', '提示', { type: 'warning' })
-  try {
-    await request.delete(`/admin/product/${row.id}`)
-    ElMessage.success('删除成功')
-    fetchData()
-  } catch (error: any) {
-    if (!error._handled) ElMessage.error(error?.message || '删除失败')
-  }
-}
-
-const handleToggleStatus = async (row: any) => {
-  const action = row.status === 1 ? '下架' : '上架'
-  await ElMessageBox.confirm(`确定要${action}该商品吗？`, '提示', { type: 'warning' })
-  try {
-    await request.put(`/admin/product/${row.id}/status`)
-    ElMessage.success(`${action}成功`)
-    fetchData()
-  } catch (error: any) {
-    if (!error._handled) ElMessage.error(error?.message || `${action}失败`)
-  }
 }
 
 onMounted(fetchData)

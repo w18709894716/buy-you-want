@@ -68,7 +68,7 @@ public class FileServiceImpl implements FileService {
                     .contentType(file.getContentType())
                     .build());
 
-            String fileUrl = minioConfig.getEndpoint() + "/" + minioConfig.getBucketName() + "/" + objectName;
+            String fileUrl = minioConfig.getPublicUrl() + "/" + minioConfig.getBucketName() + "/" + objectName;
             log.info("文件上传成功: {}", fileUrl);
             return fileUrl;
         } catch (Exception e) {
@@ -116,12 +116,20 @@ public class FileServiceImpl implements FileService {
     }
 
     /**
-     * 从 URL 中提取对象名称
+     * 从 URL 中提取对象名称（兼容对外 public-url 与内部 endpoint 两种前缀）
      */
     private String extractObjectName(String fileUrl) {
-        String prefix = minioConfig.getEndpoint() + "/" + minioConfig.getBucketName() + "/";
-        if (fileUrl.startsWith(prefix)) {
-            return fileUrl.substring(prefix.length());
+        String bucketPart = "/" + minioConfig.getBucketName() + "/";
+        for (String base : new String[]{minioConfig.getPublicUrl(), minioConfig.getEndpoint()}) {
+            String prefix = base + bucketPart;
+            if (fileUrl.startsWith(prefix)) {
+                return fileUrl.substring(prefix.length());
+            }
+        }
+        // 兜底：按桶名切分，取其后的对象路径
+        int idx = fileUrl.indexOf(bucketPart);
+        if (idx >= 0) {
+            return fileUrl.substring(idx + bucketPart.length());
         }
         return fileUrl;
     }

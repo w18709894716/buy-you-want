@@ -6,11 +6,8 @@ export default defineNuxtRouteMiddleware((to, _from) => {
   // 服务端 SSR 时跳过鉴权（无法访问 localStorage/cookie）
   if (import.meta.server) return
 
-  // 不需要鉴权的页面
-  const publicPages = ['/', '/login', '/register', '/search']
-  const isPublicPage = publicPages.some(page => to.path === page || to.path.startsWith('/product/'))
-
-  if (isPublicPage) {
+  // 公开页面无需鉴权（清单统一维护在 utils/request.ts 的 isPublicPath）
+  if (isPublicPath(to.path)) {
     return
   }
 

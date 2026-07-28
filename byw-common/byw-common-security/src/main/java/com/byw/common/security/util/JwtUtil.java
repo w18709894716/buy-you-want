@@ -24,9 +24,24 @@ public class JwtUtil {
     }
 
     public String generateToken(Long userId, String username) {
+        return generateToken(userId, username, null, null);
+    }
+
+    /**
+     * 签发带角色与店铺维度的 Token。
+     * @param role   角色（user / platform_admin / merchant_owner / merchant_staff）
+     * @param shopId 店铺ID（商家账号有值，平台/普通用户为 null）
+     */
+    public String generateToken(Long userId, String username, String role, Long shopId) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("userId", userId);
         claims.put("username", username);
+        if (role != null) {
+            claims.put("role", role);
+        }
+        if (shopId != null) {
+            claims.put("shopId", shopId);
+        }
 
         return Jwts.builder()
                 .claims(claims)
@@ -36,6 +51,7 @@ public class JwtUtil {
                 .signWith(getSigningKey())
                 .compact();
     }
+
 
     public Claims parseToken(String token) {
         return Jwts.parser()
@@ -53,6 +69,17 @@ public class JwtUtil {
     public String getUsername(String token) {
         Claims claims = parseToken(token);
         return claims.getSubject();
+    }
+
+    public String getRole(String token) {
+        Claims claims = parseToken(token);
+        return claims.get("role", String.class);
+    }
+
+    public Long getShopId(String token) {
+        Claims claims = parseToken(token);
+        Object v = claims.get("shopId");
+        return v == null ? null : Long.valueOf(v.toString());
     }
 
     public boolean isTokenExpired(String token) {

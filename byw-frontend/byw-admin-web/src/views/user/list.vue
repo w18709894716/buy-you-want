@@ -31,6 +31,13 @@
         <el-table-column prop="username" label="用户名" width="120" />
         <el-table-column prop="phone" label="手机号" width="130" />
         <el-table-column prop="nickname" label="昵称" width="120" />
+        <el-table-column prop="role" label="用户类型" width="110">
+          <template #default="{ row }">
+            <el-tag :type="row.role === 'platform_admin' ? 'danger' : 'primary'">
+              {{ row.role === 'platform_admin' ? '平台管理员' : '商城用户' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="status" label="状态" width="90">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'danger'">

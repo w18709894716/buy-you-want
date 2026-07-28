@@ -28,13 +28,22 @@
           <el-menu-item index="/user/list">用户列表</el-menu-item>
         </el-sub-menu>
 
+        <el-sub-menu index="shop">
+          <template #title>
+            <el-icon><Shop /></el-icon>
+            <span>商家管理</span>
+          </template>
+          <el-menu-item index="/shop/merchant">入驻审核</el-menu-item>
+          <el-menu-item index="/shop/list">店铺管理</el-menu-item>
+        </el-sub-menu>
+
         <el-sub-menu index="product">
           <template #title>
             <el-icon><Goods /></el-icon>
             <span>商品管理</span>
           </template>
           <el-menu-item index="/product/list">商品列表</el-menu-item>
-          <el-menu-item index="/product/add">添加商品</el-menu-item>
+          <el-menu-item index="/product/audit">商品审核</el-menu-item>
           <el-menu-item index="/product/category">分类管理</el-menu-item>
           <el-menu-item index="/product/brand">品牌管理</el-menu-item>
         </el-sub-menu>
@@ -71,6 +80,15 @@
             <span>物流管理</span>
           </template>
           <el-menu-item index="/logistics/list">物流列表</el-menu-item>
+        </el-sub-menu>
+
+        <el-sub-menu index="settle">
+          <template #title>
+            <el-icon><Wallet /></el-icon>
+            <span>结算管理</span>
+          </template>
+          <el-menu-item index="/settle/commission">佣金规则</el-menu-item>
+          <el-menu-item index="/settle/withdraw">提现审批</el-menu-item>
         </el-sub-menu>
       </el-menu>
     </el-aside>

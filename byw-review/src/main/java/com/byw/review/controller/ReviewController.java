@@ -5,6 +5,7 @@ import com.byw.api.user.UserFeignClient;
 import com.byw.api.user.dto.UserDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
+import com.byw.common.security.annotation.Public;
 import com.byw.common.security.annotation.RequireLogin;
 import com.byw.common.security.context.UserContext;
 import com.byw.review.document.ReviewDetail;
@@ -59,6 +60,7 @@ public class ReviewController {
 
     @Operation(summary = "获取商品评价列表")
     @GetMapping("/product/{productId}")
+    @Public
     public R<PageResult<ProductReviewVO>> getByProduct(
             @PathVariable Long productId,
             @RequestParam(required = false) Integer rating,
@@ -85,6 +87,7 @@ public class ReviewController {
             }
             vo.setAppendContent(d.getAppendContent());
             vo.setAppendImages(d.getAppendImages());
+            vo.setMerchantReply(d.getMerchantReply());
             voList.add(vo);
         }
         return R.ok(PageResult.of(voList, page.getTotal(), pageNum, pageSize));
@@ -118,6 +121,7 @@ public class ReviewController {
 
     @Operation(summary = "获取商品评价统计")
     @GetMapping("/stats/{productId}")
+    @Public
     public R<ReviewStatsDTO> getStats(@PathVariable Long productId) {
         return R.ok(reviewService.getReviewStats(productId));
     }
@@ -144,6 +148,7 @@ public class ReviewController {
             vo.setImages(d.getImages());
             vo.setAppendContent(d.getAppendContent());
             vo.setAppendImages(d.getAppendImages());
+            vo.setMerchantReply(d.getMerchantReply());
             voList.add(vo);
         }
         return R.ok(voList);
@@ -227,6 +232,7 @@ public class ReviewController {
         private Long skuId;
         private String appendContent;
         private List<String> appendImages;
+        private String merchantReply;
     }
 
     @Data
@@ -238,5 +244,6 @@ public class ReviewController {
         private List<String> images;
         private String appendContent;
         private List<String> appendImages;
+        private String merchantReply;
     }
 }

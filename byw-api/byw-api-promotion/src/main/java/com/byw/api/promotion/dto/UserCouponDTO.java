@@ -24,4 +24,8 @@ public class UserCouponDTO implements Serializable {
     private LocalDateTime startTime;
     /** 有效期结束 */
     private LocalDateTime endTime;
+    /** 归属店铺ID：null或0平台券(全场通用) 其他为店铺券 */
+    private Long shopId;
+    /** 归属店铺名称（店铺券时回填，供前端展示适用范围） */
+    private String shopName;
 }

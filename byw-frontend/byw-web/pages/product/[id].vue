@@ -20,6 +20,56 @@
       </div>
     </Transition>
 
+    <!-- 店铺优惠券领取弹框 -->
+    <div v-if="showShopCouponModal" class="fixed inset-0 z-50 flex items-center justify-center">
+      <div class="absolute inset-0 bg-black/50" @click="closeShopCouponModal"></div>
+      <div class="relative bg-white rounded-xl w-[90%] max-w-md max-h-[70vh] flex flex-col overflow-hidden shadow-xl">
+        <div class="bg-gradient-to-r from-primary-500 to-primary-700 px-5 py-4 flex items-center justify-between">
+          <div>
+            <h3 class="text-white font-bold text-lg">🎟️ 店铺优惠券可领取</h3>
+            <p class="text-white/80 text-xs mt-0.5">「{{ product.shopName }}」为您准备了专属优惠，仅限本店商品使用</p>
+          </div>
+          <button class="text-white/80 hover:text-white text-xl leading-none" @click="closeShopCouponModal">✕</button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4 space-y-3">
+          <div
+            v-for="coupon in shopCoupons"
+            :key="coupon.id"
+            class="flex border border-primary-100 rounded-lg overflow-hidden"
+          >
+            <div class="w-24 flex-shrink-0 flex flex-col items-center justify-center bg-primary-50 border-r border-dashed border-primary-200 p-2">
+              <template v-if="coupon.type === 2">
+                <span class="text-2xl font-bold text-primary">{{ coupon.discountValue }}</span>
+                <span class="text-xs text-gray-500">折</span>
+              </template>
+              <template v-else>
+                <span class="text-2xl font-bold text-primary">¥{{ coupon.discountValue }}</span>
+              </template>
+              <span class="text-xs text-gray-500 mt-0.5 text-center">
+                {{ coupon.type === 3 || coupon.minAmount <= 0 ? '无门槛' : `满¥${coupon.minAmount}可用` }}
+              </span>
+            </div>
+            <div class="flex-1 p-3 flex items-center justify-between min-w-0 gap-2">
+              <div class="min-w-0">
+                <p class="font-medium text-gray-800 text-sm truncate">{{ coupon.name }}</p>
+                <p class="text-xs text-gray-400 mt-1">有效期至 {{ (coupon.endTime || '').substring(0, 10) }}</p>
+                <p class="text-xs text-gray-400 mt-0.5">剩余 {{ Math.max(0, coupon.totalCount - coupon.claimedCount) }} 张</p>
+              </div>
+              <button
+                v-if="!coupon._claimed"
+                class="flex-shrink-0 bg-primary hover:bg-primary-600 text-white text-sm px-4 py-1.5 rounded-full transition-colors"
+                :disabled="coupon._claiming"
+                @click="claimShopCoupon(coupon)"
+              >
+                {{ coupon._claiming ? '领取中...' : '领取' }}
+              </button>
+              <span v-else class="flex-shrink-0 text-green-500 text-sm font-medium">已领取 ✓</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 面包屑 -->
     <nav class="text-sm text-gray-500 mb-4">
       <NuxtLink to="/" class="hover:text-primary">首页</NuxtLink>
@@ -226,6 +276,10 @@
                 <img v-for="(img, i) in review.appendImages" :key="i" :src="img" class="w-20 h-20 object-cover rounded" />
               </div>
             </div>
+            <!-- 商家回复 -->
+            <div v-if="review.merchantReply" class="mt-3 bg-orange-50 rounded-lg p-3">
+              <p class="text-sm text-gray-600"><span class="text-orange-500 font-medium">商家回复：</span>{{ review.merchantReply }}</p>
+            </div>
           </div>
         </div>
         <div v-else class="text-center py-12 text-gray-400">
@@ -239,11 +293,13 @@
 </template>
 
 <script setup lang="ts">
-import { get } from '~/utils/request'
+import { get, post } from '~/utils/request'
 import { useCartStore } from '~/stores/cart'
+import { useUserStore } from '~/stores/user'
 
 const route = useRoute()
 const cartStore = useCartStore()
+const userStore = useUserStore()
 const productId = computed(() => Number(route.params.id))
 
 const { isFavorited, toggleFavorite, loadFavoriteIds } = useFavorites()
@@ -271,6 +327,7 @@ const product = reactive({
   salesCount: 0,
   reviewCount: 0,
   rating: 0,
+  shopId: 0,
   shopName: '',
   images: [] as string[],
   description: '',
@@ -302,7 +359,8 @@ const fetchProduct = async () => {
     product.price = data.minPrice || 0
     product.originalPrice = data.minPrice ? Math.round(data.minPrice * 1.2 * 100) / 100 : 0
     product.salesCount = data.salesCount || 0
-    product.shopName = ''
+    product.shopId = data.shopId || 0
+    product.shopName = data.shopName || '官方自营旗舰店'
     product.description = data.detailHtml || ''
 
     // 图片列表
@@ -347,6 +405,9 @@ const fetchProduct = async () => {
       }
     }
     product.specs = specs
+
+    // 商品加载完成后检查归属店铺是否有可领的店铺券
+    checkShopCoupons()
   } catch (e) {
     console.error('获取商品详情失败:', e)
   } finally {
@@ -366,7 +427,8 @@ const fetchReviews = async () => {
       content: r.content || '',
       images: r.images && r.images.length ? r.images : null,
       appendContent: r.appendContent || '',
-      appendImages: r.appendImages && r.appendImages.length ? r.appendImages : null
+      appendImages: r.appendImages && r.appendImages.length ? r.appendImages : null,
+      merchantReply: r.merchantReply || ''
     }))
   } catch (e) {
     console.error('获取评价列表失败:', e)
@@ -417,6 +479,44 @@ function showToast(message: string, type: 'success' | 'error' = 'success') {
   toastTimer = setTimeout(() => { toast.visible = false }, 2500)
 }
 
+// 店铺优惠券弹框：同一店铺每个会话只自动弹一次
+const shopCoupons = ref<any[]>([])
+const showShopCouponModal = ref(false)
+
+const checkShopCoupons = async () => {
+  if (!product.shopId || !userStore.isLoggedIn) return
+  const promptKey = `shopCouponPrompted:${product.shopId}`
+  if (sessionStorage.getItem(promptKey)) return
+  try {
+    const data = await get<any[]>(`/coupon/shop/${product.shopId}`)
+    if (data && data.length) {
+      shopCoupons.value = data.map(c => ({ ...c, _claiming: false, _claimed: false }))
+      showShopCouponModal.value = true
+      sessionStorage.setItem(promptKey, '1')
+    }
+  } catch (e) {
+    console.error('获取店铺优惠券失败:', e)
+  }
+}
+
+const claimShopCoupon = async (coupon: any) => {
+  if (coupon._claiming) return
+  coupon._claiming = true
+  try {
+    await post(`/coupon/claim/${coupon.id}`)
+    coupon._claimed = true
+    showToast('领取成功，下单时可用！', 'success')
+  } catch (e: any) {
+    showToast(e?.message || '领取失败，请重试', 'error')
+  } finally {
+    coupon._claiming = false
+  }
+}
+
+function closeShopCouponModal() {
+  showShopCouponModal.value = false
+}
+
 async function handleAddToCart() {
   if (specGroups.value.length > 0 && Object.keys(selectedSpecs.value).length < specGroups.value.length) {
     const missingGroups = specGroups.value.filter((g: any) => !selectedSpecs.value[g.name])
@@ -464,6 +564,8 @@ watch(() => route.params.id, () => {
   quantity.value = 1
   selectedSpecs.value = {}
   matchedSkuId.value = 0
+  // 切换商品时关闭上一个店铺的优惠券弹框
+  showShopCouponModal.value = false
   // 评分/评价数由 fetchReviewStats 管理，切换时先同步重置避免残留
   product.rating = 0
   product.reviewCount = 0

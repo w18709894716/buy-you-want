@@ -34,25 +34,31 @@ CREATE TABLE t_product (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(200) NOT NULL,
     subtitle VARCHAR(500),
+    shop_id BIGINT NOT NULL DEFAULT 1 COMMENT '归属店铺ID(多租户维度)',
     category_id BIGINT NOT NULL,
     brand_id BIGINT,
     main_image VARCHAR(500),
     sub_images TEXT,
     detail_html MEDIUMTEXT,
     status TINYINT DEFAULT 0 COMMENT '0草稿 1上架 2下架',
+    audit_status TINYINT DEFAULT 0 COMMENT '审核状态 0待审核 1审核通过 2审核驳回',
+    reject_reason VARCHAR(500) COMMENT '审核驳回原因',
     sales_count INT DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted TINYINT DEFAULT 0,
+    INDEX idx_shop_id (shop_id),
     INDEX idx_category_id (category_id),
     INDEX idx_brand_id (brand_id),
-    INDEX idx_status (status)
+    INDEX idx_status (status),
+    INDEX idx_audit_status (audit_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 DROP TABLE IF EXISTS t_sku;
 CREATE TABLE t_sku (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     product_id BIGINT NOT NULL,
+    shop_id BIGINT NOT NULL DEFAULT 1 COMMENT '归属店铺ID(冗余自商品)',
     sku_code VARCHAR(100),
     sku_name VARCHAR(200),
     spec_data JSON,
@@ -221,3 +227,8 @@ INSERT INTO t_banner (title, image_url, link_type, link_value, position, sort_or
 ('限时秒杀', NULL, 1, '笔记本', 1, 2, 1),
 ('品牌甄选', NULL, 3, '手机数码', 1, 3, 1),
 ('超值好物', NULL, 1, '耳机', 1, 4, 1);
+
+-- ========== 多商家演示：将部分商品划归第三方店铺(shop_id=2 优选数码专营店) ==========
+-- 商品1-5 保留在自营店(shop_id=1)，6-10 归第三方商家，便于演示多商家拆单
+UPDATE t_product SET shop_id = 2 WHERE id IN (6, 7, 8, 9, 10);
+UPDATE t_sku SET shop_id = 2 WHERE product_id IN (6, 7, 8, 9, 10);

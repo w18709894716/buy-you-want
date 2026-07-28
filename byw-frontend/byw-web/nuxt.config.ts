@@ -26,6 +26,8 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       apiBase: process.env.NUXT_PUBLIC_API_BASE || '/api',
+      // 商家中心（byw-merchant-web）访问地址，商家入驻入口外链使用
+      merchantWebUrl: process.env.NUXT_PUBLIC_MERCHANT_WEB_URL || 'http://localhost:5175',
     },
   },
 

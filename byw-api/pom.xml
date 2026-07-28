@@ -16,6 +16,7 @@
 
     <modules>
         <module>byw-api-user</module>
+        <module>byw-api-shop</module>
         <module>byw-api-product</module>
         <module>byw-api-cart</module>
         <module>byw-api-order</module>
@@ -24,5 +25,6 @@
         <module>byw-api-review</module>
         <module>byw-api-promotion</module>
         <module>byw-api-file</module>
+        <module>byw-api-settle</module>
     </modules>
 </project>

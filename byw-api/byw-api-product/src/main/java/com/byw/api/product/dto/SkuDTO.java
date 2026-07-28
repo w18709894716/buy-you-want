@@ -9,6 +9,7 @@ import java.math.BigDecimal;
 public class SkuDTO implements Serializable {
     private Long id;
     private Long productId;
+    private Long shopId;
     private String skuCode;
     private String skuName;
     private String specData;

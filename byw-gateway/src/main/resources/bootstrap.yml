@@ -101,6 +101,20 @@ spring:
           filters:
             - StripPrefix=1
 
+        - id: byw-shop
+          uri: lb://byw-shop
+          predicates:
+            - Path=/api/shop/**
+          filters:
+            - StripPrefix=1
+
+        - id: byw-merchant
+          uri: lb://byw-merchant
+          predicates:
+            - Path=/api/merchant/**
+          filters:
+            - StripPrefix=1
+
         - id: api-docs-auth
           uri: lb://byw-auth
           predicates:
@@ -178,6 +192,27 @@ spring:
           filters:
             - RewritePath=/v3/api-docs/byw-admin, /v3/api-docs
 
+        - id: api-docs-shop
+          uri: lb://byw-shop
+          predicates:
+            - Path=/v3/api-docs/byw-shop
+          filters:
+            - RewritePath=/v3/api-docs/byw-shop, /v3/api-docs
+
+        - id: api-docs-merchant
+          uri: lb://byw-merchant
+          predicates:
+            - Path=/v3/api-docs/byw-merchant
+          filters:
+            - RewritePath=/v3/api-docs/byw-merchant, /v3/api-docs
+
+        - id: api-docs-settle
+          uri: lb://byw-settle
+          predicates:
+            - Path=/v3/api-docs/byw-settle
+          filters:
+            - RewritePath=/v3/api-docs/byw-settle, /v3/api-docs
+
     sentinel:
       transport:
         dashboard: ${SENTINEL_DASHBOARD:localhost:8858}
@@ -199,6 +234,8 @@ springdoc:
         url: /v3/api-docs/byw-user
       - name: Product Service
         url: /v3/api-docs/byw-product
+      - name: Shop Service
+        url: /v3/api-docs/byw-shop
       - name: Cart Service
         url: /v3/api-docs/byw-cart
       - name: Order Service
@@ -215,3 +252,7 @@ springdoc:
         url: /v3/api-docs/byw-file
       - name: Admin BFF
         url: /v3/api-docs/byw-admin
+      - name: Merchant BFF
+        url: /v3/api-docs/byw-merchant
+      - name: Settle Service
+        url: /v3/api-docs/byw-settle

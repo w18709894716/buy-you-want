@@ -20,7 +20,7 @@ mvn clean install -DskipTests
 
 ## 第二步：初始化数据库
 
-执行 8 个 SQL 脚本（详见 [中间件安装 - MySQL 部分](./middleware-setup.md#mysql-80关系数据库)）：
+执行 10 个建库 SQL 脚本（详见 [中间件安装 - MySQL 部分](./middleware-setup.md#mysql-80关系数据库)）：
 
 ```bash
 mysql -u root -p < docs/database/byw_user.sql
@@ -31,7 +31,19 @@ mysql -u root -p < docs/database/byw_pay.sql
 mysql -u root -p < docs/database/byw_logistics.sql
 mysql -u root -p < docs/database/byw_review.sql
 mysql -u root -p < docs/database/byw_promotion.sql
+mysql -u root -p < docs/database/byw_shop.sql
+mysql -u root -p < docs/database/byw_settle.sql
 ```
+
+> **新部署环境**：直接执行上述 10 个完整建库脚本即可（已包含 shop_id / role / 拆单 / 商品审核等全部字段）。
+>
+> **存量环境升级**：在已有数据库上按阶段顺序追加执行增量迁移脚本（详见 [数据库设计 - 增量迁移脚本](../database/database-design.md#增量迁移脚本)）：
+>
+> ```bash
+> mysql -u root -p < docs/database/migration_shop_tenancy.sql   # 阶段一：各库补 shop_id、user.role、评价商家回复、优惠券 shop_id
+> mysql -u root -p < docs/database/migration_product_audit.sql  # 阶段四：商品审核字段
+> mysql -u root -p < docs/database/migration_order_split.sql    # 阶段五：拆单父子订单、购物车 shop_id
+> ```
 
 ---
 
@@ -76,7 +88,11 @@ Nacos + MySQL + Redis（必须启动的中间件底座）
         ├── byw-pay ──→ RocketMQ 通知 order
         ├── byw-logistics（需要 RocketMQ）
         ├── byw-review（需要 MongoDB）
-        └── byw-admin（BFF，聚合调用各服务）
+        ├── byw-shop（店铺/商家账号，被 order/product/merchant 依赖）
+        ├── byw-file（文件上传，需要 MinIO）
+        ├── byw-settle ──→ 消费确认收货事件建结算单，@Scheduled 扫描 T+N 入账（需要 RocketMQ）
+        ├── byw-admin（BFF，聚合调用各服务）
+        └── byw-merchant（商家端 BFF，聚合商品/订单/评价/结算，受 shop_id 隔离）
 ```
 
 ### 中间件依赖说明
@@ -90,6 +106,9 @@ Nacos + MySQL + Redis（必须启动的中间件底座）
 | Elasticsearch | 按需 | 仅 byw-product 商品搜索使用 |
 | MongoDB | 按需 | 仅 byw-review 评价详情使用 |
 | Seata | 按需 | 仅 byw-order 分布式事务使用 |
+| MinIO | 按需 | 仅 byw-file 文件/图片上传使用 |
+
+> byw-settle 结算入账使用 Spring `@Scheduled` 定时扫描（内置于服务，无需额外中间件），并消费 byw-order 的确认收货事件（依赖 RocketMQ）。byw-shop / byw-merchant 无额外中间件依赖。
 
 ### 常见开发场景推荐启动组合
 
@@ -122,6 +141,10 @@ Nacos + MySQL + Redis（必须启动的中间件底座）
 | 9 | byw-review | 8088 | 评价系统 |
 | 10 | byw-promotion | 8089 | 营销中心 |
 | 11 | byw-admin | 8090 | 管理后台 BFF |
+| 12 | byw-file | 8091 | 文件服务（MinIO） |
+| 13 | byw-shop | 8092 | 店铺中心（店铺/商家账号/入驻审核） |
+| 14 | byw-merchant | 8093 | 商家端 BFF |
+| 15 | byw-settle | 8094 | 结算分账（@Scheduled T+N 入账） |
 
 ### 启动方式
 

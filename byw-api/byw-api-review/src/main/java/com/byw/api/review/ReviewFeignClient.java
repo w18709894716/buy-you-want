@@ -29,4 +29,7 @@ public interface ReviewFeignClient {
 
     @DeleteMapping("/feign/review/admin/{id}")
     R<Void> adminDeleteReview(@PathVariable("id") Long id);
+
+    @PutMapping("/feign/review/{id}/reply")
+    R<Void> replyReview(@PathVariable("id") Long id, @RequestParam("content") String content);
 }

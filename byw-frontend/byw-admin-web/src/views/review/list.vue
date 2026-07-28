@@ -68,6 +68,10 @@
                   />
                 </div>
               </div>
+              <div v-if="row.merchantReply" class="detail-block append">
+                <div class="detail-label">商家回复<span v-if="row.repliedAt" class="reply-time">{{ row.repliedAt }}</span></div>
+                <div class="detail-text">{{ row.merchantReply }}</div>
+              </div>
             </div>
           </template>
         </el-table-column>
@@ -118,6 +122,18 @@
               </div>
             </el-popover>
             <span v-else style="color:#909399;">无</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="商家回复" width="110">
+          <template #default="{ row }">
+            <el-popover v-if="row.merchantReply" placement="top" :width="320" trigger="click">
+              <template #reference>
+                <el-tag type="success" size="small" style="cursor: pointer">已回复 · 查看</el-tag>
+              </template>
+              <div style="color:#606266; line-height:1.6; white-space:pre-wrap; word-break:break-word;">{{ row.merchantReply }}</div>
+              <div v-if="row.repliedAt" style="color:#909399; font-size:12px; margin-top:6px;">{{ row.repliedAt }}</div>
+            </el-popover>
+            <span v-else style="color:#909399;">未回复</span>
           </template>
         </el-table-column>
         <el-table-column prop="created" label="评论时间" width="170" />
@@ -276,6 +292,13 @@ onMounted(fetchData)
         font-weight: 600;
         color: #303133;
         margin-bottom: 6px;
+
+        .reply-time {
+          margin-left: 8px;
+          font-weight: 400;
+          font-size: 12px;
+          color: #909399;
+        }
       }
 
       .detail-text {

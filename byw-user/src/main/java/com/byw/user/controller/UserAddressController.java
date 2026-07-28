@@ -1,6 +1,8 @@
 package com.byw.user.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.byw.common.core.exception.BusinessException;
+import com.byw.common.core.exception.ResultCode;
 import com.byw.common.core.result.R;
 import com.byw.common.security.annotation.RequireLogin;
 import com.byw.common.security.context.UserContext;
@@ -61,7 +63,14 @@ public class UserAddressController {
     @Operation(summary = "删除地址")
     @DeleteMapping("/{id}")
     public R<Void> delete(@PathVariable Long id) {
-        userAddressMapper.deleteById(id);
+        UserAddress address = userAddressMapper.selectById(id);
+        if (address != null) {
+            // 删除前校验地址归属当前登录用户，防越权删除他人地址
+            if (!UserContext.getUserId().equals(address.getUserId())) {
+                throw new BusinessException(ResultCode.FORBIDDEN);
+            }
+            userAddressMapper.deleteById(id);
+        }
         return R.ok();
     }
 

@@ -15,7 +15,16 @@ public class Order {
 
     private String orderNo;
 
+    /** 父订单号（子订单指向父订单；父订单本身为空） */
+    private String parentOrderNo;
+
+    /** 是否父订单：0子/普通订单 1父订单(仅聚合支付) */
+    private Integer isParent;
+
     private Long userId;
+
+    /** 归属店铺ID（多租户维度；多商家拆单后每个子订单归属单一店铺） */
+    private Long shopId;
 
     private BigDecimal totalAmount;
 

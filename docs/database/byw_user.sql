@@ -14,7 +14,8 @@ CREATE TABLE t_user (
     avatar          VARCHAR(500),
     gender          TINYINT DEFAULT 0 COMMENT '0未知 1男 2女',
     status          TINYINT DEFAULT 1 COMMENT '0禁用 1正常',
-    user_level      TINYINT DEFAULT 0 COMMENT '0普通 1银卡 2金卡 3钻石',
+    user_level      TINYINT DEFAULT 0 COMMENT '0普�?1银卡 2金卡 3钻石',
+    role            VARCHAR(32) DEFAULT 'user' COMMENT '角色 user普通用户 platform_admin平台管理员',
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted         TINYINT DEFAULT 0,
@@ -77,8 +78,8 @@ INSERT INTO t_user_level (level_name, level_code, discount_rate, min_points) VAL
 ('钻石会员', 3, 0.85, 20000);
 
 -- 管理员账号 (admin / admin123)
-INSERT INTO t_user (username, password, phone, nickname, status, user_level) VALUES
-('admin', '$2a$10$mG4HpWhYdqOSYql91nc17OrmYxpwkchw/0Vbs5oR.txUEHBmEiVem', '13800000000', '系统管理员', 1, 3);
+INSERT INTO t_user (username, password, phone, nickname, status, user_level, role) VALUES
+('admin', '$2a$10$mG4HpWhYdqOSYql91nc17OrmYxpwkchw/0Vbs5oR.txUEHBmEiVem', '13800000000', '系统管理员', 1, 3, 'platform_admin');
 
 -- 测试用户 (密码都是 123456)
 INSERT INTO t_user (username, password, phone, nickname, avatar, gender, status, user_level) VALUES
