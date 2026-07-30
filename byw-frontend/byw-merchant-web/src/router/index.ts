@@ -48,6 +48,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '订单列表' }
       },
       {
+        path: 'order/after-sale',
+        name: 'AfterSaleList',
+        component: () => import('../views/order/after-sale.vue'),
+        meta: { title: '售后管理' }
+      },
+      {
         path: 'promotion/coupon',
         name: 'CouponManage',
         component: () => import('../views/promotion/coupon.vue'),

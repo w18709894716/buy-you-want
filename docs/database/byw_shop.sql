@@ -52,9 +52,9 @@ CREATE TABLE t_merchant_account (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ========== 初始数据 ==========
--- 默认自营店铺（id=1），存量商品/订单/优惠券/评价的 shop_id 统一回填为 1
+-- 默认自营店铺（id=1），存量商品/订单/优惠券/评价的 shop_id 统一回填为 1；店铺主账号为平台运营商家账号（id=2 official_shop）
 INSERT INTO t_shop (id, name, description, merchant_id, contact_name, self_operated, status)
-VALUES (1, '官方自营旗舰店', '平台自营店铺', NULL, '平台运营', 0, 1);
+VALUES (1, '官方自营旗舰店', '平台自营店铺', 2, '平台运营', 0, 1);
 
 -- 示例第三方商家账号（demo_merchant / admin123），已审核通过并绑定示例店铺
 INSERT INTO t_shop (id, name, description, merchant_id, contact_name, contact_phone, self_operated, status)
@@ -62,3 +62,7 @@ VALUES (2, '优选数码专营店', '第三方入驻数码商家', 1, '王老板
 
 INSERT INTO t_merchant_account (id, username, password, real_name, phone, shop_id, role, audit_status, status)
 VALUES (1, 'demo_merchant', '$2a$10$mG4HpWhYdqOSYql91nc17OrmYxpwkchw/0Vbs5oR.txUEHBmEiVem', '王老板', '13900000001', 2, 'merchant_owner', 1, 1);
+
+-- 官方自营旗舰店商家账号（official_shop / admin123）：平台运营登录商家端处理自营店订单/售后
+INSERT INTO t_merchant_account (id, username, password, real_name, phone, shop_id, role, audit_status, status)
+VALUES (2, 'official_shop', '$2a$10$mG4HpWhYdqOSYql91nc17OrmYxpwkchw/0Vbs5oR.txUEHBmEiVem', '平台运营', '13800000000', 1, 'merchant_owner', 1, 1);

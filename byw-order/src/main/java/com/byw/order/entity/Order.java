@@ -56,6 +56,9 @@ public class Order {
 
     private String cancelReason;
 
+    /** 关闭类型 null未关闭 1取消关闭 2退款关闭 */
+    private Integer closeType;
+
     /** 是否已评价 0未评价 1已评价 */
     private Integer reviewed;
 

@@ -40,7 +40,8 @@ export function useFavorites() {
    */
   async function toggleFavorite(productId: number): Promise<boolean> {
     if (!userStore.isLoggedIn) {
-      navigateTo('/login')
+      // 未登录：原地弹出登录框，不跳转登录页
+      useLoginModal().openLoginModal()
       return false
     }
     const wasFavorited = favoriteIds.value.has(productId)

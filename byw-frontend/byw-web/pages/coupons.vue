@@ -178,7 +178,8 @@ const formatDate = (dt: string) => {
 
 const handleClaim = async (coupon: Coupon) => {
   if (!userStore.isLoggedIn) {
-    navigateTo('/login')
+    // 未登录：原地弹出登录框，不跳转登录页
+    useLoginModal().openLoginModal()
     return
   }
   if (coupon._claiming) return

@@ -116,8 +116,8 @@
     <el-dialog v-model="shipVisible" title="订单发货" width="640px">
       <div v-loading="shipLoading">
         <el-alert
-          v-if="shipItemsData.length && shipItemsData.every(i => i.shipStatus === 1)"
-          title="该订单所有商品均已发货"
+          v-if="shipItemsData.length && shipItemsData.every(i => !isShipSelectable(i))"
+          title="该订单没有可发货的商品（均已发货或已退款/售后处理中）"
           type="info"
           :closable="false"
           style="margin-bottom:12px;"
@@ -148,6 +148,11 @@
                 <div style="font-size:12px;color:#909399;margin-top:2px;">
                   {{ row.companyName }} {{ row.trackingNo }}
                 </div>
+              </template>
+              <template v-else-if="isAfterSaleBlocked(row)">
+                <el-tag v-if="row.afterSaleStatus === 3" type="danger" size="small">已退款</el-tag>
+                <el-tag v-else type="warning" size="small">售后处理中</el-tag>
+                <span style="font-size:12px;color:#909399;margin-left:6px;">不可发货</span>
               </template>
               <el-tag v-else type="info" size="small">未发货</el-tag>
             </template>
@@ -194,8 +199,9 @@ const statusMap: Record<number, { label: string; type: string }> = {
   0: { label: '待付款', type: 'info' },
   1: { label: '待发货', type: 'warning' },
   2: { label: '已发货', type: 'primary' },
-  3: { label: '已完成', type: 'success' },
-  4: { label: '已取消', type: 'danger' },
+  3: { label: '交易完成', type: 'success' },
+  4: { label: '交易关闭', type: 'danger' },
+  5: { label: '退款中', type: 'warning' },
   7: { label: '部分发货', type: 'warning' }
 }
 
@@ -207,8 +213,9 @@ const statusOptions = [
   { label: '待付款', value: 0 },
   { label: '待发货', value: 1 },
   { label: '已发货', value: 2 },
-  { label: '已完成', value: 3 },
-  { label: '已取消', value: 4 },
+  { label: '交易完成', value: 3 },
+  { label: '交易关闭', value: 4 },
+  { label: '退款中', value: 5 },
   { label: '部分发货', value: 7 }
 ]
 
@@ -264,7 +271,10 @@ const shipRules = {
   company: [{ required: true, message: '请选择物流公司', trigger: 'change' }]
 }
 
-const isShipSelectable = (row: any) => row.shipStatus !== 1
+/** 商品行被售后阻断发货：已完成退款(3)或售后进行中(0/1/5/6)；已拒绝(2)/已撤销(4)可正常发货，与后端 shipItems 拦截一致 */
+const isAfterSaleBlocked = (row: any) =>
+  row.afterSaleId != null && [0, 1, 3, 5, 6].includes(row.afterSaleStatus)
+const isShipSelectable = (row: any) => row.shipStatus !== 1 && !isAfterSaleBlocked(row)
 const handleShipSelectionChange = (rows: any[]) => {
   selectedItemIds.value = rows.map((r) => r.id)
 }

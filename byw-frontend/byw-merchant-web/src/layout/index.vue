@@ -32,6 +32,7 @@
             <span>订单管理</span>
           </template>
           <el-menu-item index="/order/list">订单列表</el-menu-item>
+          <el-menu-item index="/order/after-sale">售后管理</el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu index="promotion">

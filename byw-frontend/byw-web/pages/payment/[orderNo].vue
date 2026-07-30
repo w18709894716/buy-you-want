@@ -153,12 +153,19 @@ async function confirmPay() {
   if (!order.value || remainingSeconds.value <= 0) return
   paying.value = true
   try {
-    // TODO: 接入真实支付
+    // 后端模拟渠道仅支持微信/支付宝，其余渠道归并为微信
+    const channel = selectedMethod.value === 'alipay' ? 'alipay' : 'wechat'
+    // 1. 创建支付单（byw-pay 落 t_pay_order，退款依赖该记录）
+    const payOrder = await post<any>('/pay/create', null, {
+      params: { orderNo, amount: order.value.payAmount, channel }
+    })
+    // 2. 模拟支付渠道回调：支付单置为已支付，并经 MQ 通知订单服务流转状态
     await new Promise(resolve => setTimeout(resolve, 1500))
-    // 模拟支付成功：更新订单状态为已支付
-    await post(`/order/pay/${orderNo}`)
-    showToast('支付成功！', 'success')
-    setTimeout(() => navigateTo('/user/orders'), 1500)
+    await post(`/pay/callback/${channel}`, null, {
+      params: { payNo: payOrder.payNo, tradeNo: 'MOCK' + Date.now() }
+    })
+    // 3. 订单状态经 MQ 异步流转，跳转支付结果页轮询确认，避免订单列表瞬时仍显示待付款
+    navigateTo(`/payment/result?orderNo=${orderNo}`)
   } catch (e: any) {
     showToast(e?.message || '支付失败，请重试', 'error')
   } finally {

@@ -31,6 +31,19 @@
       </button>
     </div>
 
+    <!-- 无可评价商品（如商品均已退款） -->
+    <div v-else-if="!isAppend && reviewItems.length === 0" class="bg-white rounded-xl p-16 text-center">
+      <div class="text-5xl mb-3">📦</div>
+      <p class="text-gray-600 font-medium">该订单暂无可评价商品</p>
+      <p class="text-gray-400 text-sm mt-2">已退款的商品无需评价</p>
+      <button
+        class="mt-6 px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary-600 transition-colors"
+        @click="navigateTo('/user/orders')"
+      >
+        返回订单列表
+      </button>
+    </div>
+
     <!-- 追评表单（按商品） -->
     <div v-else-if="isAppend" class="space-y-4">
       <!-- 订单信息概览 -->
@@ -48,8 +61,19 @@
         </p>
       </div>
 
+      <!-- 无可追评商品（如商品均已退款） -->
+      <div v-if="appendItems.length === 0" class="bg-white rounded-xl p-16 text-center">
+        <div class="text-5xl mb-3">📦</div>
+        <p class="text-gray-600 font-medium">该订单暂无可追评商品</p>
+        <p class="text-gray-400 text-sm mt-2">已退款的商品无需评价</p>
+        <button
+          class="mt-6 px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary-600 transition-colors"
+          @click="navigateTo('/user/orders')"
+        >返回订单列表</button>
+      </div>
+
       <!-- 全部已追评 -->
-      <div v-if="allAppended" class="bg-white rounded-xl p-16 text-center">
+      <div v-else-if="allAppended" class="bg-white rounded-xl p-16 text-center">
         <div class="text-5xl mb-3">✅</div>
         <p class="text-gray-600 font-medium">该订单商品均已追评</p>
         <p class="text-gray-400 text-sm mt-2">感谢您的反馈</p>
@@ -447,7 +471,10 @@ async function fetchOrder() {
     if (!data?.items?.length) {
       return
     }
-    reviewItems.value = data.items.map((item: any) => ({
+    // 已完成退款（仅退款/退货退款）的商品交易未完成，不参与评价
+    reviewItems.value = data.items
+      .filter((item: any) => !(item.afterSaleStatus === 3 && [1, 2].includes(item.afterSaleType)))
+      .map((item: any) => ({
       productId: item.productId,
       skuId: item.skuId,
       productName: item.productName,
@@ -531,7 +558,10 @@ async function fetchAppendData() {
     const reviewMap = new Map<number, any>()
     ;(reviews || []).forEach(r => reviewMap.set(r.skuId, r))
     const items = order.value?.items || []
-    appendItems.value = items.map((item: any) => {
+    // 已完成退款的商品不参与追评（首评阶段已排除，退款可能发生在首评之后）
+    appendItems.value = items
+      .filter((item: any) => !(item.afterSaleStatus === 3 && [1, 2].includes(item.afterSaleType)))
+      .map((item: any) => {
       const rv = reviewMap.get(item.skuId) || {}
       const appended = !!(rv.appendContent && String(rv.appendContent).trim())
       return {
@@ -579,7 +609,13 @@ async function submitAppend() {
 onMounted(async () => {
   await fetchOrder()
   if (isAppend.value) {
-    await fetchAppendData()
+    // 追评数据加载期间维持 loading，避免 appendItems 空列表闪现「暂无可追评商品」
+    loading.value = true
+    try {
+      await fetchAppendData()
+    } finally {
+      loading.value = false
+    }
   } else {
     await checkReviewed()
   }

@@ -300,6 +300,7 @@ import { useUserStore } from '~/stores/user'
 const route = useRoute()
 const cartStore = useCartStore()
 const userStore = useUserStore()
+const { openLoginModal } = useLoginModal()
 const productId = computed(() => Number(route.params.id))
 
 const { isFavorited, toggleFavorite, loadFavoriteIds } = useFavorites()
@@ -506,6 +507,10 @@ const claimShopCoupon = async (coupon: any) => {
     await post(`/coupon/claim/${coupon.id}`)
     coupon._claimed = true
     showToast('领取成功，下单时可用！', 'success')
+    // 弹框内券全部领完后自动关闭（稍作停留让用户看到已领取状态）
+    if (shopCoupons.value.every(c => c._claimed)) {
+      setTimeout(() => { showShopCouponModal.value = false }, 800)
+    }
   } catch (e: any) {
     showToast(e?.message || '领取失败，请重试', 'error')
   } finally {
@@ -518,6 +523,11 @@ function closeShopCouponModal() {
 }
 
 async function handleAddToCart() {
+  // 未登录：原地弹出登录框，不跳转登录页
+  if (!userStore.isLoggedIn) {
+    openLoginModal()
+    return
+  }
   if (specGroups.value.length > 0 && Object.keys(selectedSpecs.value).length < specGroups.value.length) {
     const missingGroups = specGroups.value.filter((g: any) => !selectedSpecs.value[g.name])
     showToast(`请选择${missingGroups.map((g: any) => g.name).join('、')}`, 'error')
@@ -532,11 +542,17 @@ async function handleAddToCart() {
     await cartStore.addToCart(matchedSkuId.value, quantity.value)
     showToast('已添加到购物车！', 'success')
   } catch (error: any) {
+    // token 失效等 401 场景已由请求层弹出登录框，不再叠加错误提示
+    if (error?.silent) return
     showToast(error?.message || '添加失败，请重试', 'error')
   }
 }
 
 function handleBuyNow() {
+  if (!userStore.isLoggedIn) {
+    openLoginModal()
+    return
+  }
   handleAddToCart().then(async () => {
     if (toast.type === 'success') {
       // 将刚加入的商品设为选中状态

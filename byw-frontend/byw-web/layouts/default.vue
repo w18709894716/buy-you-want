@@ -1,5 +1,7 @@
 <template>
   <div class="min-h-screen flex flex-col bg-gray-50">
+    <!-- 全局登录弹框（未登录触发需登录操作时原地弹出，不跳转登录页） -->
+    <LoginModal />
     <!-- 顶部导航栏 -->
     <header class="bg-white shadow-sm sticky top-0 z-50">
       <!-- 顶部条 - 用户信息 -->

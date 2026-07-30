@@ -31,14 +31,21 @@
         </div>
       </div>
 
-      <!-- 查询结果（支持一单多包裹） -->
-      <div v-if="packages.length" class="mt-4 space-y-4">
+      <!-- 查询结果（支持一单多包裹，携带 trackingNo 参数时仅展示对应包裹） -->
+      <div v-if="displayPackages.length" class="mt-4 space-y-4">
         <div
-          v-if="packages.length > 1"
+          v-if="filterTrackingNo && displayPackages.length < packages.length"
+          class="text-sm text-gray-500 flex items-center gap-2"
+        >
+          <span>已定位运单 <span class="font-mono">{{ filterTrackingNo }}</span></span>
+          <button class="text-primary hover:underline" @click="filterTrackingNo = ''">查看全部 {{ packages.length }} 个包裹</button>
+        </div>
+        <div
+          v-else-if="displayPackages.length > 1"
           class="text-sm text-gray-500"
-        >共 {{ packages.length }} 个包裹</div>
+        >共 {{ displayPackages.length }} 个包裹</div>
         <div
-          v-for="(pkg, pIdx) in packages"
+          v-for="(pkg, pIdx) in displayPackages"
           :key="pkg.id || pIdx"
           class="bg-white rounded-lg shadow-sm overflow-hidden"
         >
@@ -50,7 +57,7 @@
               </div>
               <div class="flex-1 min-w-0">
                 <p class="font-medium text-gray-800">
-                  <span v-if="packages.length > 1" class="text-gray-400 mr-1">包裹{{ pIdx + 1 }} ·</span>{{ pkg.companyName || '快递运输中' }}
+                  <span v-if="displayPackages.length > 1" class="text-gray-400 mr-1">包裹{{ pIdx + 1 }} ·</span>{{ pkg.companyName || '快递运输中' }}
                 </p>
                 <p class="text-sm text-gray-500 mt-0.5">
                   运单号：<span class="font-mono">{{ pkg.trackingNo || '-' }}</span>
@@ -114,7 +121,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { get } from '~/utils/request'
 
 interface Trace {
@@ -139,6 +146,15 @@ const orderNo = ref('')
 const querying = ref(false)
 const packages = ref<LogisticsResult[]>([])
 const notFound = ref(false)
+// 从订单商品行跳转时携带的运单号，用于定位对应包裹
+const filterTrackingNo = ref('')
+
+// 按运单号过滤展示包裹，无匹配时兜底展示全部
+const displayPackages = computed(() => {
+  if (!filterTrackingNo.value) return packages.value
+  const matched = packages.value.filter(p => p.trackingNo === filterTrackingNo.value)
+  return matched.length ? matched : packages.value
+})
 
 const statusText = (s: number) =>
   ({ 0: '已揽收', 1: '运输中', 2: '派送中', 3: '已签收', 4: '异常' } as Record<number, string>)[s] || '未知'
@@ -182,6 +198,8 @@ const handleQuery = async () => {
 
 onMounted(() => {
   const q = route.query.orderNo as string
+  const tn = route.query.trackingNo as string
+  if (tn) filterTrackingNo.value = tn
   if (q) {
     orderNo.value = q
     handleQuery()

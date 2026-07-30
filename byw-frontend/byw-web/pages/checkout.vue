@@ -250,20 +250,12 @@
                 <label class="block text-sm text-gray-600 mb-1">手机号</label>
                 <input v-model="addrForm.receiverPhone" class="w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:border-primary" placeholder="请输入手机号" />
               </div>
-              <div class="grid grid-cols-3 gap-2">
-                <div>
-                  <label class="block text-sm text-gray-600 mb-1">省</label>
-                  <input v-model="addrForm.province" class="w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:border-primary" placeholder="省" />
-                </div>
-                <div>
-                  <label class="block text-sm text-gray-600 mb-1">市</label>
-                  <input v-model="addrForm.city" class="w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:border-primary" placeholder="市" />
-                </div>
-                <div>
-                  <label class="block text-sm text-gray-600 mb-1">区</label>
-                  <input v-model="addrForm.district" class="w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:border-primary" placeholder="区" />
-                </div>
-              </div>
+              <!-- 省市区三级联动下拉 -->
+              <RegionPicker
+                v-model:province="addrForm.province"
+                v-model:city="addrForm.city"
+                v-model:district="addrForm.district"
+              />
               <div>
                 <label class="block text-sm text-gray-600 mb-1">详细地址</label>
                 <input v-model="addrForm.detailAddress" class="w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:border-primary" placeholder="街道、楼牌号等" />
@@ -474,6 +466,10 @@ function openAddressForm(addr: any) {
 async function saveAddress() {
   if (!addrForm.value.receiverName || !addrForm.value.receiverPhone || !addrForm.value.detailAddress) {
     showToast('请填写完整信息', 'error')
+    return
+  }
+  if (!addrForm.value.province || !addrForm.value.city || !addrForm.value.district) {
+    showToast('请选择省市区', 'error')
     return
   }
   try {
@@ -748,12 +744,20 @@ async function payNow() {
     for (const item of orderItems.value) {
       await cartStore.removeItem(item.cartId)
     }
-    // 2. 发起支付（无第三方跳转，默认支付成功）
+    // 2. 发起支付（走 byw-pay：创建支付单 + 模拟渠道回调，无第三方跳转）
     //    若支付失败，订单仍为待支付，引导用户去支付页继续支付
     try {
-      await post(`/order/pay/${orderNo}`)
-      showToast('支付成功！', 'success')
-      setTimeout(() => navigateTo('/user/orders'), 1000)
+      // 后端模拟渠道仅支持微信/支付宝，其余渠道归并为微信
+      const channel = selectedMethod.value === 'alipay' ? 'alipay' : 'wechat'
+      const detail = await get<any>(`/order/detail/${orderNo}`)
+      const payOrder = await post<any>('/pay/create', null, {
+        params: { orderNo, amount: detail.payAmount, channel }
+      })
+      await post(`/pay/callback/${channel}`, null, {
+        params: { payNo: payOrder.payNo, tradeNo: 'MOCK' + Date.now() }
+      })
+      // 订单状态经 MQ 异步流转，跳转支付结果页轮询确认，与支付页行为保持一致
+      navigateTo(`/payment/result?orderNo=${orderNo}`)
     } catch (payErr: any) {
       showToast(payErr?.message || '支付未完成，可在订单中心继续支付', 'error')
       setTimeout(() => navigateTo('/payment/' + orderNo), 1200)

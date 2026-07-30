@@ -48,22 +48,44 @@
       <div class="bg-white rounded-lg p-6">
         <h3 class="font-medium text-gray-800 mb-4">商品清单</h3>
         <div class="divide-y">
-          <div v-for="item in order.items" :key="item.skuId" class="py-3 flex items-center gap-4">
+          <div v-for="item in order.items" :key="item.id || item.skuId" class="py-3 flex items-center gap-4">
             <img :src="item.productImage || 'https://via.placeholder.com/60x60?text=商品'" class="w-16 h-16 object-cover rounded" />
             <div class="flex-1">
               <p class="text-sm text-gray-800">{{ item.productName }}</p>
               <p class="text-xs text-gray-400 mt-0.5">{{ item.skuName }}</p>
-              <div class="mt-1 flex items-center gap-2">
+              <div class="mt-1 flex items-center gap-2 flex-wrap">
                 <span v-if="item.shipStatus === 1" class="inline-flex items-center text-xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded">已发货</span>
                 <span v-else class="inline-flex items-center text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">未发货</span>
                 <template v-if="item.shipStatus === 1">
                   <span class="text-xs text-gray-400">{{ item.companyName }} {{ item.trackingNo }}</span>
-                  <button class="text-xs text-primary hover:underline" @click="navigateTo(`/logistics?orderNo=${order.orderNo}`)">查看物流</button>
+                  <!-- 交易完成（已确认收货）后不再提供物流查询入口 -->
+                  <button v-if="order.status !== 3" class="text-xs text-primary hover:underline" @click="navigateTo(`/logistics?orderNo=${order.orderNo}${item.trackingNo ? '&trackingNo=' + encodeURIComponent(item.trackingNo) : ''}`)">查看物流</button>
                 </template>
+                <span v-if="item.afterSaleId" class="text-xs" :class="afterSaleStatusClass(item.afterSaleStatus)">
+                  {{ afterSaleStatusText(item.afterSaleStatus, item.afterSaleType) }}
+                </span>
               </div>
             </div>
             <div class="text-sm text-gray-800">¥{{ item.price?.toFixed(2) }}</div>
             <div class="text-sm text-gray-500">x{{ item.quantity }}</div>
+            <!-- 商品级操作 -->
+            <div class="flex flex-col items-stretch gap-1.5 w-24 flex-shrink-0">
+              <button
+                v-if="canApplyAfterSale(order, item)"
+                class="px-2 py-1 text-xs border border-orange-300 text-orange-500 rounded hover:bg-orange-50 transition-colors"
+                @click="openAfterSaleDialog(order, item)"
+              >申请售后</button>
+              <button
+                v-if="item.afterSaleId"
+                class="px-2 py-1 text-xs border border-primary text-primary rounded hover:bg-primary-50 transition-colors"
+                @click="openRefundDetail(item)"
+              >退款明细</button>
+              <button
+                class="px-2 py-1 text-xs border border-gray-300 text-gray-600 rounded hover:bg-gray-50 transition-colors disabled:opacity-60"
+                :disabled="addingCartItemKey === (item.id || item.skuId)"
+                @click="handleAddToCart(item)"
+              >{{ addingCartItemKey === (item.id || item.skuId) ? '加入中...' : '加入购物车' }}</button>
+            </div>
           </div>
         </div>
       </div>
@@ -132,7 +154,7 @@
     <!-- 确认弹窗 -->
     <Teleport to="body">
       <Transition name="modal">
-        <div v-if="confirmDialog" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div v-if="confirmDialog" class="fixed inset-0 z-[60] flex items-center justify-center p-4">
           <div class="fixed inset-0 bg-black/40" @click="confirmDialog = null" />
           <div class="relative bg-white rounded-lg shadow-xl w-full max-w-sm p-6">
             <h3 class="text-base font-medium text-gray-800 mb-2">{{ confirmDialog.title }}</h3>
@@ -153,18 +175,39 @@
     </Teleport>
 
     <!-- Toast 提示 -->
-    <Transition name="toast">
-      <div v-if="toast.visible"
-        :class="['fixed top-20 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2',
-          toast.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white']">
-        {{ toast.message }}
-      </div>
-    </Transition>
+    <Teleport to="body">
+      <Transition name="toast">
+        <div v-if="toast.visible"
+          :class="['fixed top-20 left-1/2 -translate-x-1/2 z-[70] px-6 py-3 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2',
+            toast.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white']">
+          {{ toast.message }}
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 退款明细弹窗 -->
+    <RefundDetailModal
+      v-model="refundDetailVisible"
+      :order-no="orderNo"
+      :item-id="refundDetailItemId"
+      @toast="(t) => showToast(t.message, t.type)"
+      @refreshed="fetchOrderDetail()"
+    />
+
+    <!-- 申请售后弹窗（商品级） -->
+    <AfterSaleModal
+      v-model="afterSaleModal.visible"
+      :order="afterSaleModal.order"
+      :item="afterSaleModal.item"
+      @toast="(t) => showToast(t.message, t.type)"
+      @submitted="fetchOrderDetail()"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { get, post } from '~/utils/request'
+import { useCartStore } from '~/stores/cart'
 
 definePageMeta({ middleware: ['auth'] })
 
@@ -181,15 +224,76 @@ const orderNo = computed(() => route.params.id as string)
 
 const loading = ref(true)
 const order = ref<any>(null)
+const refundDetailVisible = ref(false)
+const refundDetailItemId = ref<number | null>(null)
+/** 打开退款明细：传 item 为商品级售后，不传为历史订单级售后 */
+function openRefundDetail(item?: any) {
+  refundDetailItemId.value = item?.id ?? null
+  refundDetailVisible.value = true
+}
+
+// ===== 申请售后（商品级） =====
+const afterSaleModal = reactive({ visible: false, order: null as any, item: null as any })
+
+function openAfterSaleDialog(order: any, item: any) {
+  afterSaleModal.order = order
+  afterSaleModal.item = item
+  afterSaleModal.visible = true
+}
+
+/** 该商品是否可申请售后：待发货/待收货/部分发货/交易完成/退款中，且该商品无进行中或已完成的退款类售后 */
+function canApplyAfterSale(order: any, item: any) {
+  if (![1, 2, 3, 5, 7].includes(order.status)) return false
+  if (!item.afterSaleId) return true
+  if ([0, 1, 5, 6].includes(item.afterSaleStatus)) return false // 售后进行中
+  if (item.afterSaleStatus === 3) return false // 已完成退款
+  return true // 已拒绝(2)/已撤销(4)可重新申请
+}
+
+/** 商品行售后状态标签 */
+const afterSaleStatusText = (s: number, t?: number) => {
+  if (s === 3) return t === 2 ? '退货退款完成' : '退款完成'
+  return ({
+    0: '售后待审核', 1: '售后待寄回', 2: '售后已拒绝',
+    4: '售后已撤销', 5: '待商家收货', 6: '退款中'
+  } as Record<number, string>)[s] || ''
+}
+
+const afterSaleStatusClass = (s: number) =>
+  ({
+    0: 'text-orange-500', 1: 'text-orange-500', 2: 'text-red-400',
+    3: 'text-green-500', 4: 'text-gray-400', 5: 'text-orange-500', 6: 'text-yellow-500'
+  } as Record<number, string>)[s] || 'text-gray-400'
+
+// ===== 加入购物车（商品级） =====
+const cartStore = useCartStore()
+const addingCartItemKey = ref<any>(null)
+
+async function handleAddToCart(item: any) {
+  if (addingCartItemKey.value) return
+  if (!item.skuId) {
+    showToast('该商品缺少SKU信息，无法加入购物车', 'error')
+    return
+  }
+  addingCartItemKey.value = item.id || item.skuId
+  try {
+    await post('/cart/add', null, { params: { skuId: item.skuId, quantity: item.quantity || 1 } })
+    await cartStore.getCartList()
+    showToast('已加入购物车')
+  } catch (e: any) {
+    showToast(e?.message || '加入购物车失败', 'error')
+  } finally {
+    addingCartItemKey.value = null
+  }
+}
 
 const statusTextMap: Record<number, string> = {
   0: '待付款',
   1: '待发货',
   2: '待收货',
-  3: '已完成',
-  4: '已取消',
+  3: '交易完成',
+  4: '交易关闭',
   5: '退款中',
-  6: '已退款',
   7: '部分发货'
 }
 
@@ -200,7 +304,6 @@ const statusClassMap: Record<number, string> = {
   3: 'text-green-500',
   4: 'text-gray-500',
   5: 'text-yellow-500',
-  6: 'text-gray-400',
   7: 'text-orange-500'
 }
 

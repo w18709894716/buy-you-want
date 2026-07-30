@@ -92,14 +92,18 @@ export async function request<T = any>(
     // 业务错误
     throw new Error(response.message || '请求失败')
   } catch (error: any) {
-    // 401 处理：清除失效 token；仅受保护页面跳登录，公开页面（如首页/商品页）只提示不强跳
+    // 401 处理：清除失效 token；仅受保护页面跳登录，公开页面（如首页/商品页）原地弹出登录框不强跳
     if (error?.response?.status === 401 || error?.statusCode === 401) {
       clearToken()
       if (import.meta.client) {
         if (!isPublicPath(window.location.pathname)) {
           navigateTo('/login')
         } else {
-          throw new Error('请先登录')
+          // 弹出全局登录框；抛出 silent 错误供页面 catch 后跳过 Toast 提示
+          useLoginModal().openLoginModal()
+          const authError: any = new Error('请先登录')
+          authError.silent = true
+          throw authError
         }
       }
     }

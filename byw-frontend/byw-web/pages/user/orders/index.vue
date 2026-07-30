@@ -81,15 +81,19 @@
                   </span>
                   <span>订单号：{{ order.orderNo || order.id }}</span>
                   <span>{{ order.date }}</span>
+                  <button
+                    class="text-orange-500 hover:text-orange-600 hover:underline font-medium"
+                    @click="viewOrderDetail(order)"
+                  >订单详情</button>
                 </div>
                 <span :class="order.statusClass" class="font-medium">{{ order.statusText }}</span>
               </div>
 
-              <!-- 订单商品（支持多件） -->
+              <!-- 订单商品（支持多件，售后/加购/物流操作均为商品级） -->
               <div class="space-y-3 mb-3">
                 <div
                   v-for="(item, idx) in order.items"
-                  :key="item.skuId || idx"
+                  :key="item.id || item.skuId || idx"
                   class="flex items-center gap-4"
                 >
                   <NuxtLink :to="`/product/${item.productId}`">
@@ -100,10 +104,74 @@
                       {{ item.productName }}
                     </NuxtLink>
                     <p class="text-xs text-gray-400 mt-1">{{ item.skuName }}</p>
+                    <p v-if="item.afterSaleId" class="text-xs mt-1" :class="afterSaleStatusClass(item.afterSaleStatus)">
+                      {{ afterSaleStatusText(item.afterSaleStatus, item.afterSaleType) }}
+                    </p>
                   </div>
                   <div class="text-right">
                     <div class="text-sm font-bold text-primary">¥{{ (item.price || 0).toFixed(2) }}</div>
                     <div class="text-xs text-gray-400">x{{ item.quantity }}</div>
+                  </div>
+                  <!-- 商品级操作 -->
+                  <div class="flex flex-col items-stretch gap-1.5 w-24 flex-shrink-0">
+                    <button
+                      v-if="canApplyAfterSale(order, item)"
+                      class="px-2 py-1 text-xs border border-orange-300 text-orange-500 rounded hover:bg-orange-50 transition-colors"
+                      @click="openAfterSaleDialog(order, item)"
+                    >申请售后</button>
+                    <button
+                      v-if="item.afterSaleId"
+                      class="px-2 py-1 text-xs border border-primary text-primary rounded hover:bg-primary-50 transition-colors"
+                      @click="openRefundDetail(order, item)"
+                    >退款明细</button>
+                    <button
+                      class="px-2 py-1 text-xs border border-gray-300 text-gray-600 rounded hover:bg-gray-50 transition-colors disabled:opacity-60"
+                      :disabled="addingCartItemKey === (item.id || item.skuId)"
+                      @click="handleAddToCart(item)"
+                    >{{ addingCartItemKey === (item.id || item.skuId) ? '加入中...' : '加入购物车' }}</button>
+                    <!-- 查看物流：该商品已发货且订单未完成，悬浮展示对应包裹 -->
+                    <div
+                      v-if="item.shipStatus === 1 && (order.status === 2 || order.status === 7)"
+                      class="relative"
+                      @mouseenter="showLogistics(order, item)"
+                      @mouseleave="hideLogistics"
+                    >
+                      <button class="w-full px-2 py-1 text-xs border border-gray-300 text-gray-600 rounded hover:bg-gray-50 transition-colors">
+                        查看物流
+                      </button>
+                      <!-- 悬浮物流面板 -->
+                      <div
+                        v-if="logisticsHover.key === logisticsKey(order, item)"
+                        class="absolute right-0 top-full mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-100 p-4 z-30 text-left"
+                      >
+                        <div v-if="logisticsHover.loading" class="py-6 text-center text-sm text-gray-400">物流信息加载中...</div>
+                        <template v-else-if="logisticsHover.packages.length">
+                          <div v-for="(pkg, pIdx) in logisticsHover.packages" :key="pkg.id || pIdx" class="mb-3 last:mb-0">
+                            <div class="flex items-center justify-between mb-1">
+                              <span class="text-sm font-medium text-gray-800 truncate">
+                                <span v-if="logisticsHover.packages.length > 1" class="text-gray-400">包裹{{ pIdx + 1 }} · </span>{{ pkg.companyName || '快递运输中' }}
+                              </span>
+                              <span class="text-xs px-2 py-0.5 rounded flex-shrink-0" :class="logisticsStatusClass(pkg.status)">
+                                {{ logisticsStatusText(pkg.status) }}
+                              </span>
+                            </div>
+                            <p class="text-xs text-gray-400 mb-2">运单号：<span class="font-mono">{{ pkg.trackingNo || '-' }}</span></p>
+                            <div v-if="pkg.latestTraces && pkg.latestTraces.length" class="space-y-1.5">
+                              <div v-for="(trace, tIdx) in pkg.latestTraces" :key="tIdx" class="text-xs">
+                                <p :class="tIdx === 0 ? 'text-gray-700 font-medium' : 'text-gray-400'">{{ trace.description }}</p>
+                                <p class="text-gray-300">{{ formatTraceTime(trace.traceTime) }}<span v-if="trace.location" class="ml-2">{{ trace.location }}</span></p>
+                              </div>
+                            </div>
+                            <p v-else class="text-xs text-gray-400">暂无物流轨迹</p>
+                          </div>
+                          <NuxtLink
+                            :to="`/logistics?orderNo=${order.orderNo}${item.trackingNo ? '&trackingNo=' + encodeURIComponent(item.trackingNo) : ''}`"
+                            class="block mt-2 pt-2 border-t border-gray-100 text-xs text-primary text-center hover:underline"
+                          >查看完整物流轨迹 →</NuxtLink>
+                        </template>
+                        <div v-else class="py-6 text-center text-sm text-gray-400">暂无物流信息</div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -174,12 +242,6 @@
                     继续追评
                   </button>
                   <button
-                    class="px-4 py-1.5 border border-gray-300 text-gray-600 text-sm rounded hover:bg-gray-50 transition-colors"
-                    @click="viewOrderDetail(order)"
-                  >
-                    查看详情
-                  </button>
-                  <button
                     v-if="order.status === 0"
                     class="px-4 py-1.5 border border-gray-300 text-gray-500 text-sm rounded hover:bg-gray-50 transition-colors"
                     @click="handleCancelOrder(order)"
@@ -202,7 +264,7 @@
     <!-- 确认弹窗 -->
     <Teleport to="body">
       <Transition name="modal">
-        <div v-if="confirmDialog" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div v-if="confirmDialog" class="fixed inset-0 z-[60] flex items-center justify-center p-4">
           <div class="fixed inset-0 bg-black/40" @click="confirmDialog = null" />
           <div class="relative bg-white rounded-lg shadow-xl w-full max-w-sm p-6">
             <h3 class="text-base font-medium text-gray-800 mb-2">{{ confirmDialog.title }}</h3>
@@ -221,11 +283,43 @@
         </div>
       </Transition>
     </Teleport>
+    <!-- 申请售后弹窗（商品级） -->
+    <AfterSaleModal
+      v-model="afterSaleModal.visible"
+      :order="afterSaleModal.order"
+      :item="afterSaleModal.item"
+      @toast="(t) => showToast(t.message, t.type)"
+      @submitted="fetchOrders()"
+    />
+
+    <!-- Toast 通知 -->
+    <Teleport to="body">
+      <Transition name="toast">
+        <div
+          v-if="toast.visible"
+          class="fixed top-20 left-1/2 -translate-x-1/2 z-[70] px-5 py-2.5 rounded-lg shadow-lg text-sm flex items-center gap-2"
+          :class="toast.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'"
+        >
+          <span>{{ toast.type === 'success' ? '✓' : '✕' }}</span>
+          <span>{{ toast.message }}</span>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 退款明细弹窗 -->
+    <RefundDetailModal
+      v-model="refundDetailVisible"
+      :order-no="refundDetailOrderNo"
+      :item-id="refundDetailItemId"
+      @toast="(t) => showToast(t.message, t.type)"
+      @refreshed="fetchOrders()"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { useUserStore } from '~/stores/user'
+import { useCartStore } from '~/stores/cart'
 import { get, post } from '~/utils/request'
 
 definePageMeta({ middleware: ['auth'] })
@@ -262,17 +356,17 @@ const tabs = ref([
   { label: '待发货', value: '1', count: 0 },
   { label: '待收货', value: '2', count: 0 },
   { label: '评价', value: 'review', count: 0 },
-  { label: '已取消', value: '4', count: 0 },
+  { label: '退款中', value: '5', count: 0 },
+  { label: '交易关闭', value: '4', count: 0 },
 ])
 
 const statusTextMap: Record<number, string> = {
   0: '待付款',
   1: '待发货',
   2: '待收货',
-  3: '已完成',
-  4: '已取消',
+  3: '交易完成',
+  4: '交易关闭',
   5: '退款中',
-  6: '已退款',
   7: '部分发货'
 }
 
@@ -283,7 +377,6 @@ const statusClassMap: Record<number, string> = {
   3: 'text-green-500',
   4: 'text-gray-500',
   5: 'text-yellow-500',
-  6: 'text-gray-400',
   7: 'text-orange-500'
 }
 
@@ -311,6 +404,10 @@ function mapOrder(o: any) {
     createdAt: o.createdAt,
     status: o.status,
     reviewed: o.reviewed,
+    closeType: o.closeType,
+    afterSaleId: o.afterSaleId,
+    afterSaleStatus: o.afterSaleStatus,
+    afterSaleType: o.afterSaleType,
     statusText: statusTextMap[o.status] || '未知',
     statusClass: statusClassMap[o.status] || 'text-gray-500',
     items,
@@ -396,11 +493,18 @@ async function fetchOrderCounts() {
   try {
     const counts = await get<Record<number, number>>('/order/status-counts')
     if (counts) {
-      tabs.value[1].count = counts[0] || 0  // 待付款
-      tabs.value[2].count = counts[1] || 0  // 待发货
-      tabs.value[3].count = counts[2] || 0  // 待收货
-      tabs.value[4].count = counts[3] || 0  // 待评价
-      tabs.value[5].count = counts[4] || 0  // 已取消
+      // 按 tab value 映射计数，避免依赖数组下标；“评价”tab 对应待评价(3)
+      const countMap: Record<string, number> = {
+        '0': counts[0] || 0,
+        '1': counts[1] || 0,
+        '2': counts[2] || 0,
+        'review': counts[3] || 0,
+        '5': counts[5] || 0,
+        '4': counts[4] || 0
+      }
+      tabs.value.forEach(tab => {
+        if (tab.value in countMap) tab.count = countMap[tab.value]
+      })
       // “全部订单” 不展示数量，订单过多时依靠下拉加载查看
     }
   } catch (e) {
@@ -521,4 +625,160 @@ function handleCancelOrder(order: any) {
     }
   }
 }
+
+// ===== Toast 通知 =====
+const toast = reactive({ visible: false, message: '', type: 'success' as 'success' | 'error' })
+let toastTimer: ReturnType<typeof setTimeout> | null = null
+function showToast(message: string, type: 'success' | 'error' = 'success') {
+  if (toastTimer) clearTimeout(toastTimer)
+  toast.visible = true
+  toast.message = message
+  toast.type = type
+  toastTimer = setTimeout(() => { toast.visible = false }, 2500)
+}
+
+// ===== 加入购物车（商品级，单品再次购买） =====
+const cartStore = useCartStore()
+const addingCartItemKey = ref<any>(null)
+
+async function handleAddToCart(item: any) {
+  if (addingCartItemKey.value) return
+  if (!item.skuId) {
+    showToast('该商品缺少SKU信息，无法加入购物车', 'error')
+    return
+  }
+  addingCartItemKey.value = item.id || item.skuId
+  try {
+    await post('/cart/add', null, { params: { skuId: item.skuId, quantity: item.quantity || 1 } })
+    await cartStore.getCartList()
+    showToast('已加入购物车')
+  } catch (e: any) {
+    showToast(e?.message || '加入购物车失败', 'error')
+  } finally {
+    addingCartItemKey.value = null
+  }
+}
+
+// ===== 申请售后（商品级，弹窗抽取为 AfterSaleModal 组件） =====
+const afterSaleModal = reactive({ visible: false, order: null as any, item: null as any })
+
+function openAfterSaleDialog(order: any, item: any) {
+  afterSaleModal.order = order
+  afterSaleModal.item = item
+  afterSaleModal.visible = true
+}
+
+/** 该商品是否可申请售后：待发货/待收货/部分发货/交易完成/退款中，且该商品无进行中或已完成的退款类售后 */
+function canApplyAfterSale(order: any, item: any) {
+  if (![1, 2, 3, 5, 7].includes(order.status)) return false
+  if (!item.afterSaleId) return true
+  if ([0, 1, 5, 6].includes(item.afterSaleStatus)) return false // 售后进行中
+  if (item.afterSaleStatus === 3) return false // 已完成退款
+  return true // 已拒绝(2)/已撤销(4)可重新申请
+}
+
+/** 商品行售后状态标签 */
+const afterSaleStatusText = (s: number, t?: number) => {
+  if (s === 3) return t === 2 ? '退货退款完成' : '退款完成'
+  return ({
+    0: '售后待审核', 1: '售后待寄回', 2: '售后已拒绝',
+    4: '售后已撤销', 5: '待商家收货', 6: '退款中'
+  } as Record<number, string>)[s] || ''
+}
+
+const afterSaleStatusClass = (s: number) =>
+  ({
+    0: 'text-orange-500', 1: 'text-orange-500', 2: 'text-red-400',
+    3: 'text-green-500', 4: 'text-gray-400', 5: 'text-orange-500', 6: 'text-yellow-500'
+  } as Record<number, string>)[s] || 'text-gray-400'
+
+const refundDetailVisible = ref(false)
+const refundDetailOrderNo = ref('')
+const refundDetailItemId = ref<number | null>(null)
+/** 打开退款明细：传 item 为商品级售后，不传为历史订单级售后 */
+function openRefundDetail(order: any, item?: any) {
+  refundDetailOrderNo.value = order.orderNo
+  refundDetailItemId.value = item?.id ?? null
+  refundDetailVisible.value = true
+}
+
+// ===== 查看物流（商品级悬浮展示） =====
+const logisticsHover = reactive({ key: '', loading: false, packages: [] as any[] })
+// 物流缓存仍按订单号存 track-all 全量包裹，展示时按商品运单号过滤
+const logisticsCache: Record<string, any[]> = {}
+let hideLogisticsTimer: ReturnType<typeof setTimeout> | null = null
+
+// 悬浮面板 key 必须用商品行唯一标识：同包裹多商品共用运单号，若用运单号会导致多行同时弹出重叠面板
+function logisticsKey(order: any, item: any) {
+  return `${order.orderNo}#${item.id ?? item.skuId ?? item.trackingNo}`
+}
+
+/** 按商品运单号过滤包裹，无匹配时兜底展示订单全部包裹；同运单号多条记录时去重 */
+function filterPackages(packages: any[], item: any) {
+  const dedup = (list: any[]) => {
+    const seen = new Set<string>()
+    return list.filter(p => {
+      const k = p.trackingNo || String(p.id)
+      if (seen.has(k)) return false
+      seen.add(k)
+      return true
+    })
+  }
+  if (!item.trackingNo) return dedup(packages)
+  const matched = packages.filter(p => p.trackingNo === item.trackingNo)
+  return dedup(matched.length ? matched : packages)
+}
+
+async function showLogistics(order: any, item: any) {
+  if (hideLogisticsTimer) { clearTimeout(hideLogisticsTimer); hideLogisticsTimer = null }
+  const key = logisticsKey(order, item)
+  logisticsHover.key = key
+  if (logisticsCache[order.orderNo]) {
+    logisticsHover.packages = filterPackages(logisticsCache[order.orderNo], item)
+    logisticsHover.loading = false
+    return
+  }
+  logisticsHover.loading = true
+  logisticsHover.packages = []
+  try {
+    const data = await get<any[]>(`/logistics/track-all/${encodeURIComponent(order.orderNo)}`)
+    const packages = (data || []).map((pkg: any) => ({
+      ...pkg,
+      // 轨迹倒序取最新3条用于悬浮简览
+      latestTraces: (pkg.traces || []).slice().reverse().slice(0, 3)
+    }))
+    logisticsCache[order.orderNo] = packages
+    if (logisticsHover.key === key) logisticsHover.packages = filterPackages(packages, item)
+  } catch (e) {
+    if (logisticsHover.key === key) logisticsHover.packages = []
+  } finally {
+    if (logisticsHover.key === key) logisticsHover.loading = false
+  }
+}
+
+function hideLogistics() {
+  // 延迟收起，避免鼠标在按钮与面板间移动时闪烁
+  hideLogisticsTimer = setTimeout(() => { logisticsHover.key = '' }, 200)
+}
+
+const logisticsStatusText = (s: number) =>
+  ({ 0: '已揽收', 1: '运输中', 2: '派送中', 3: '已签收', 4: '异常' } as Record<number, string>)[s] || '未知'
+
+const logisticsStatusClass = (s: number) =>
+  ({
+    0: 'bg-blue-50 text-blue-600',
+    1: 'bg-amber-50 text-amber-600',
+    2: 'bg-purple-50 text-purple-600',
+    3: 'bg-green-50 text-green-600',
+    4: 'bg-red-50 text-red-600',
+  } as Record<number, string>)[s] || 'bg-gray-50 text-gray-600'
+
+const formatTraceTime = (t: string) => (t ? t.replace('T', ' ').substring(0, 16) : '')
 </script>
+
+<style scoped>
+.modal-enter-active, .modal-leave-active { transition: all 0.3s ease; }
+.modal-enter-from, .modal-leave-to { opacity: 0; }
+.toast-enter-active, .toast-leave-active { transition: all 0.3s ease; }
+.toast-enter-from, .toast-leave-to { opacity: 0; transform: translate(-50%, -10px); }
+</style>

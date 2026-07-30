@@ -2,6 +2,7 @@ package com.byw.pay.feign;
 
 import com.byw.api.pay.PayFeignClient;
 import com.byw.api.pay.dto.PayOrderDTO;
+import com.byw.api.pay.dto.RefundInfoDTO;
 import com.byw.common.core.result.R;
 import com.byw.common.security.annotation.Public;
 import com.byw.pay.service.PayService;
@@ -40,5 +41,11 @@ public class PayFeignImpl implements PayFeignClient {
                              @RequestParam("reason") String reason) {
         payService.refund(orderNo, amount, reason);
         return R.ok(true);
+    }
+
+    @Override
+    @GetMapping("/refund-detail")
+    public R<RefundInfoDTO> getRefundByOrderNo(@RequestParam("orderNo") String orderNo) {
+        return R.ok(payService.getRefundByOrderNo(orderNo));
     }
 }

@@ -1,6 +1,7 @@
 package com.byw.pay.service;
 
 import com.byw.api.pay.dto.PayOrderDTO;
+import com.byw.api.pay.dto.RefundInfoDTO;
 
 import java.math.BigDecimal;
 
@@ -30,4 +31,9 @@ public interface PayService {
      * 退款
      */
     void refund(String orderNo, BigDecimal amount, String reason);
+
+    /**
+     * 查询某订单的退款明细（最新一条退款记录，含原支付渠道），无则返回 null
+     */
+    RefundInfoDTO getRefundByOrderNo(String orderNo);
 }

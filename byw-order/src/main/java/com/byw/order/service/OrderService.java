@@ -61,6 +61,13 @@ public interface OrderService {
     void updateReviewed(String orderNo, Integer reviewed);
 
     /**
+     * 自动确认收货：将发货超过指定天数仍未确认的待收货订单置为交易完成
+     * @param expireDays 发货后自动确认收货的天数
+     * @return 本次处理的订单数量
+     */
+    int autoConfirmReceive(int expireDays);
+
+    /**
      * 生成订单号
      */
     String generateOrderNo();

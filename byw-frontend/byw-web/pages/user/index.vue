@@ -55,10 +55,11 @@
             <h3 class="font-medium text-gray-800">最近订单</h3>
             <NuxtLink to="/user/orders" class="text-sm text-primary hover:text-primary-600">查看全部 &gt;</NuxtLink>
           </div>
-          <div class="space-y-4">
-            <div v-for="order in recentOrders" :key="order.id" class="border rounded-lg p-4">
+          <div v-if="recentOrders.length === 0" class="py-10 text-center text-gray-400 text-sm">暂无订单</div>
+          <div v-else class="space-y-4">
+            <NuxtLink v-for="order in recentOrders" :key="order.orderNo" :to="`/user/orders/${order.orderNo}`" class="block border rounded-lg p-4 hover:shadow-sm transition-shadow">
               <div class="flex flex-wrap items-center justify-between text-sm text-gray-500 mb-3 gap-1">
-                <span>订单号：{{ order.id }}</span>
+                <span>订单号：{{ order.orderNo }}</span>
                 <div class="flex items-center gap-2">
                   <span>{{ order.date }}</span>
                   <span :class="order.statusClass">{{ order.statusText }}</span>
@@ -66,16 +67,17 @@
               </div>
               <div class="flex items-center gap-4">
                 <img :src="order.image" :alt="order.productName" class="w-16 h-16 object-cover rounded" />
-                <div class="flex-1">
-                  <p class="text-sm text-gray-800">{{ order.productName }}</p>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-gray-800 truncate">{{ order.productName }}</p>
                   <p class="text-xs text-gray-400 mt-0.5">{{ order.specs }}</p>
+                  <p v-if="order.itemCount > 1" class="text-gray-700 text-base leading-none mt-1 tracking-widest">···</p>
                 </div>
-                <div class="text-right">
+                <div class="text-right flex-shrink-0">
                   <div class="text-sm font-bold text-primary">¥{{ order.total.toFixed(2) }}</div>
-                  <div class="text-xs text-gray-400">x{{ order.quantity }}</div>
+                  <div class="text-xs text-gray-400">共 {{ order.quantity }} 件</div>
                 </div>
               </div>
-            </div>
+            </NuxtLink>
           </div>
         </div>
       </div>
@@ -137,34 +139,45 @@ async function fetchCouponCount() {
   }
 }
 
-const recentOrders = [
-  {
-    id: 'BYW202606160001',
-    date: '2026-06-15',
-    statusText: '待发货',
-    statusClass: 'text-orange-500',
-    image: 'https://via.placeholder.com/60x60?text=iPhone',
-    productName: 'Apple iPhone 15 Pro Max 256GB',
-    specs: '原色钛金属 / 256GB',
-    total: 9999,
-    quantity: 1,
-  },
-  {
-    id: 'BYW202606160002',
-    date: '2026-06-14',
-    statusText: '待收货',
-    statusClass: 'text-blue-500',
-    image: 'https://via.placeholder.com/60x60?text=Sony',
-    productName: 'Sony WH-1000XM5 无线降噪耳机',
-    specs: '黑色',
-    total: 2299,
-    quantity: 1,
-  },
-]
+const recentOrders = ref<any[]>([])
+
+const statusTextMap: Record<number, string> = {
+  0: '待付款', 1: '待发货', 2: '待收货', 3: '交易完成', 4: '交易关闭', 5: '退款中', 7: '部分发货'
+}
+const statusClassMap: Record<number, string> = {
+  0: 'text-red-500', 1: 'text-orange-500', 2: 'text-blue-500', 3: 'text-green-500', 4: 'text-gray-500', 5: 'text-yellow-500', 7: 'text-orange-500'
+}
+
+// 获取最近订单（后端按 createdAt 倒序，取前 3 条）
+async function fetchRecentOrders() {
+  try {
+    const data = await get<any>('/order/my-orders', { pageNum: 1, pageSize: 3 })
+    recentOrders.value = (data?.list || []).map((o: any) => {
+      const first = (o.items && o.items.length ? o.items[0] : null)
+      const itemCount = (o.items || []).length
+      const totalQuantity = (o.items || []).reduce((s: number, it: any) => s + (it.quantity || 0), 0)
+      return {
+        orderNo: o.orderNo,
+        date: o.createdAt,
+        statusText: statusTextMap[o.status] || '未知',
+        statusClass: statusClassMap[o.status] || 'text-gray-500',
+        image: first?.productImage || 'https://via.placeholder.com/60x60?text=商品',
+        productName: first?.productName || '',
+        specs: first?.skuName || '',
+        itemCount,
+        total: o.payAmount || o.totalAmount || 0,
+        quantity: totalQuantity || 1,
+      }
+    })
+  } catch (e) {
+    console.error('获取最近订单失败', e)
+  }
+}
 
 onMounted(() => {
   userStore.getUserInfo()
   fetchOrderCounts()
   fetchCouponCount()
+  fetchRecentOrders()
 })
 </script>

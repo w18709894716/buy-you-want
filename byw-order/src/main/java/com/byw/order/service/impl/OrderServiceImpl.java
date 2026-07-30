@@ -22,9 +22,11 @@ import com.byw.common.core.result.R;
 import com.byw.order.entity.Order;
 import com.byw.order.entity.OrderItem;
 import com.byw.order.entity.OrderStatusLog;
+import com.byw.order.entity.AfterSale;
 import com.byw.order.mapper.OrderItemMapper;
 import com.byw.order.mapper.OrderMapper;
 import com.byw.order.mapper.OrderStatusLogMapper;
+import com.byw.order.mapper.AfterSaleMapper;
 import com.byw.order.producer.OrderEventProducer;
 import com.byw.order.service.OrderService;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +39,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
@@ -48,6 +51,7 @@ public class OrderServiceImpl implements OrderService {
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
     private final OrderStatusLogMapper orderStatusLogMapper;
+    private final AfterSaleMapper afterSaleMapper;
     private final ProductFeignClient productFeignClient;
     private final CartFeignClient cartFeignClient;
     private final PromotionFeignClient promotionFeignClient;
@@ -308,6 +312,7 @@ public class OrderServiceImpl implements OrderService {
 
         OrderDetailDTO dto = buildOrderDetailDTO(order, items);
         fillShopNames(java.util.Collections.singletonList(dto));
+        fillAfterSaleSummary(java.util.Collections.singletonList(dto));
         return dto;
     }
 
@@ -316,8 +321,14 @@ public class OrderServiceImpl implements OrderService {
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<Order>()
                 .eq(Order::getUserId, userId)
                 // 仅展示子订单/独立订单，父订单仅用于聚合支付不出现在列表
-                .eq(Order::getIsParent, 0)
-                .eq(status != null, Order::getStatus, status)
+                .eq(Order::getIsParent, 0);
+        // 待收货(2) tab 合并展示部分发货(7)，让部分发货订单对用户可见
+        if (status != null && status == 2) {
+            wrapper.in(Order::getStatus, 2, 7);
+        } else if (status != null) {
+            wrapper.eq(Order::getStatus, status);
+        }
+        wrapper
                 // reviewed=0 精确匹配待评价；reviewed>=1 视为已评价（含已追评 2）
                 .eq(reviewed != null && reviewed == 0, Order::getReviewed, 0)
                 .ge(reviewed != null && reviewed >= 1, Order::getReviewed, 1)
@@ -333,6 +344,7 @@ public class OrderServiceImpl implements OrderService {
         }).collect(Collectors.toList());
 
         fillShopNames(dtoList);
+        fillAfterSaleSummary(dtoList);
         return PageResult.of(dtoList, orderPage.getTotal(), pageNum, pageSize);
     }
 
@@ -389,6 +401,7 @@ public class OrderServiceImpl implements OrderService {
         order.setStatus(4); // 已取消
         order.setCancelTime(LocalDateTime.now());
         order.setCancelReason(reason);
+        order.setCloseType(1); // 取消关闭
         orderMapper.updateById(order);
 
         // 释放本单明细库存
@@ -417,6 +430,7 @@ public class OrderServiceImpl implements OrderService {
         parent.setStatus(4);
         parent.setCancelTime(LocalDateTime.now());
         parent.setCancelReason(reason);
+        parent.setCloseType(1); // 取消关闭
         orderMapper.updateById(parent);
 
         if (parent.getCouponId() != null) {
@@ -452,11 +466,28 @@ public class OrderServiceImpl implements OrderService {
         Order order = getOrderByNo(orderNo);
         Integer fromStatus = order.getStatus();
 
+        // 幂等：目标状态与当前状态一致，直接返回（支付回调重复投递等场景）
+        if (fromStatus != null && fromStatus.equals(status)) {
+            log.info("订单已处于目标状态，忽略重复更新: orderNo={}, status={}", orderNo, status);
+            return;
+        }
+        // 状态机校验：拒绝非法流转，防止「超时取消」与「支付回调」竞态把已关闭订单拉回待发货造成超卖
+        if (!isStatusTransitionAllowed(fromStatus, status)) {
+            log.warn("非法订单状态流转被拒绝: orderNo={}, {} -> {}", orderNo, fromStatus, status);
+            throw new BusinessException("订单当前状态不允许该操作");
+        }
+
         order.setStatus(status);
         if (status == 1) {
             order.setPayTime(LocalDateTime.now());
         } else if (status == 2) {
             order.setShipTime(LocalDateTime.now());
+        }
+        // 退款关闭：由退款流程驱动（退款中5/待发货1/待收货2/部分发货7 → 交易关闭4），标记为退款关闭以区分用户主动取消
+        // 说明：用户主动取消不经过 updateStatus（走 doCancelChild 直接落库），此处 →4 均为售后退款链路
+        if (fromStatus != null && status != null && status == 4
+                && (fromStatus == 5 || fromStatus == 1 || fromStatus == 2 || fromStatus == 7)) {
+            order.setCloseType(2);
         }
         orderMapper.updateById(order);
 
@@ -539,6 +570,12 @@ public class OrderServiceImpl implements OrderService {
         if (anyShipped) {
             throw new BusinessException("选中商品中存在已发货项");
         }
+        // 已退款/售后进行中的商品不可发货（确认收货前支持售后后，未发货商品可能已退款）
+        Set<Long> refundedItemIds = selectRefundAfterSaleItemIds(orderNo, List.of(3));
+        Set<Long> processingItemIds = selectRefundAfterSaleItemIds(orderNo, List.of(0, 1, 5, 6));
+        if (toShip.stream().anyMatch(i -> refundedItemIds.contains(i.getId()) || processingItemIds.contains(i.getId()))) {
+            throw new BusinessException("选中商品中存在已退款或售后处理中的商品，不可发货");
+        }
 
         // 3. 创建物流包裹，取回运单号
         ShipRequestDTO shipRequest = new ShipRequestDTO();
@@ -568,10 +605,12 @@ public class OrderServiceImpl implements OrderService {
             orderItemMapper.updateById(item);
         }
 
-        // 5. 根据剩余未发货项重算订单状态
+        // 5. 根据剩余未发货项重算订单状态：已完成退款的商品无需发货不计入待发范围；
+        // 售后进行中的商品结局未定（被拒后仍需发货），仍计入待发，避免订单提前进入待收货后无法补发
         boolean allShipped = allItems.stream()
                 .allMatch(i -> itemIds.contains(i.getId())
-                        || (i.getShipStatus() != null && i.getShipStatus() == 1));
+                        || (i.getShipStatus() != null && i.getShipStatus() == 1)
+                        || refundedItemIds.contains(i.getId()));
         int toStatus = allShipped ? 2 : 7;
         order.setStatus(toStatus);
         if (allShipped) {
@@ -587,6 +626,17 @@ public class OrderServiceImpl implements OrderService {
         log.info("订单发货: orderNo={}, 发货商品数={}, 全部发完={}", orderNo, toShip.size(), allShipped);
     }
 
+    /** 查询订单下处于指定状态的退款类售后（仅退款/退货退款）商品明细 ID 集合 */
+    private Set<Long> selectRefundAfterSaleItemIds(String orderNo, List<Integer> statuses) {
+        return afterSaleMapper.selectList(new LambdaQueryWrapper<AfterSale>()
+                        .eq(AfterSale::getOrderNo, orderNo)
+                        .in(AfterSale::getType, 1, 2)
+                        .in(AfterSale::getStatus, statuses)
+                        .isNotNull(AfterSale::getOrderItemId)).stream()
+                .map(AfterSale::getOrderItemId)
+                .collect(Collectors.toSet());
+    }
+
     @Override
     public java.util.Map<Integer, Integer> getOrderCountsByStatus(Long userId) {
         List<Order> orders = orderMapper.selectList(
@@ -594,23 +644,27 @@ public class OrderServiceImpl implements OrderService {
                         .eq(Order::getUserId, userId)
                         // 仅统计子订单/独立订单，排除仅聚合支付的父订单
                         .eq(Order::getIsParent, 0)
-                        .in(Order::getStatus, 0, 1, 2, 3, 4)
+                        .in(Order::getStatus, 0, 1, 2, 3, 4, 5, 7)
                         .select(Order::getStatus, Order::getReviewed));
 
         java.util.Map<Integer, Integer> counts = new java.util.HashMap<>();
         counts.put(0, 0); // 待付款
         counts.put(1, 0); // 待发货
-        counts.put(2, 0); // 待收货
-        counts.put(3, 0); // 待评价（已完成未评价）
-        counts.put(4, 0); // 已取消
+        counts.put(2, 0); // 待收货（含部分发货）
+        counts.put(3, 0); // 待评价（交易完成未评价）
+        counts.put(4, 0); // 交易关闭
+        counts.put(5, 0); // 退款中
 
         for (Order order : orders) {
             int status = order.getStatus();
             if (status == 3) {
-                // 已完成订单，只有未评价的才算"待评价"
+                // 交易完成订单，只有未评价的才算"待评价"
                 if (order.getReviewed() == null || order.getReviewed() == 0) {
                     counts.put(3, counts.get(3) + 1);
                 }
+            } else if (status == 7) {
+                // 部分发货计入待收货
+                counts.put(2, counts.get(2) + 1);
             } else {
                 counts.put(status, counts.get(status) + 1);
             }
@@ -627,7 +681,63 @@ public class OrderServiceImpl implements OrderService {
         log.info("订单评价状态更新: orderNo={}, reviewed={}", orderNo, reviewed);
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int autoConfirmReceive(int expireDays) {
+        // 扫描已发货(待收货)且发货时间已超过 expireDays 天仍未确认收货的订单，自动确认收货
+        LocalDateTime deadline = LocalDateTime.now().minusDays(expireDays);
+        List<Order> orders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
+                .eq(Order::getIsParent, 0)
+                .eq(Order::getStatus, 2)
+                .isNotNull(Order::getShipTime)
+                .le(Order::getShipTime, deadline));
+        int count = 0;
+        for (Order order : orders) {
+            try {
+                Integer fromStatus = order.getStatus();
+                order.setStatus(3); // 交易完成
+                order.setReceiveTime(LocalDateTime.now());
+                orderMapper.updateById(order);
+                saveStatusLog(order.getId(), fromStatus, 3, "系统", "超时未确认，系统自动确认收货");
+                orderEventProducer.sendOrderStatusChangeEvent(order.getOrderNo(), fromStatus, 3);
+                count++;
+            } catch (Exception e) {
+                log.error("自动确认收货失败: orderNo={}", order.getOrderNo(), e);
+            }
+        }
+        if (count > 0) {
+            log.info("自动确认收货完成: 处理订单数={}", count);
+        }
+        return count;
+    }
+
     // ==================== 私有方法 ====================
+
+    /**
+     * 订单状态机：校验状态流转是否合法。终态为 交易完成(3)、交易关闭(4)。
+     * 0待付款 1待发货 2待收货 3交易完成 4交易关闭 5退款中 7部分发货
+     */
+    private boolean isStatusTransitionAllowed(Integer from, Integer to) {
+        if (from == null || to == null) {
+            return false;
+        }
+        switch (from) {
+            case 0:
+                return to == 1 || to == 4;                 // 待付款 → 待发货(支付) / 交易关闭(取消)
+            case 1:
+                return to == 2 || to == 7 || to == 4 || to == 5; // 待发货 → 待收货 / 部分发货 / 交易关闭(取消或全部退款) / 退款中
+            case 7:
+                return to == 2 || to == 5 || to == 4;      // 部分发货 → 待收货 / 退款中 / 交易关闭(全部退款)
+            case 2:
+                return to == 3 || to == 5 || to == 4;      // 待收货 → 交易完成 / 退款中 / 交易关闭(全部退款)
+            case 3:
+                return to == 5;                            // 交易完成 → 退款中(售后退款)
+            case 5:
+                return to == 4 || to == 3;                 // 退款中 → 交易关闭(退款成功) / 交易完成(售后被拒绝或撤销回退)
+            default:
+                return false;                              // 交易关闭(4) 为终态
+        }
+    }
 
     private Order getOrderByNo(String orderNo) {
         Order order = orderMapper.selectOne(
@@ -695,6 +805,57 @@ public class OrderServiceImpl implements OrderService {
             }
         } catch (Exception e) {
             log.warn("回填订单店铺名称失败: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 批量回填订单关联的退款类售后摘要（仅退款/退货退款），供 C 端渲染退款明细入口与寄回入口。
+     * 商品级售后按 order_item_id 匹配到每条明细（各取最新一条）；
+     * 订单级三字段仅由历史 order_item_id 为空的售后填充（兼容订单级退款明细入口）。
+     */
+    private void fillAfterSaleSummary(List<OrderDetailDTO> dtoList) {
+        if (dtoList == null || dtoList.isEmpty()) {
+            return;
+        }
+        List<String> orderNos = dtoList.stream()
+                .map(OrderDetailDTO::getOrderNo)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (orderNos.isEmpty()) {
+            return;
+        }
+        List<AfterSale> list = afterSaleMapper.selectList(new LambdaQueryWrapper<AfterSale>()
+                .in(AfterSale::getOrderNo, orderNos)
+                .in(AfterSale::getType, 1, 2)
+                .orderByDesc(AfterSale::getCreatedAt));
+        // 已按创建时间倒序，putIfAbsent 首个即最新
+        java.util.Map<String, AfterSale> latestOrderLevel = new java.util.HashMap<>();
+        java.util.Map<Long, AfterSale> latestByItem = new java.util.HashMap<>();
+        for (AfterSale as : list) {
+            if (as.getOrderItemId() == null) {
+                latestOrderLevel.putIfAbsent(as.getOrderNo(), as);
+            } else {
+                latestByItem.putIfAbsent(as.getOrderItemId(), as);
+            }
+        }
+        for (OrderDetailDTO dto : dtoList) {
+            AfterSale as = latestOrderLevel.get(dto.getOrderNo());
+            if (as != null) {
+                dto.setAfterSaleId(as.getId());
+                dto.setAfterSaleStatus(as.getStatus());
+                dto.setAfterSaleType(as.getType());
+            }
+            if (dto.getItems() != null) {
+                for (OrderDetailDTO.OrderItemDTO item : dto.getItems()) {
+                    AfterSale ia = latestByItem.get(item.getId());
+                    if (ia != null) {
+                        item.setAfterSaleId(ia.getId());
+                        item.setAfterSaleStatus(ia.getStatus());
+                        item.setAfterSaleType(ia.getType());
+                    }
+                }
+            }
         }
     }
 }

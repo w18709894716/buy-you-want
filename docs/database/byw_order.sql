@@ -14,7 +14,7 @@ CREATE TABLE t_order (
     freight_amount DECIMAL(10,2) DEFAULT 0.00,
     discount_amount DECIMAL(10,2) DEFAULT 0.00,
     coupon_id BIGINT,
-    status TINYINT NOT NULL DEFAULT 0 COMMENT '0待付款 1待发货 2待收货 3已完成 4已取消 5退款中 6已退款 7部分发货',
+    status TINYINT NOT NULL DEFAULT 0 COMMENT '0待付款 1待发货 2待收货 3交易完成 4交易关闭 5退款中 7部分发货',
     receiver_name VARCHAR(50),
     receiver_phone VARCHAR(20),
     receiver_address VARCHAR(300),
@@ -24,6 +24,7 @@ CREATE TABLE t_order (
     receive_time DATETIME,
     cancel_time DATETIME,
     cancel_reason VARCHAR(200),
+    close_type TINYINT COMMENT '关闭类型 null未关闭 1取消关闭 2退款关闭',
     reviewed TINYINT DEFAULT 0 COMMENT '是否已评价 0未评价 1已评价',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -71,7 +72,40 @@ CREATE TABLE t_order_status_log (
     INDEX idx_order_id (order_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+DROP TABLE IF EXISTS t_after_sale;
+CREATE TABLE t_after_sale (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    after_sale_no VARCHAR(64) NOT NULL UNIQUE COMMENT '售后单号',
+    order_no VARCHAR(64) NOT NULL COMMENT '关联订单号',
+    order_item_id BIGINT COMMENT '关联订单明细ID(NULL=历史订单级售后)',
+    product_name VARCHAR(200) COMMENT '商品名称快照',
+    sku_name VARCHAR(200) COMMENT 'SKU规格快照',
+    product_image VARCHAR(500) COMMENT '商品图片快照',
+    user_id BIGINT NOT NULL,
+    shop_id BIGINT NOT NULL DEFAULT 1 COMMENT '归属店铺ID',
+    type TINYINT NOT NULL COMMENT '售后类型 1仅退款 2退货退款 3换货 4维修 5补寄 6价保',
+    reason VARCHAR(200) COMMENT '申请原因',
+    description VARCHAR(500) COMMENT '问题描述',
+    refund_amount DECIMAL(10,2) COMMENT '申请退款金额(仅退款/退货退款/价保时有值)',
+    status TINYINT NOT NULL DEFAULT 0 COMMENT '售后状态 0待审核 1待买家寄回 2已拒绝 3已完成 4已撤销 5待商家收货 6退款中',
+    reject_reason VARCHAR(200) COMMENT '拒绝原因',
+    approve_time DATETIME COMMENT '审核通过时间',
+    return_company VARCHAR(50) COMMENT '买家寄回物流公司',
+    return_tracking_no VARCHAR(64) COMMENT '买家寄回运单号',
+    return_ship_time DATETIME COMMENT '买家寄回时间',
+    receive_time DATETIME COMMENT '商家确认收货时间',
+    finish_time DATETIME COMMENT '完成时间',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted TINYINT DEFAULT 0,
+    INDEX idx_order_no (order_no),
+    INDEX idx_order_item_id (order_item_id),
+    INDEX idx_user_id (user_id),
+    INDEX idx_shop_id (shop_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- ========== 清空数据 ==========
+TRUNCATE TABLE t_after_sale;
 TRUNCATE TABLE t_order_status_log;
 TRUNCATE TABLE t_order_item;
 TRUNCATE TABLE t_order;

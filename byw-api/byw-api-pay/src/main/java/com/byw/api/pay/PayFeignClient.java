@@ -1,6 +1,7 @@
 package com.byw.api.pay;
 
 import com.byw.api.pay.dto.PayOrderDTO;
+import com.byw.api.pay.dto.RefundInfoDTO;
 import com.byw.common.core.result.R;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.*;
@@ -21,4 +22,7 @@ public interface PayFeignClient {
     R<Boolean> refund(@RequestParam("orderNo") String orderNo,
                       @RequestParam("amount") java.math.BigDecimal amount,
                       @RequestParam("reason") String reason);
+
+    @GetMapping("/feign/pay/refund-detail")
+    R<RefundInfoDTO> getRefundByOrderNo(@RequestParam("orderNo") String orderNo);
 }

@@ -238,20 +238,12 @@
                 <label class="block text-sm text-gray-600 mb-1">手机号</label>
                 <input v-model="addrForm.receiverPhone" class="w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:border-primary" placeholder="请输入手机号" />
               </div>
-              <div class="grid grid-cols-3 gap-2">
-                <div>
-                  <label class="block text-sm text-gray-600 mb-1">省</label>
-                  <input v-model="addrForm.province" class="w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:border-primary" placeholder="省" />
-                </div>
-                <div>
-                  <label class="block text-sm text-gray-600 mb-1">市</label>
-                  <input v-model="addrForm.city" class="w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:border-primary" placeholder="市" />
-                </div>
-                <div>
-                  <label class="block text-sm text-gray-600 mb-1">区</label>
-                  <input v-model="addrForm.district" class="w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:border-primary" placeholder="区" />
-                </div>
-              </div>
+              <!-- 省市区三级联动下拉 -->
+              <RegionPicker
+                v-model:province="addrForm.province"
+                v-model:city="addrForm.city"
+                v-model:district="addrForm.district"
+              />
               <div>
                 <label class="block text-sm text-gray-600 mb-1">详细地址</label>
                 <input v-model="addrForm.detailAddress" class="w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:border-primary" placeholder="街道、楼牌号等" />
@@ -366,6 +358,10 @@ const saveAddress = async () => {
     showToast('请填写完整信息', 'error')
     return
   }
+  if (!addrForm.value.province || !addrForm.value.city || !addrForm.value.district) {
+    showToast('请选择省市区', 'error')
+    return
+  }
   try {
     const data = { ...addrForm.value, isDefault: addrIsDefault.value ? 1 : 0 }
     if (editingAddr.value) {
@@ -462,7 +458,8 @@ const statusClass = (card: SeckillCard) =>
 
 const handleSeckill = async (card: SeckillCard) => {
   if (!userStore.isLoggedIn) {
-    navigateTo('/login')
+    // 未登录：原地弹出登录框，不跳转登录页
+    useLoginModal().openLoginModal()
     return
   }
   // 确保地址列表已加载，开启确认弹框选择收货地址

@@ -94,20 +94,12 @@
               <label class="block text-sm text-gray-600 mb-1">手机号</label>
               <input v-model="form.receiverPhone" class="w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:border-primary" placeholder="请输入手机号" />
             </div>
-            <div class="grid grid-cols-3 gap-2">
-              <div>
-                <label class="block text-sm text-gray-600 mb-1">省</label>
-                <input v-model="form.province" class="w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:border-primary" placeholder="省" />
-              </div>
-              <div>
-                <label class="block text-sm text-gray-600 mb-1">市</label>
-                <input v-model="form.city" class="w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:border-primary" placeholder="市" />
-              </div>
-              <div>
-                <label class="block text-sm text-gray-600 mb-1">区</label>
-                <input v-model="form.district" class="w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:border-primary" placeholder="区" />
-              </div>
-            </div>
+            <!-- 省市区三级联动下拉 -->
+            <RegionPicker
+              v-model:province="form.province"
+              v-model:city="form.city"
+              v-model:district="form.district"
+            />
             <div>
               <label class="block text-sm text-gray-600 mb-1">详细地址</label>
               <input v-model="form.detailAddress" class="w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:border-primary" placeholder="街道、楼牌号等" />
@@ -220,6 +212,10 @@ function openForm(addr: any) {
 async function saveAddress() {
   if (!form.value.receiverName || !form.value.receiverPhone || !form.value.detailAddress) {
     showToast('请填写完整信息', 'error')
+    return
+  }
+  if (!form.value.province || !form.value.city || !form.value.district) {
+    showToast('请选择省市区', 'error')
     return
   }
   try {

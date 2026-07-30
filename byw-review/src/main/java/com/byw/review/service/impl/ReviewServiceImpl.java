@@ -3,6 +3,7 @@ package com.byw.review.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byw.api.order.OrderFeignClient;
+import com.byw.api.order.dto.OrderDetailDTO;
 import com.byw.api.product.ProductFeignClient;
 import com.byw.api.product.dto.ProductDTO;
 import com.byw.api.review.dto.ReviewStatsDTO;
@@ -36,6 +37,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -57,6 +60,10 @@ public class ReviewServiceImpl implements ReviewService {
         // 1. 检查是否已评价
         if (reviewExists(reviewDetail.getOrderId())) {
             throw new BusinessException("该订单已评价");
+        }
+        // 退款成功的商品交易未完成，不可评价
+        if (getRefundedSkuIds(reviewDetail.getOrderId()).contains(reviewDetail.getSkuId())) {
+            throw new BusinessException("已退款的商品不可评价");
         }
 
         // 2. 保存到MySQL
@@ -243,6 +250,26 @@ public class ReviewServiceImpl implements ReviewService {
     public boolean reviewExists(String orderNo) {
         return reviewMapper.selectCount(
                 new LambdaQueryWrapper<Review>().eq(Review::getOrderNo, orderNo)) > 0;
+    }
+
+    /** 查询订单中已完成退款（仅退款/退货退款）的商品 skuId 集合；订单服务异常时不阻断评价主流程 */
+    private Set<Long> getRefundedSkuIds(String orderNo) {
+        try {
+            R<OrderDetailDTO> resp = orderFeignClient.getOrderDetail(orderNo);
+            if (resp == null || !resp.isSuccess() || resp.getData() == null || resp.getData().getItems() == null) {
+                return Collections.emptySet();
+            }
+            return resp.getData().getItems().stream()
+                    .filter(i -> i.getAfterSaleStatus() != null && i.getAfterSaleStatus() == 3
+                            && i.getAfterSaleType() != null
+                            && (i.getAfterSaleType() == 1 || i.getAfterSaleType() == 2))
+                    .map(OrderDetailDTO.OrderItemDTO::getSkuId)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet());
+        } catch (Exception e) {
+            log.warn("查询订单已退款商品失败: orderNo={}, error={}", orderNo, e.getMessage());
+            return Collections.emptySet();
+        }
     }
 
     @Override
@@ -453,6 +480,11 @@ public class ReviewServiceImpl implements ReviewService {
         // 1. 检查是否已评价
         if (reviewExists(orderNo)) {
             throw new BusinessException("该订单已评价");
+        }
+        // 退款成功的商品交易未完成，不可评价（前端已过滤，此处防绕过接口直接提交）
+        Set<Long> refundedSkuIds = getRefundedSkuIds(orderNo);
+        if (reviewDetails.stream().anyMatch(d -> refundedSkuIds.contains(d.getSkuId()))) {
+            throw new BusinessException("提交的商品中包含已退款商品，不可评价");
         }
 
         // 同单内相同商品仅反查一次归属店铺

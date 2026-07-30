@@ -127,8 +127,8 @@ const statusMap: Record<number, { label: string; type: string }> = {
   0: { label: '待付款', type: 'info' },
   1: { label: '待发货', type: 'warning' },
   2: { label: '已发货', type: 'primary' },
-  3: { label: '已完成', type: 'success' },
-  4: { label: '已取消', type: 'danger' },
+  3: { label: '交易完成', type: 'success' },
+  4: { label: '交易关闭', type: 'danger' },
   7: { label: '部分发货', type: 'warning' }
 }
 
@@ -140,8 +140,8 @@ const statusOptions = [
   { label: '待付款', value: 0 },
   { label: '待发货', value: 1 },
   { label: '已发货', value: 2 },
-  { label: '已完成', value: 3 },
-  { label: '已取消', value: 4 },
+  { label: '交易完成', value: 3 },
+  { label: '交易关闭', value: 4 },
   { label: '部分发货', value: 7 }
 ]
 

@@ -34,6 +34,14 @@ public class OrderDetailDTO implements Serializable {
     private LocalDateTime shipTime;
     private LocalDateTime receiveTime;
     private LocalDateTime createdAt;
+    /** 关闭类型 null未关闭 1取消关闭 2退款关闭 */
+    private Integer closeType;
+    /** 关联退款类售后单ID（无则为空） */
+    private Long afterSaleId;
+    /** 退款类售后状态 0待审核 1待买家寄回 2已拒绝 3已完成 4已撤销 5待商家收货 6退款中 */
+    private Integer afterSaleStatus;
+    /** 退款类售后类型 1仅退款 2退货退款 */
+    private Integer afterSaleType;
     private List<OrderItemDTO> items;
 
     @Data
@@ -53,5 +61,11 @@ public class OrderDetailDTO implements Serializable {
         private String trackingNo;
         private String companyName;
         private LocalDateTime shipTime;
+        /** 该商品最新退款类售后单ID（无则为空） */
+        private Long afterSaleId;
+        /** 该商品退款类售后状态 0待审核 1待买家寄回 2已拒绝 3已完成 4已撤销 5待商家收货 6退款中 */
+        private Integer afterSaleStatus;
+        /** 该商品退款类售后类型 1仅退款 2退货退款 */
+        private Integer afterSaleType;
     }
 }

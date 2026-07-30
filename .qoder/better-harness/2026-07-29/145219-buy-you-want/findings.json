@@ -1,0 +1,181 @@
+{
+  "summary": {
+    "projectName": "buy-you-want",
+    "locale": "zh-CN",
+    "modelId": "agent-work-loop-v4",
+    "reportContractVersion": 25,
+    "overview": "核心资金链路（售后退款）正以约 2118 行未提交变更的形式演进，但全仓没有任何测试或门禁承接验证，跨服务退款失败路径被静默吞掉且无补偿；同时会话与 Memory 证据通道存在盲区，学习循环状态不可复核。",
+    "aiAgentPractice": {
+      "inspectedSurfaces": [],
+      "coverageRows": [
+        {
+          "surface": "Rules",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Skills",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "MCP",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Custom Agents",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Hooks",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Commands",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Plugins",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        }
+      ]
+    },
+    "assignmentSummaries": [],
+    "dimensions": [
+      {
+        "id": "task-understanding",
+        "label": "任务理解",
+        "score": 56,
+        "summary": "docs/ 文档树与 .qoder/specs 规格文档存在且近期活跃，但仓库无 AGENTS.md 等面向代理的任务入口，核心边界只能靠工具推断；本窗口无可重建的任务片段，行为证据不可观测。",
+        "findingRefs": []
+      },
+      {
+        "id": "controlled-execution",
+        "label": "可控执行",
+        "score": 55,
+        "summary": "启动文档（docs/start）与 40 余份构建清单持续维护，前端有 dev/build 脚本；但可运行性未经执行验证，Java 侧无 doctor/reset 等一键路径，权限与操作边界无观察记录。",
+        "findingRefs": []
+      },
+      {
+        "id": "change-validation",
+        "label": "改动验证",
+        "score": 30,
+        "summary": "全仓 0 测试文件（Java 与 TypeScript 均经 glob 复核确认），无 lint/type 门禁配置；当前核心变更没有任何相关验证路径，唯一机械化验证层是编译。",
+        "findingRefs": [
+          "core-refund-change-no-verification"
+        ]
+      },
+      {
+        "id": "reliable-delivery",
+        "label": "可靠交付",
+        "score": 32,
+        "summary": "2118 行核心变更悬挂在未提交工作区，无 CI、评审或验收边界证据；退款副作用的回写失败路径缺少补偿与恢复归属。仓库外验收流程未观测（UNVERIFIED）。",
+        "findingRefs": [
+          "refund-writeback-swallowed-no-compensation",
+          "uncommitted-core-change-no-acceptance-boundary"
+        ]
+      },
+      {
+        "id": "learning-capture",
+        "label": "经验沉淀",
+        "score": 38,
+        "summary": "本窗口 18 个符合会话无一可重建任务片段，Memory 完整性复核覆盖为 0，重复工作与学习循环判定被证据盲区阻断；已配置资产计数不构成任何学习证据。",
+        "findingRefs": [
+          "session-evidence-collection-blind-spot",
+          "memory-integrity-review-zero-coverage"
+        ]
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "core-refund-change-no-verification",
+      "title": "售后退款核心变更没有任何可执行的验证手段",
+      "severity": "High",
+      "reason": "事实：全仓 0 测试文件（Java src/test 与 TS *.spec/*.test 均经 glob 复核为 0），无 CI、checkstyle、git hooks 配置；当前未提交变更 32 文件 +2118 行落在售后/订单/支付 20 个推断核心文件上，引入全新售后状态机（7 状态 × 6 类型）与跨服务退款 Feign 调用。推断：退款金额校验、状态回退等分支只能靠人工端到端回归。不确定：人工验证是否发生过、是否充分为 UNVERIFIED。所有者：byw-order（AfterSaleServiceImpl/OrderServiceImpl）与 byw-pay（PayServiceImpl.refund）。",
+      "expectedOutput": [
+        "售后状态机与退款金额校验获得可重复执行的最小验证路径，后续变更可机械化回归而非依赖人工点测。"
+      ],
+      "expectedArtifact": "聚焦单元测试",
+      "aiFixPrompt": "/better-harness fix this issue\n\n为售后退款核心链路补充最小的项目内验证路径：在 byw-order 与 byw-pay 模块的 src/test/java 下，为 AfterSaleServiceImpl 的申请/审核/退款状态流转分支和 PayServiceImpl.refund 的退款金额边界编写聚焦单元测试，不改变任何现有生产行为。\n\n## Validation\n\n- 运行 mvn -pl byw-order,byw-pay test，确认新增测试被执行且通过\n- 确认测试至少覆盖：非法状态流转被拒绝、退款金额超限被拒绝两类失败分支",
+      "dimensionRefs": [
+        "change-validation"
+      ]
+    },
+    {
+      "id": "refund-writeback-swallowed-no-compensation",
+      "title": "跨服务退款回写失败被静默吞掉，缺少补偿路径与关联标识",
+      "severity": "Medium",
+      "reason": "事实：PayServiceImpl.refund 在 @Transactional 内完成退款后经 Feign 回写订单状态，两处回写失败被 try/catch 吞掉仅 log.warn；AfterSaleServiceImpl.doRefund 在本地事务内发起远程退款，本地回滚不会回滚远程退款；全仓 grep 无 traceId/MDC 关联标识。推断：可能出现支付侧已退款、订单永久停留在退款中的静默不一致，且排查只能靠业务键手工串多服务日志。不确定：运行时是否实际发生为 UNVERIFIED；OrderScheduler 是否已承担对账补偿未通读确认。所有者：byw-pay/PayServiceImpl 与 byw-order/AfterSaleServiceImpl、OrderScheduler。",
+      "expectedOutput": [
+        "退款副作用获得有归属的恢复路径：回写失败不再静默丢失，订单终态可收敛且失败可通过业务键定位。"
+      ],
+      "expectedArtifact": "补偿对账路径",
+      "aiFixPrompt": "/better-harness fix this issue\n\n先通读 byw-order/src/main/java/com/byw/order/task/OrderScheduler.java，确认是否已存在退款中订单的对账补偿任务。若无：为 PayServiceImpl.refund 的订单状态回写失败路径增加最小补偿——记录待回写状态并由现有调度任务重试收敛，同时保持现有事务边界不变；退款链路日志统一携带 orderNo/afterSaleNo 业务键。\n\n## Validation\n\n- 本地模拟回写 Feign 调用失败，确认订单状态最终收敛而非永久停留在退款中\n- 复核补偿任务的重试有终止条件，不会无限重试",
+      "dimensionRefs": [
+        "reliable-delivery"
+      ]
+    },
+    {
+      "id": "uncommitted-core-change-no-acceptance-boundary",
+      "title": "2118 行核心变更长期悬挂在工作区，无提交与验收边界",
+      "severity": "Medium",
+      "reason": "事实：git status/diff 复核 32 文件 +2118/-46 横跨 4 个后端服务与 3 个前端应用，另有未跟踪的 docs/database/migration_pay_order_backfill.sql 数据回填脚本；上次提交为 07-28，近 7 天提交信息多为粗粒度描述，无分支/PR/评审证据。推断：无法回滚到中间点、无法评审，未跟踪的迁移 SQL 有丢失风险且与代码版本无绑定；在此之上继续改动会扩大不可恢复面。不确定：是否存在仓库外评审/发布流程为 UNVERIFIED。所有者：仓库 git 工作流约定与本次变更的 20 个核心文件。",
+      "expectedOutput": [
+        "核心变更获得明确的版本与验收边界：迁移脚本与代码版本绑定，任意中间点可回滚，可评审可追溯。"
+      ],
+      "expectedArtifact": "可评审的提交序列",
+      "aiFixPrompt": "/better-harness fix this issue\n\n将当前悬挂的售后功能变更整理为可评审的提交序列：把 docs/database/migration_pay_order_backfill.sql 纳入版本跟踪，按后端服务与前端应用的模块边界切分提交，提交信息注明各自的功能范围与验收方式。提交前先与用户确认切分方案。\n\n## Validation\n\n- git status 显示工作区干净、无未跟踪的迁移脚本\n- git log 可见按模块切分、信息可追溯的提交序列",
+      "dimensionRefs": [
+        "reliable-delivery"
+      ]
+    },
+    {
+      "id": "session-evidence-collection-blind-spot",
+      "title": "18 个符合会话无一可重建任务片段，会话证据通道存在采集盲区",
+      "severity": "Low",
+      "reason": "事实：会话事实信封显示 18 个符合会话全部入选却产生 0 个候选片段，其中 17 个以 noRequest 被排除，并伴随 disabled-source-root 与 missing-optional-root 警告；changes/checks/result/friction 信号计数全部为 0。推断：本窗口无法验证任何重复工作流、验证循环或 Memory 价值链，基于会话的学习循环判定被完全阻断。不确定：成因是会话本身无用户请求还是采集管线失效，现有证据不可判定；缺失是证据不可得，不能推断为零活动。所有者：Qoder 会话源根配置。",
+      "expectedOutput": [
+        "会话证据通道恢复可观测：后续评审窗口能够重建任务片段，重复工作与学习循环判定不再被采集盲区阻断。"
+      ],
+      "expectedArtifact": "会话源根诊断结论",
+      "aiFixPrompt": "/better-harness fix this issue\n\n诊断会话证据采集盲区：检查 Qoder 会话源根状态（本次警告为 disabled-source-root 与 missing-optional-root），确认被禁用或缺失的源根是否应启用；不要读取原始会话正文。修复配置后在下一个观察窗口复跑 session-analysis facts，确认候选片段可重建。\n\n## Validation\n\n- 复跑 session-analysis facts 后 candidateEpisodes 大于 0 或 noRequest 占比显著下降\n- 警告码中不再出现 disabled-source-root",
+      "dimensionRefs": [
+        "learning-capture"
+      ]
+    },
+    {
+      "id": "memory-integrity-review-zero-coverage",
+      "title": "项目 Memory 完整性复核覆盖为 0，治理状态不可确认",
+      "severity": "Low",
+      "reason": "事实：同一次资产基线中，清单信封报告项目 Memory 汇总计数为 2 且 included=true，但同信封 titleCount=0，完整性复核 reviewedTitleCount=0 且 truncated=false——存在的 Memory 未进入授权的标题级完整性通道。推断：标题碰撞、相似与过期候选无法排除，Memory 表面处于存在但未观测状态，不得被称为干净。不确定：不一致成因（计数口径差异或工具缺陷）不可判定；本次未读取任何 Memory 标题或正文。所有者：资产基线的 Memory 复核通道。",
+      "expectedOutput": [
+        "Memory 表面从存在但未观测转为有界已复核：碰撞与过期候选获得明确处置，学习捕获评审不再受该盲区影响。"
+      ],
+      "expectedArtifact": "Memory 元数据复核结论",
+      "aiFixPrompt": "/better-harness fix this issue\n\n复核 Memory 完整性覆盖缺口：重跑 coding-agent-practices asset-baseline qoder --include-memories 并核对清单计数与完整性 titleCount 的口径差异；若确认存在未被复核的项目 Memory，通过 SearchMemory 路由做有界的标题级元数据复核，仅报告碰撞/相似/过期候选，不读取 Memory 正文，合并或删除需另行授权。\n\n## Validation\n\n- 基线信封中清单 Memory 计数与完整性 reviewedTitleCount 口径一致或差异获得明确解释\n- 存量 Memory 获得有界的标题级处置结论（confirmed / metadata lead / unobserved / deferred）",
+      "dimensionRefs": [
+        "learning-capture"
+      ]
+    }
+  ]
+}
