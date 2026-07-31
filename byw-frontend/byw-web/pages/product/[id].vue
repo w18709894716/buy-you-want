@@ -81,25 +81,37 @@
 
     <!-- 商品详情主体 -->
     <div class="bg-white rounded-lg p-4 sm:p-6 relative">
-      <!-- 收藏按钮（卡片右上角） -->
-      <button
-        class="absolute top-4 right-4 z-10 w-10 h-10 rounded-full border flex items-center justify-center transition-colors"
-        :class="favorited ? 'border-primary text-primary bg-primary-50' : 'border-gray-200 text-gray-400 bg-white hover:border-primary hover:text-primary'"
-        :aria-label="favorited ? '取消收藏' : '收藏'"
-        :title="favorited ? '已收藏' : '收藏'"
-        @click="onToggleFavorite"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          class="h-5 w-5"
-          :fill="favorited ? 'currentColor' : 'none'"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          stroke-width="2"
+      <!-- 右上角操作：客服 + 收藏（客服在收藏左侧） -->
+      <div class="absolute top-4 right-4 z-10 flex items-center gap-2">
+        <button
+          class="w-10 h-10 rounded-full border border-gray-200 text-green-500 bg-white hover:border-green-500 hover:text-green-600 flex items-center justify-center transition-colors"
+          aria-label="联系客服"
+          title="联系客服"
+          @click="handleContact"
         >
-          <path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-        </svg>
-      </button>
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 3C6.48 3 2 6.94 2 11.5c0 2.3 1.16 4.37 3.03 5.86-.13 1.03-.5 2.3-1.2 3.4-.16.25.05.58.34.5 1.85-.5 3.2-1.2 4.02-1.74.86.2 1.77.32 2.71.32 5.52 0 10-3.94 10-8.5S17.52 3 12 3z" />
+          </svg>
+        </button>
+        <button
+          class="w-10 h-10 rounded-full border flex items-center justify-center transition-colors"
+          :class="favorited ? 'border-primary text-primary bg-primary-50' : 'border-gray-200 text-gray-400 bg-white hover:border-primary hover:text-primary'"
+          :aria-label="favorited ? '取消收藏' : '收藏'"
+          :title="favorited ? '已收藏' : '收藏'"
+          @click="onToggleFavorite"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-5 w-5"
+            :fill="favorited ? 'currentColor' : 'none'"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+          </svg>
+        </button>
+      </div>
       <div class="flex flex-col md:flex-row gap-6 md:gap-8">
         <!-- 左侧图片画廊 -->
         <div class="w-full md:w-96 md:flex-shrink-0">
@@ -296,10 +308,12 @@
 import { get, post } from '~/utils/request'
 import { useCartStore } from '~/stores/cart'
 import { useUserStore } from '~/stores/user'
+import { useImStore } from '~/stores/im'
 
 const route = useRoute()
 const cartStore = useCartStore()
 const userStore = useUserStore()
+const imStore = useImStore()
 const { openLoginModal } = useLoginModal()
 const productId = computed(() => Number(route.params.id))
 
@@ -520,6 +534,27 @@ const claimShopCoupon = async (coupon: any) => {
 
 function closeShopCouponModal() {
   showShopCouponModal.value = false
+}
+
+// 联系客服：携带当前商品卡片发起会话
+function handleContact() {
+  if (!userStore.isLoggedIn) {
+    openLoginModal()
+    return
+  }
+  imStore.startWithContext({
+    shopId: product.shopId,
+    shopName: product.shopName,
+    card: {
+      type: 'product_card',
+      extra: {
+        productId: product.id,
+        name: product.title,
+        image: product.images[0],
+        price: product.price,
+      },
+    },
+  })
 }
 
 async function handleAddToCart() {

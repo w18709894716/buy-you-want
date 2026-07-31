@@ -35,6 +35,17 @@
           <el-menu-item index="/order/after-sale">售后管理</el-menu-item>
         </el-sub-menu>
 
+        <el-menu-item index="/im">
+          <!-- 折叠态仅剩图标：用小红点提示；展开态未读数放标题右侧，避免遮挡文字 -->
+          <el-badge :hidden="!imUnread || !isCollapse" is-dot class="im-menu-badge">
+            <el-icon><Service /></el-icon>
+          </el-badge>
+          <template #title>
+            <span>客服工作台</span>
+            <span v-if="imUnread" class="im-unread-pill">{{ imUnread > 99 ? '99+' : imUnread }}</span>
+          </template>
+        </el-menu-item>
+
         <el-sub-menu index="promotion">
           <template #title>
             <el-icon><Present /></el-icon>
@@ -108,9 +119,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '../stores/user'
+import request from '../utils/request'
+import { connectIm, disconnectIm, addFrameHandler, removeFrameHandler } from '../utils/imSocket'
 
 const route = useRoute()
 const router = useRouter()
@@ -118,6 +131,42 @@ const userStore = useUserStore()
 
 const isCollapse = ref(false)
 const currentRoute = computed(() => route.path)
+
+// ===== 全局客服未读角标（跨页面可见）=====
+// 连接在布局层接管，离开客服页也保持长连接，据下推帧刷新未读总数（后端为准，避免本地漂移）
+const imUnread = ref(0)
+let unreadTimer: ReturnType<typeof setTimeout> | null = null
+
+async function loadImUnread() {
+  try {
+    const total: any = await request.get('/im/unread-total')
+    imUnread.value = Number(total) || 0
+  } catch { /* ignore */ }
+}
+
+function scheduleReloadUnread() {
+  if (unreadTimer) return
+  unreadTimer = setTimeout(() => { unreadTimer = null; loadImUnread() }, 500)
+}
+
+function onImFrame(frame: Record<string, any>) {
+  // 收到新消息或已读回执时，以后端未读总数为准重新同步角标
+  if (frame?.action === 'message' || frame?.action === 'read') scheduleReloadUnread()
+}
+
+onMounted(() => {
+  if (userStore.token) {
+    connectIm()
+    addFrameHandler(onImFrame)
+    loadImUnread()
+  }
+})
+
+onUnmounted(() => {
+  removeFrameHandler(onImFrame)
+  if (unreadTimer) { clearTimeout(unreadTimer); unreadTimer = null }
+  disconnectIm()
+})
 
 const toggleCollapse = () => {
   isCollapse.value = !isCollapse.value
@@ -182,6 +231,31 @@ const handleCommand = (command: string) => {
       background-color: var(--el-color-primary-light-9);
       color: var(--el-color-primary);
       font-weight: 500;
+    }
+
+    // 客服菜单未读角标：保持图标与标题的原有对齐（包裹 el-icon 后仍需 margin-right）
+    .im-menu-badge {
+      line-height: 1;
+      :deep(.el-icon) {
+        margin-right: 5px;
+        vertical-align: middle;
+      }
+    }
+
+    // 展开态未读数胶囊：跟在标题文字右侧，不遮挡菜单文字
+    .im-unread-pill {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 0 5px;
+      min-width: 16px;
+      height: 16px;
+      line-height: 16px;
+      border-radius: 8px;
+      background-color: var(--el-color-danger);
+      color: #fff;
+      font-size: 11px;
+      text-align: center;
+      vertical-align: middle;
     }
 
     &.el-menu--collapse {

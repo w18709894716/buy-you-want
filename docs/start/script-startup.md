@@ -206,6 +206,7 @@ python docs/scripts/stop_all.py
 | byw-shop | 8092 | 店铺服务 |
 | byw-merchant | 8093 | 商家端 BFF |
 | byw-settle | 8094 | 结算分账服务 |
+| byw-im | 8095 | 客服聊天 IM 服务 |
 | byw-web | 3000 | 用户端前端 |
 | byw-admin-web | 5174 | 管理端前端 |
 | byw-merchant-web | 5175 | 商家端前端 |

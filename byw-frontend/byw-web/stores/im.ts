@@ -1,0 +1,299 @@
+import { defineStore } from 'pinia'
+import { connectIm, disconnectIm, sendFrame, sendOrReconnect, markActivity, setFrameHandler } from '~/composables/useImSocket'
+
+export interface ImMessage {
+  id?: string
+  conversationId: number
+  senderId?: number
+  senderRole: string // user | merchant
+  shopId?: number
+  userId?: number
+  type: string // text | image | product_card | order_card
+  content?: string
+  extra?: Record<string, any>
+  read?: boolean
+  createdAt?: string
+  _local?: boolean
+}
+
+export interface ImConversation {
+  id: number
+  userId: number
+  shopId: number
+  shopName?: string
+  lastMessage?: string
+  lastMessageType?: string
+  lastMessageTime?: string
+  unread?: number
+}
+
+interface ImState {
+  open: boolean
+  inited: boolean
+  conversations: ImConversation[]
+  activeId: number | null
+  messages: ImMessage[]
+  unreadTotal: number
+  peerTyping: boolean
+  loadingMessages: boolean
+  /** 待确认发送的商品/订单卡片：进入会话不自动发送，需用户点“发送”确认 */
+  pendingCard: { type: string; extra: Record<string, any> } | null
+}
+
+let typingTimer: any = null
+
+export const useImStore = defineStore('im', {
+  state: (): ImState => ({
+    open: false,
+    inited: false,
+    conversations: [],
+    activeId: null,
+    messages: [],
+    unreadTotal: 0,
+    peerTyping: false,
+    loadingMessages: false,
+    pendingCard: null,
+  }),
+
+  getters: {
+    activeConversation: (state): ImConversation | undefined =>
+      state.conversations.find(c => c.id === state.activeId),
+  },
+
+  actions: {
+    /** 登录后初始化：建立 WS、注册收帧、拉取未读总数 */
+    init() {
+      if (import.meta.server || this.inited) return
+      const userStore = useUserStore()
+      if (!userStore.isLoggedIn) return
+      this.inited = true
+      setFrameHandler((frame) => this.onFrame(frame))
+      connectIm()
+      this.loadUnreadTotal()
+    },
+
+    /** 退出登录：断开并清空 */
+    teardown() {
+      disconnectIm()
+      this.$reset()
+    },
+
+    togglePanel() {
+      this.open ? this.closePanel() : this.openPanel()
+    },
+
+    openPanel() {
+      this.init()
+      // 面板可能在空闲超时断开后重新打开，此处确保重连（connectIm 幂等）
+      connectIm()
+      this.open = true
+      this.loadConversations()
+      // 面板重新打开时，若已有活动会话：容器重建会丢失滚动位置（回到顶部），
+      // 且断线期间可能漏收消息。重新拉取该会话消息，既补齐遗漏又触发 loadingMessages 监听自动滚到底部
+      if (this.activeId) this.selectConversation(this.activeId)
+    },
+
+    closePanel() {
+      this.open = false
+      this.pendingCard = null
+    },
+
+    async loadUnreadTotal() {
+      try {
+        this.unreadTotal = await get<number>('/im/unread-total')
+      } catch { /* ignore */ }
+    },
+
+    async loadConversations() {
+      try {
+        const list = await get<ImConversation[]>('/im/conversations')
+        this.conversations = list || []
+      } catch { /* ignore */ }
+    },
+
+    async loadMessages(conversationId: number) {
+      this.loadingMessages = true
+      try {
+        const page = await get<any>('/im/messages', { conversationId, page: 1, pageSize: 50 })
+        // 后端按时间倒序返回，前端展示需正序
+        const fetched: ImMessage[] = (page?.list || []).slice().reverse()
+        // 合并：GET 在途期间可能已有实时消息经 WS echo 进入当前会话，
+        // 分页快照未必包含它们，若直接整体替换会把这些新消息冲掉（首句消失、刷新才出现）。
+        // 故按 id 去重合并，保留快照中缺失的本会话消息（含无 id 的乐观消息）。
+        if (conversationId === this.activeId) {
+          const fetchedIds = new Set(fetched.filter(m => m.id).map(m => m.id))
+          const extras = this.messages.filter(
+            m => m.conversationId === conversationId && (!m.id || !fetchedIds.has(m.id)),
+          )
+          this.messages = [...fetched, ...extras]
+        } else {
+          this.messages = fetched
+        }
+      } catch {
+        // 加载失败不清空已有消息（可能含 echo 到达的实时消息）
+        if (conversationId !== this.activeId) this.messages = []
+      } finally {
+        this.loadingMessages = false
+      }
+    },
+
+    async selectConversation(conversationId: number) {
+      this.activeId = conversationId
+      this.peerTyping = false
+      this.pendingCard = null
+      markActivity()
+      await this.loadMessages(conversationId)
+      this.markRead(conversationId)
+    },
+
+    /** 从商品/订单页发起会话，可携带卡片上下文（不自动发送，暂存为待确认卡片） */
+    async startWithContext(ctx: { shopId: number; shopName?: string; card?: { type: string; extra: Record<string, any> } }) {
+      const userStore = useUserStore()
+      if (!userStore.isLoggedIn) {
+        useLoginModal().openLoginModal()
+        return
+      }
+      this.init()
+      this.open = true
+      try {
+        const conv = await post<ImConversation>('/im/conversation', { shopId: ctx.shopId })
+        if (ctx.shopName) conv.shopName = ctx.shopName
+        this.upsertConversation(conv)
+        await this.selectConversation(conv.id)
+        // 不再一进会话就自动发送卡片，改为暂存，由用户在确认横幅中决定是否发送
+        this.pendingCard = ctx.card || null
+      } catch { /* ignore */ }
+    },
+
+    /** 确认发送待确认的商品/订单卡片 */
+    confirmSendCard() {
+      if (!this.pendingCard || !this.activeId) { this.pendingCard = null; return }
+      this.sendCard(this.pendingCard.type, this.pendingCard.extra)
+      this.pendingCard = null
+    },
+
+    /** 取消待确认卡片 */
+    cancelPendingCard() {
+      this.pendingCard = null
+    },
+
+    sendText(content: string) {
+      const text = (content || '').trim()
+      if (!text || !this.activeId) return
+      this.doSend({ type: 'text', content: text })
+    },
+
+    sendImage(url: string) {
+      if (!url || !this.activeId) return
+      this.doSend({ type: 'image', content: url })
+    },
+
+    sendCard(type: string, extra: Record<string, any>) {
+      if (!this.activeId) return
+      this.doSend({ type, content: '', extra })
+    },
+
+    doSend(payload: { type: string; content: string; extra?: Record<string, any> }) {
+      const conv = this.activeConversation
+      const shopId = conv?.shopId
+      // 若已因空闲超时断开，sendOrReconnect 会排队暂存并触发重连，连上后自动补发
+      sendOrReconnect({
+        action: 'send',
+        conversationId: this.activeId,
+        shopId,
+        type: payload.type,
+        content: payload.content,
+        extra: payload.extra || null,
+      })
+    },
+
+    notifyTyping() {
+      if (!this.activeId) return
+      sendFrame({ action: 'typing', conversationId: this.activeId })
+    },
+
+    async markRead(conversationId: number) {
+      const conv = this.conversations.find(c => c.id === conversationId)
+      if (conv) conv.unread = 0
+      // 通知后端 + 广播 read 回执
+      sendFrame({ action: 'read', conversationId })
+      try {
+        await post('/im/read', { conversationId })
+      } catch { /* ignore */ }
+      // 以后端为准重新同步未读总数：避免本地“绝对值/增量+1/减量”多来源混算长期累积漂移
+      // （典型表现：角标一直卡在 1）。后端 markRead 已清零该会话未读，此处读回权威总数。
+      await this.loadUnreadTotal()
+    },
+
+    upsertConversation(conv: ImConversation) {
+      const idx = this.conversations.findIndex(c => c.id === conv.id)
+      if (idx >= 0) {
+        this.conversations[idx] = { ...this.conversations[idx], ...conv }
+      } else {
+        this.conversations.unshift(conv)
+      }
+    },
+
+    /** 处理服务端下推帧 */
+    onFrame(frame: Record<string, any>) {
+      const action = frame.action
+      const data = frame.data
+      if (action === 'message') {
+        this.onMessage(data as ImMessage)
+      } else if (action === 'typing') {
+        if (data?.conversationId === this.activeId && data?.senderRole !== 'user') {
+          this.peerTyping = true
+          if (typingTimer) clearTimeout(typingTimer)
+          typingTimer = setTimeout(() => { this.peerTyping = false }, 3000)
+        }
+      } else if (action === 'read') {
+        // 对端(商家)已读我方消息 -> 更新回执
+        if (data?.conversationId === this.activeId && data?.readerRole === 'merchant') {
+          this.messages.forEach(m => { if (m.senderRole === 'user') m.read = true })
+        }
+      }
+    },
+
+    onMessage(msg: ImMessage) {
+      if (!msg || !msg.conversationId) return
+      const fromPeer = msg.senderRole !== 'user'
+      const isActive = msg.conversationId === this.activeId && this.open
+
+      // 更新会话摘要
+      let conv = this.conversations.find(c => c.id === msg.conversationId)
+      if (!conv) {
+        // 收到新会话的消息，补一条占位（列表下次刷新会补全）
+        conv = { id: msg.conversationId, userId: msg.userId || 0, shopId: msg.shopId || 0, unread: 0 }
+        this.conversations.unshift(conv)
+      }
+      conv.lastMessage = summarize(msg)
+      conv.lastMessageType = msg.type
+      conv.lastMessageTime = msg.createdAt
+
+      // 合并到当前会话消息流（按 id 去重）
+      if (msg.conversationId === this.activeId) {
+        if (!msg.id || !this.messages.some(m => m.id && m.id === msg.id)) {
+          this.messages.push(msg)
+        }
+      }
+
+      if (fromPeer) {
+        if (isActive) {
+          this.markRead(msg.conversationId)
+        } else {
+          conv.unread = (conv.unread || 0) + 1
+          this.unreadTotal += 1
+        }
+      }
+    },
+  },
+})
+
+function summarize(msg: ImMessage): string {
+  switch (msg.type) {
+    case 'image': return '[图片]'
+    case 'product_card': return '[商品]'
+    case 'order_card': return '[订单]'
+    default: return msg.content || ''
+  }
+}

@@ -115,6 +115,19 @@ spring:
           filters:
             - StripPrefix=1
 
+        - id: byw-im
+          uri: lb://byw-im
+          predicates:
+            - Path=/api/im/**
+          filters:
+            - StripPrefix=1
+
+        # WebSocket 长连接路由：不 StripPrefix，byw-im 端点即 /ws/im；token 走 query 参数
+        - id: byw-im-ws
+          uri: lb:ws://byw-im
+          predicates:
+            - Path=/ws/im/**
+
         - id: api-docs-auth
           uri: lb://byw-auth
           predicates:
@@ -206,6 +219,13 @@ spring:
           filters:
             - RewritePath=/v3/api-docs/byw-merchant, /v3/api-docs
 
+        - id: api-docs-im
+          uri: lb://byw-im
+          predicates:
+            - Path=/v3/api-docs/byw-im
+          filters:
+            - RewritePath=/v3/api-docs/byw-im, /v3/api-docs
+
         - id: api-docs-settle
           uri: lb://byw-settle
           predicates:
@@ -256,3 +276,5 @@ springdoc:
         url: /v3/api-docs/byw-merchant
       - name: Settle Service
         url: /v3/api-docs/byw-settle
+      - name: IM Service
+        url: /v3/api-docs/byw-im

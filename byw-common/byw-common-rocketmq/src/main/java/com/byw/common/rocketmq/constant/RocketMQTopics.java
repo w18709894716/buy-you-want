@@ -22,5 +22,8 @@ public class RocketMQTopics {
     // User behavior
     public static final String USER_BEHAVIOR = "user-behavior";
 
+    // IM related (broadcast for cross-node message push)
+    public static final String IM_MESSAGE = "im-message";
+
     private RocketMQTopics() {}
 }

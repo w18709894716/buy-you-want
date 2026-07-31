@@ -31,6 +31,7 @@ graph TB
         C12[byw-shop 店铺中心 :8092]
         C13[byw-merchant 商家BFF :8093]
         C14[byw-settle 结算分账 :8094]
+        C15[byw-im 客服IM :8095]
     end
 
     subgraph 基础设施层
@@ -50,12 +51,12 @@ graph TB
     B1 --> B3
     B1 --> C1 & C2 & C3 & C4 & C5 & C6 & C7 & C8 & C9 & C10 & C11 & C12 & C13
 
-    C1 & C2 & C3 & C4 & C5 & C6 & C7 & C8 & C9 & C10 & C11 & C12 & C13 & C14 --> D1
-    C1 & C2 & C3 & C4 & C5 & C6 & C7 & C8 & C9 & C12 --> D2
+    C1 & C2 & C3 & C4 & C5 & C6 & C7 & C8 & C9 & C10 & C11 & C12 & C13 & C14 & C15 --> D1
+    C1 & C2 & C3 & C4 & C5 & C6 & C7 & C8 & C9 & C12 & C15 --> D2
     C1 & C2 & C3 & C4 & C5 & C6 & C7 & C8 & C9 & C12 & C14 --> D3
-    C5 & C6 & C7 & C9 & C14 --> D4
+    C5 & C6 & C7 & C9 & C14 & C15 --> D4
     C3 --> D5
-    C8 --> D6
+    C8 & C15 --> D6
     C5 --> D7
 ```
 
@@ -78,6 +79,7 @@ graph TB
 | byw-shop | 8092 | 店铺管理、商家账号与入驻审核 | MySQL, Redis, Nacos |
 | byw-merchant | 8093 | 商家端 BFF 聚合层 | Nacos |
 | byw-settle | 8094 | 结算分账、佣金规则、余额与提现（@Scheduled T+N） | MySQL, RocketMQ, Nacos |
+| byw-im | 8095 | 客服聊天 IM（WebSocket 长连接、会话与消息、在线状态） | MySQL, MongoDB, Redis, RocketMQ, Nacos |
 | byw-common | — | 公共工具模块（8 个子模块） | — |
 
 ## 服务间通信

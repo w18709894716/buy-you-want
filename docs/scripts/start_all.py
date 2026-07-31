@@ -21,7 +21,7 @@ BATCH_1 = ["byw-gateway", "byw-auth"]
 BATCH_2 = ["byw-user", "byw-product", "byw-shop"]
 BATCH_3 = ["byw-cart", "byw-order", "byw-pay",
            "byw-logistics", "byw-review", "byw-promotion", "byw-file",
-           "byw-settle", "byw-admin", "byw-merchant"]
+           "byw-settle", "byw-admin", "byw-merchant", "byw-im"]
 
 ALL_JAVA_SERVICES = BATCH_1 + BATCH_2 + BATCH_3
 
@@ -31,6 +31,7 @@ PORTS = {
     "byw-pay": 8086, "byw-logistics": 8087, "byw-review": 8088,
     "byw-promotion": 8089, "byw-admin": 8090, "byw-file": 8091,
     "byw-shop": 8092, "byw-merchant": 8093, "byw-settle": 8094,
+    "byw-im": 8095,
 }
 
 # 全局变量：存储正在运行的服务进程
@@ -302,6 +303,7 @@ def main():
     print("    Pay      :8086    Logistics :8087    Review   :8088")
     print("    Promotion:8089    Admin     :8090    File     :8091")
     print("    Shop     :8092    Merchant  :8093    Settle   :8094")
+    print("    Im       :8095")
     print()
     print("  \033[33m前端:\033[0m")
     print("    byw-web          http://localhost:3000")

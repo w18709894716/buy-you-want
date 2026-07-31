@@ -97,6 +97,24 @@
       <slot />
     </main>
 
+    <!-- 悬浮客服入口 + 未读角标 -->
+    <button
+      class="fixed bottom-6 right-6 z-[55] w-14 h-14 rounded-full bg-primary text-white shadow-lg flex items-center justify-center hover:bg-primary-600 transition-colors"
+      title="联系客服"
+      @click="imStore.togglePanel()"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 3C6.48 3 2 6.94 2 11.5c0 2.3 1.16 4.37 3.03 5.86-.13 1.03-.5 2.3-1.2 3.4-.16.25.05.58.34.5 1.85-.5 3.2-1.2 4.02-1.74.86.2 1.77.32 2.71.32 5.52 0 10-3.94 10-8.5S17.52 3 12 3z" />
+      </svg>
+      <span
+        v-if="imStore.unreadTotal > 0"
+        class="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 min-w-[20px] px-1 flex items-center justify-center"
+      >
+        {{ imStore.unreadTotal > 99 ? '99+' : imStore.unreadTotal }}
+      </span>
+    </button>
+    <ImChatPanel />
+
     <!-- 页脚 -->
     <footer class="bg-gray-800 text-gray-400 mt-12">
       <div class="max-w-7xl mx-auto px-4 py-10">
@@ -145,10 +163,12 @@
 <script setup lang="ts">
 import { useUserStore } from '~/stores/user'
 import { useCartStore } from '~/stores/cart'
+import { useImStore } from '~/stores/im'
 import { get } from '~/utils/request'
 
 const userStore = useUserStore()
 const cartStore = useCartStore()
+const imStore = useImStore()
 const route = useRoute()
 // 商家入驻已迁至商家中心（byw-merchant-web），导航外链跳转
 const merchantApplyUrl = `${useRuntimeConfig().public.merchantWebUrl}/apply`
@@ -179,4 +199,32 @@ async function fetchNavCategories() {
 }
 
 onMounted(fetchNavCategories)
+
+// 登录态就绪后初始化 IM（建立 WS、拉取未读）；退出登录时断开
+onMounted(() => {
+  if (userStore.isLoggedIn) imStore.init()
+})
+watch(() => userStore.isLoggedIn, (logged) => {
+  if (logged) {
+    imStore.init()
+  } else {
+    imStore.teardown()
+  }
+})
+
+// 空闲超时会断开 IM 长连接，届时无法靠 WS 推送刷新角标。
+// 改为：切回标签页(focus) + 路由切换时各拉一次未读，再加 60s 低频兜底定时器。
+let unreadBackupTimer: any = null
+function refreshUnread() {
+  if (userStore.isLoggedIn) imStore.loadUnreadTotal()
+}
+watch(() => route.fullPath, refreshUnread)
+onMounted(() => {
+  window.addEventListener('focus', refreshUnread)
+  unreadBackupTimer = setInterval(refreshUnread, 60000)
+})
+onUnmounted(() => {
+  window.removeEventListener('focus', refreshUnread)
+  if (unreadBackupTimer) { clearInterval(unreadBackupTimer); unreadBackupTimer = null }
+})
 </script>

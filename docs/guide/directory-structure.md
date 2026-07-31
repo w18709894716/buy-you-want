@@ -76,6 +76,9 @@ buy-you-want/
 ├── byw-settle/                            # 结算分账 (:8094)
 │   └── ...                                #   佣金规则、结算单、余额与提现、@Scheduled T+N 入账扫描
 │
+├── byw-im/                                # 客服聊天 IM (:8095)
+│   └── ...                                #   Spring 原生 WebSocket 长连接、会话(MySQL)/消息(MongoDB)、在线状态(Redis)、RocketMQ 广播跨节点推送
+│
 ├── byw-frontend/
 │   ├── byw-web/                           # Nuxt.js 3 用户端（SSR 服务端渲染）
 │   │   ├── pages/                         #   页面：首页、商品详情、购物车、订单、个人中心

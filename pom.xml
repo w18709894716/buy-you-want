@@ -24,6 +24,7 @@
         <module>byw-pay</module>
         <module>byw-logistics</module>
         <module>byw-review</module>
+        <module>byw-im</module>
         <module>byw-promotion</module>
         <module>byw-file</module>
         <module>byw-admin</module>

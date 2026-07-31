@@ -145,6 +145,7 @@ Nacos + MySQL + Redis（必须启动的中间件底座）
 | 13 | byw-shop | 8092 | 店铺中心（店铺/商家账号/入驻审核） |
 | 14 | byw-merchant | 8093 | 商家端 BFF |
 | 15 | byw-settle | 8094 | 结算分账（@Scheduled T+N 入账） |
+| 16 | byw-im | 8095 | 客服聊天 IM（WebSocket 长连接） |
 
 ### 启动方式
 

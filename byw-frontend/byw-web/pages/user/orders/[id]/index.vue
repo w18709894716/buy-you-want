@@ -19,6 +19,16 @@
             <div v-if="order.shopName" class="flex items-center gap-1 text-sm text-gray-700 font-medium mb-1">
               <svg class="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
               {{ order.shopName }}
+              <button
+                class="ml-0.5 text-green-500 hover:text-green-600 transition-colors"
+                title="联系客服"
+                aria-label="联系客服"
+                @click.stop="handleContact"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 3C6.48 3 2 6.94 2 11.5c0 2.3 1.16 4.37 3.03 5.86-.13 1.03-.5 2.3-1.2 3.4-.16.25.05.58.34.5 1.85-.5 3.2-1.2 4.02-1.74.86.2 1.77.32 2.71.32 5.52 0 10-3.94 10-8.5S17.52 3 12 3z" />
+                </svg>
+              </button>
             </div>
             <div class="text-sm text-gray-500">订单号</div>
             <div class="text-lg font-medium text-gray-800 mt-1">{{ order.orderNo }}</div>
@@ -122,7 +132,7 @@
       </div>
 
       <!-- 操作按钮 -->
-      <div class="bg-white rounded-lg p-6 flex justify-end gap-3">
+      <div v-if="order.status === 0 || order.status === 2" class="bg-white rounded-lg p-6 flex justify-end gap-3">
         <button
           v-if="order.status === 0 && !isOrderExpired(order)"
           class="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary-600 transition-colors"
@@ -208,6 +218,7 @@
 <script setup lang="ts">
 import { get, post } from '~/utils/request'
 import { useCartStore } from '~/stores/cart'
+import { useImStore } from '~/stores/im'
 
 definePageMeta({ middleware: ['auth'] })
 
@@ -335,6 +346,28 @@ function isOrderExpired(order: any): boolean {
 
 function handlePay() {
   navigateTo(`/payment/${orderNo.value}`)
+}
+
+// ===== 联系客服（携带订单卡片发起会话） =====
+const imStore = useImStore()
+
+function handleContact() {
+  const o = order.value
+  if (!o) return
+  const first = o.items?.[0]
+  imStore.startWithContext({
+    shopId: o.shopId,
+    shopName: o.shopName,
+    card: {
+      type: 'order_card',
+      extra: {
+        orderNo: o.orderNo,
+        status: statusTextMap[o.status] || '',
+        productName: first?.productName,
+        image: first?.productImage,
+      },
+    },
+  })
 }
 
 function handleConfirmReceive() {

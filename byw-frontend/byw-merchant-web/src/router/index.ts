@@ -54,6 +54,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '售后管理' }
       },
       {
+        path: 'im',
+        name: 'ImWorkbench',
+        component: () => import('../views/im/index.vue'),
+        meta: { title: '客服工作台' }
+      },
+      {
         path: 'promotion/coupon',
         name: 'CouponManage',
         component: () => import('../views/promotion/coupon.vue'),
