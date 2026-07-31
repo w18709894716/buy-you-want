@@ -572,6 +572,8 @@ erDiagram
 | auditor | VARCHAR | 审核人 |
 | reject_reason | VARCHAR | 驳回原因 |
 
+<a id="incremental-migration"></a>
+
 ## 增量迁移脚本
 
 多商家平台化改造采用“存量库补丁 + 新建库”方式落地，存量库的增量字段通过以下迁移脚本追加（位于 `docs/database/`），需在对应库执行：

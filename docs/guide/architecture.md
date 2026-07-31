@@ -65,8 +65,8 @@ graph TB
 | 服务名 | 端口 | 职责 | 依赖中间件 |
 |--------|------|------|-----------|
 | byw-gateway | 8080 | API 网关路由、JWT 鉴权、限流 | Nacos, Redis, Sentinel |
-| byw-auth | 8081 | 注册、登录、Token 签发与刷新 | MySQL, Redis, Nacos |
-| byw-user | 8082 | 用户 CRUD、收货地址、会员等级 | MySQL, Redis, Nacos |
+| byw-auth | 8081 | 三端登录（C端/平台/商家）、Token 签发与刷新、登录时聚合权限写 Redis | MySQL, Redis, Nacos |
+| byw-user | 8082 | C端会员 CRUD、收货地址、会员等级；**RBAC 五表持有方（t_sys_user/role/menu/user_role/role_menu），经 /feign/rbac 提供员工/角色/菜单/权限契约** | MySQL, Redis, Nacos |
 | byw-product | 8083 | 分类/品牌/SPU-SKU 管理、库存、ES 搜索 | MySQL, Redis, ES, Nacos |
 | byw-cart | 8084 | 购物车增删改查、结算 | MySQL, Redis, Nacos |
 | byw-order | 8085 | 订单创建、状态机、超时取消、Seata 事务 | MySQL, Redis, RocketMQ, Seata, Nacos |
@@ -74,10 +74,10 @@ graph TB
 | byw-logistics | 8087 | 发货管理、物流跟踪、状态更新 | MySQL, RocketMQ, Nacos |
 | byw-review | 8088 | 评价管理、评分统计、商家回复 | MySQL, MongoDB, Redis, Nacos |
 | byw-promotion | 8089 | 优惠券、秒杀（Lua预扣+限流）、拼团 | MySQL, Redis, RocketMQ, Nacos |
-| byw-admin | 8090 | 管理后台 BFF 聚合层 | Nacos |
+| byw-admin | 8090 | 管理后台 BFF 聚合层（含系统员工/角色管理，转发 RBAC 契约） | Nacos |
 | byw-file | 8091 | 文件/图片上传（MinIO） | MinIO, Nacos |
-| byw-shop | 8092 | 店铺管理、商家账号与入驻审核 | MySQL, Redis, Nacos |
-| byw-merchant | 8093 | 商家端 BFF 聚合层 | Nacos |
+| byw-shop | 8092 | 店铺管理、商家账号与入驻审核、**商家子账号（t_merchant_account.parent_id）CRUD** | MySQL, Redis, Nacos |
+| byw-merchant | 8093 | 商家端 BFF 聚合层（含员工管理，转发 RBAC 契约） | Nacos |
 | byw-settle | 8094 | 结算分账、佣金规则、余额与提现（@Scheduled T+N） | MySQL, RocketMQ, Nacos |
 | byw-im | 8095 | 客服聊天 IM（WebSocket 长连接、会话与消息、在线状态） | MySQL, MongoDB, Redis, RocketMQ, Nacos |
 | byw-common | — | 公共工具模块（8 个子模块） | — |

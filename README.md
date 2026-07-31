@@ -1,15 +1,17 @@
-# BuyYouWant 电商平台技术文档
+# BuyYouWant 电商平台
 
 > BuyYouWant 是一套基于 **Spring Cloud 微服务架构** 的全功能电商平台，已演进为**多商家入驻平台**，涵盖用户端商城、商家端工作台与平台管理后台，支持从店铺入驻、商品审核、多商家拆单下单到结算分账的完整业务流程。
+
+📚 **完整技术文档入口：[docs 文档中心](docs/README.md)**
 
 ---
 
 ## 快速开始
 
-1. **安装中间件** — [中间件安装指南](start/middleware-setup.md)（Nacos / MySQL / Redis / RocketMQ / ES / MongoDB / Sentinel）
-2. **启动后端** — [后端启动指南](start/backend-startup.md)（编译 → 建库 → 按顺序启动 15 个服务）
-3. **启动前端** — [前端启动指南](start/frontend-startup.md)（用户端 :3000 / 管理端 :5174 / 商家端 :5175）
-4. **脚本启动**（推荐，可跳过步骤 2、3） — [脚本启动指南](start/script-startup.md)（一键启动/停止前后端，支持交互式重启单个服务）
+1. **安装中间件** — [中间件安装指南](docs/start/middleware-setup.md)（Nacos / MySQL / Redis / RocketMQ / ES / MongoDB / Sentinel）
+2. **启动后端** — [后端启动指南](docs/start/backend-startup.md)（编译 → 建库 → 按顺序启动 15 个服务）
+3. **启动前端** — [前端启动指南](docs/start/frontend-startup.md)（用户端 :3000 / 管理端 :5174 / 商家端 :5175）
+4. **脚本启动**（推荐，可跳过步骤 2、3） — [脚本启动指南](docs/start/script-startup.md)（一键启动/停止前后端，支持交互式重启单个服务）
 
 ---
 
@@ -19,40 +21,39 @@
 
 | 文档 | 说明 |
 |------|------|
-| [项目简介](guide/introduction.md) | BuyYouWant 是什么、核心功能、系统特点 |
-| [系统架构](guide/architecture.md) | 整体架构图、微服务划分、核心业务流程 |
-| [技术栈](guide/tech-stack.md) | 完整版本对照表、技术选型说明 |
-| [目录结构](guide/directory-structure.md) | 项目文件树、模块职责、标准包结构 |
+| [项目简介](docs/guide/introduction.md) | BuyYouWant 是什么、核心功能、系统特点 |
+| [系统架构](docs/guide/architecture.md) | 整体架构图、微服务划分、核心业务流程 |
+| [技术栈](docs/guide/tech-stack.md) | 完整版本对照表、技术选型说明 |
+| [目录结构](docs/guide/directory-structure.md) | 项目文件树、模块职责、标准包结构 |
 
 ### 🚀 快速启动
 
 | 文档 | 说明 |
 |------|------|
-| [环境要求](start/prerequisites.md) | 必需软件版本、可选工具推荐 |
-| [中间件安装](start/middleware-setup.md) | 7 个中间件的详细安装步骤（含踩坑记录） |
-| [后端启动](start/backend-startup.md) | Maven 编译、数据库初始化、服务启动顺序 |
-| [前端启动](start/frontend-startup.md) | 管理端 / 用户端的启动配置 |
-| [脚本方式启动](start/script-startup.md) | 一键启动/停止脚本的使用方法与交互命令 |
+| [环境要求](docs/start/prerequisites.md) | 必需软件版本、可选工具推荐 |
+| [中间件安装](docs/start/middleware-setup.md) | 7 个中间件的详细安装步骤（含踩坑记录） |
+| [后端启动](docs/start/backend-startup.md) | Maven 编译、数据库初始化、服务启动顺序 |
+| [前端启动](docs/start/frontend-startup.md) | 管理端 / 用户端的启动配置 |
+| [脚本方式启动](docs/start/script-startup.md) | 一键启动/停止脚本的使用方法与交互命令 |
 
 ### 🗃️ 数据库
 
 | 文档 | 说明 |
 |------|------|
-| [数据库设计](database/database-design.md) | 10 个库的结构说明、ER 关系图、多商家增量 |
-| [SQL 脚本](database/database-design.md) | 建库建表 SQL 文件（10 个）+ 增量迁移脚本（3 个） |
+| [数据库设计](docs/database/database-design.md) | 10 个库的结构说明、ER 关系图、多商家增量 |
 
 ### 🔧 开发规范
 
 | 文档 | 说明 |
 |------|------|
-| [API 规范](development/api-conventions.md) | 统一响应格式、错误码一览、认证方式、路由规则 |
-| [编码规范](development/coding-standards.md) | 包结构、命名规范、异常处理、日志规范 |
+| [API 规范](docs/development/api-conventions.md) | 统一响应格式、错误码一览、认证方式、路由规则 |
+| [编码规范](docs/development/coding-standards.md) | 包结构、命名规范、异常处理、日志规范 |
 
 ### 🚢 部署运维（即将更新）
 
 | 文档 | 说明 |
 |------|------|
-| [部署指南](deploy/README.md) | Docker 容器化部署、CI/CD 自动化（规划中） |
+| [部署指南](docs/deploy/README.md) | Docker 容器化部署、CI/CD 自动化（规划中） |
 
 ---
 

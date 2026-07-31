@@ -29,6 +29,8 @@
 
 ---
 
+<a id="mysql-setup"></a>
+
 ## MySQL 8.0（关系数据库）
 
 ### 安装
@@ -55,7 +57,7 @@ mysql -u root -p < docs/database/byw_shop.sql
 mysql -u root -p < docs/database/byw_settle.sql
 ```
 
-> 存量环境升级需补执行增量迁移脚本（migration_shop_tenancy.sql / migration_product_audit.sql / migration_order_split.sql），详见 [后端启动 - 初始化数据库](./backend-startup.md)。
+> 存量环境升级需补执行增量迁移脚本（migration_shop_tenancy.sql / migration_product_audit.sql / migration_order_split.sql），详见 [后端启动 - 初始化数据库](backend-startup.md)。
 
 也可以在 Navicat 或 DBeaver 中打开并逐个执行每个 SQL 文件。
 

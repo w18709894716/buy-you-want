@@ -76,24 +76,61 @@ R.fail(ResultCode)        // 失败，使用枚举
 - **7xxx**: 评价模块
 - **9xxx**: 系统级
 
-## 认证与角色（RBAC）
+## 认证与权限（RBAC）
 - 登录成功后返回 JWT Token，请求时携带：`Authorization: Bearer {token}`
-- Gateway 的 AuthGlobalFilter 统一校验 Token，并将解析出的用户身份（用户ID/角色/shop_id 等）通过请求头透传给下游服务
+- Gateway 的 AuthGlobalFilter 统一软认证：解析 Token 后将用户身份（用户ID / 角色 / shop_id / **用户类型 X-User-Type**）通过请求头透传给下游服务；剥离外部伪造的身份头
 - 白名单路径（如 `/auth/login`、`/auth/register`）无需 Token
 
-### RBAC 四角色
-用户身份由 `t_user.role` / `t_merchant_account.role` 描述，共四种角色：
+### 用户类型 X-User-Type
+三端账号体系彻底分离，`X-User-Type` 头标识主体类型：
 
+| userType | 说明 | 登录主体表 |
+|----------|------|-----------|
+| c | C 端会员 | `t_user`（纯会员，已移除 role 字段） |
+| sys | 平台员工 | `t_sys_user`（管理端登录，role 统一 platform_admin） |
+| merchant | 商家账号 | `t_merchant_account`（主账号 parent_id=NULL，子账号绑角色） |
+
+### 角色（登录态粗粒度）
 | 角色 | 说明 |
 |------|------|
 | user | 普通用户（C 端） |
-| platform_admin | 平台管理员（管理后台） |
-| merchant_owner | 商家主账号（商家端，可管理本店全部业务与员工） |
-| merchant_staff | 商家员工（商家端，受限权限） |
+| platform_admin | 平台员工（管理端，细粒度权限由 RBAC 决定） |
+| merchant_owner | 商家主账号（拥有本店全部权限，权限集为通配 `*`） |
+| merchant_staff | 商家子账号（按预设角色绑定的权限集受限） |
 
-- 鉴权由 `byw-common-security` 提供：Gateway 透传身份头，各服务通过 `UserContext` 获取当前用户与角色
-- 提供 `@RequireAdmin` / `@RequireRole` 等注解拦截器在接口层做角色校验
-- 商家端业务（byw-merchant BFF）统一按 `shop_id` 隔离，确保商家仅可访问本店数据
+### RBAC 五表模型（byw_user 库，byw-user 服务持有）
+| 表 | 说明 |
+|----|------|
+| t_sys_user | 平台员工账号 |
+| t_sys_role | 角色（role_code 唯一，scope=platform/merchant，is_preset 内置不可删） |
+| t_sys_menu | 菜单/权限（menu_type：1目录 2菜单 3按钮；perm_code 即权限标识） |
+| t_sys_user_role | 用户-角色关联（user_type：1平台员工 2商家账号） |
+| t_sys_role_menu | 角色-菜单关联 |
+
+byw-admin / byw-merchant 为无库 BFF，经 `RbacFeignClient` 转发 byw-user 的 `/feign/rbac/**` 契约。
+
+### 权限校验：@RequirePerm + Redis
+- 权限**不进 JWT**。登录时聚合用户的 perm_code 写入 Redis Set：`auth:perms:{userType}:{userId}`，与 Token 同 24h TTL
+- 通配 `*` 表示全部权限（超级管理员角色、商家主账号）
+- `@RequirePerm("xxx:yyy")` 拦截器从 Redis 校验（`PermissionChecker` 直读 Redis，未命中抛 FORBIDDEN）；方法级注解覆盖类级
+- 调整授权后删除对应 `auth:perms:*` key 即时生效，无需用户重登
+- `refreshToken` 续期 perms key，`logout` 删除 perms key
+- 旧注解 `@RequireAdmin` / `@RequireRole` 保留兼容
+- 商家端业务统一按 `shop_id` 隔离，确保商家仅访问本店数据
+
+### 权限标识清单
+格式 `模块:操作`，与菜单/按钮一一对应。
+
+**平台端（scope=platform）**：`member:list`、`shop:audit`、`shop:list`、`product:list`、`product:audit`、`category:manage`、`brand:manage`、`order:list`、`coupon:manage`、`seckill:manage`、`banner:manage`、`review:manage`、`logistics:list`、`settle:commission`、`settle:withdraw`、`sys:user`、`sys:role`
+
+**商家端（scope=merchant）**：`m:product:list`、`m:product:publish`、`m:order:list`、`m:order:ship`、`m:aftersale:manage`、`m:im:workbench`、`m:coupon:manage`、`m:review:manage`、`m:shop:info`、`m:settle:manage`、`m:staff:manage`
+
+> 说明：IM 端点（`/im/**`）由买家与商家共享，仍用 `@RequireLogin`，运行时按 `UserContext` 区分数据范围；商家侧 `m:im:workbench` 仅用于前端菜单/按钮可见性控制。
+
+### 前端权限渲染
+- 登录后调用 `/admin/me/menus`（或 `/merchant/me/menus`）获取菜单树 + 权限集，存 Pinia + localStorage
+- 静态路由表 + `meta.perm`：路由守卫校验失败跳 `/403`
+- 菜单按后端下发的菜单树动态渲染；按钮级用 `v-perm="'xxx:yyy'"` 指令控制
 
 ## Gateway 路由规则
 
