@@ -71,6 +71,13 @@ public class RbacFeignImpl implements RbacFeignClient {
     }
 
     @Override
+    @GetMapping("/user/{userId}/roles")
+    public R<List<SysRoleDTO>> listUserRoles(@PathVariable("userId") Long userId,
+                                             @RequestParam("userType") Integer userType) {
+        return R.ok(rbacService.listUserRoles(userId, userType));
+    }
+
+    @Override
     @GetMapping("/role/list")
     public R<List<SysRoleDTO>> listRoles(@RequestParam("scope") String scope) {
         return R.ok(rbacService.listRoles(scope));

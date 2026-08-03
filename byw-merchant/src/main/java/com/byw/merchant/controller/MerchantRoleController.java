@@ -62,10 +62,10 @@ public class MerchantRoleController {
         return rbacFeignClient.deleteRole(roleId);
     }
 
-    /** 角色当前已绑定的菜单ID */
+    /** 角色当前已绑定的菜单ID（只读查看：本店自定义角色与平台预设模板均可查，便于商家比对预设权限） */
     @GetMapping("/{roleId}/menu-ids")
     public R<List<Long>> menuIds(@PathVariable Long roleId) {
-        verifyOwn(roleId);
+        verifyViewable(roleId);
         return rbacFeignClient.getRoleMenuIds(roleId);
     }
 
@@ -85,6 +85,20 @@ public class MerchantRoleController {
         }
         if (role.getIsPreset() != null && role.getIsPreset() == 1) {
             throw new BusinessException("预设角色不可修改");
+        }
+    }
+
+    /** 校验角色为本店可见（本店自定义角色或平台预设商家模板），允许只读查看其授权 */
+    private void verifyViewable(Long roleId) {
+        SysRoleDTO role = rbacFeignClient.getRole(roleId).getData();
+        if (role == null || !SCOPE_MERCHANT.equals(role.getScope())) {
+            throw new BusinessException("无权操作该角色");
+        }
+        boolean ownShop = role.getShopId() != null && role.getShopId().equals(UserContext.getShopId());
+        boolean presetTemplate = role.getShopId() == null
+                && role.getIsPreset() != null && role.getIsPreset() == 1;
+        if (!ownShop && !presetTemplate) {
+            throw new BusinessException("无权操作该角色");
         }
     }
 }

@@ -28,6 +28,9 @@ public interface RbacService {
     /** 覆盖式分配角色。userType：1平台员工 2商家账号 */
     boolean assignRoles(Long userId, Integer userType, List<Long> roleIds);
 
+    /** 查询用户绑定的角色列表（含角色名）。userType：1平台员工 2商家账号 */
+    List<SysRoleDTO> listUserRoles(Long userId, Integer userType);
+
     // ===== 角色 =====
     List<SysRoleDTO> listRoles(String scope);
 

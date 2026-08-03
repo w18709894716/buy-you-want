@@ -51,6 +51,11 @@ public interface RbacFeignClient {
                            @RequestParam("userType") Integer userType,
                            @RequestBody List<Long> roleIds);
 
+    /** 查询用户绑定的角色列表（含角色名）。userType：1平台员工 2商家账号 */
+    @GetMapping("/feign/rbac/user/{userId}/roles")
+    R<List<SysRoleDTO>> listUserRoles(@PathVariable("userId") Long userId,
+                                      @RequestParam("userType") Integer userType);
+
     // ===== 角色 =====
 
     @GetMapping("/feign/rbac/role/list")

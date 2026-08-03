@@ -77,12 +77,25 @@ const currentRole = ref<any>(null)
 const readonly = ref(false)
 const treeRef = ref<InstanceType<typeof ElTree>>()
 
-// 只读模式下禁用所有节点的勾选框（超级管理员）
+// 只读模式下禁用所有节点的勾选框（超级管理员）；公共菜单（控制台）始终禁用
 const treeProps = computed(() => ({
   label: 'menuName',
   children: 'children',
-  disabled: () => readonly.value
+  disabled: (data: any) => readonly.value || data.disabled === true
 }))
+
+// 公共菜单（menu_type=2 且 perm_code 为空，如控制台）：默认勾选且不可取消（可见性不依赖角色绑定）
+// 注意：只处理叶子菜单，目录（menu_type=1）不在此列，避免勾选目录级联选中其全部子菜单
+const alwaysCheckedIds: number[] = []
+const collectAlwaysChecked = (nodes: any[]) => {
+  for (const n of nodes) {
+    if (n.menuType === 2 && !n.permCode) {
+      n.disabled = true
+      alwaysCheckedIds.push(n.id)
+    }
+    if (n.children && n.children.length > 0) collectAlwaysChecked(n.children)
+  }
+}
 
 // 收集 menuTree 中所有“含子节点”的父目录 ID：回填勾选时需排除，
 // 只勾叶子节点，交由 el-tree 自行推算父目录的半选/全选，避免父目录反选导致子节点被全部强制勾上。
@@ -118,6 +131,7 @@ const fetchData = async () => {
 const fetchMenuTree = async () => {
   const data: any = await request.get('/admin/sys/role/menu-tree')
   menuTree.value = data || []
+  collectAlwaysChecked(menuTree.value)
 }
 
 // ===== 新增/编辑角色 =====
@@ -198,6 +212,10 @@ const openAuth = async (row: any) => {
       const parentIds = new Set<number>()
       collectParentIds(menuTree.value, parentIds)
       const leafKeys = (ids || []).filter((id: number) => !parentIds.has(id))
+      // 公共菜单（控制台）强制勾选且不可取消
+      for (const id of alwaysCheckedIds) {
+        if (!leafKeys.includes(id)) leafKeys.push(id)
+      }
       await nextTick()
       treeRef.value?.setCheckedKeys(leafKeys)
     }

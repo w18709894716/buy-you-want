@@ -72,4 +72,7 @@ public class MerchantAccountDTO implements Serializable {
 
     /** 子账号分配的预设角色ID列表（新建/改角色入参，仅商家子账号使用） */
     private List<Long> roleIds;
+
+    /** 子账号绑定的角色名称（顿号连接，列表展示用，由 BFF 聚合填充） */
+    private String roleNames;
 }

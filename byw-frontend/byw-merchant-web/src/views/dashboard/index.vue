@@ -71,7 +71,7 @@ const statusType = (s: number) => (statusMap[s]?.type || 'info') as any
 const fetchShop = async () => {
   loading.value = true
   try {
-    shop.value = await request.get('/merchant/shop/info')
+    shop.value = await request.get('/merchant/dashboard/overview')
   } catch (e: any) {
     if (!e._handled) ElMessage.error(e.message || '获取店铺信息失败')
   } finally {

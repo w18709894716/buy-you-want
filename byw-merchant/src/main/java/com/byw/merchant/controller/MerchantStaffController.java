@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 商家端员工管理：主账号维护本店子账号（子账号复用 t_merchant_account，parent_id=主账号）。
@@ -29,11 +30,21 @@ public class MerchantStaffController {
     private final ShopFeignClient shopFeignClient;
     private final RbacFeignClient rbacFeignClient;
 
-    /** 本店子账号分页列表 */
+    /** 本店子账号分页列表（BFF 聚合：补充每个员工绑定的角色，供列表展示与分配回填） */
     @GetMapping("/list")
     public R<PageResult<MerchantAccountDTO>> list(@RequestParam(defaultValue = "1") Integer pageNum,
                                                   @RequestParam(defaultValue = "10") Integer pageSize) {
-        return shopFeignClient.listStaff(UserContext.getUserId(), pageNum, pageSize);
+        PageResult<MerchantAccountDTO> page = shopFeignClient.listStaff(UserContext.getUserId(), pageNum, pageSize).getData();
+        if (page != null && page.getList() != null) {
+            for (MerchantAccountDTO dto : page.getList()) {
+                List<SysRoleDTO> roles = rbacFeignClient.listUserRoles(dto.getId(), USER_TYPE_MERCHANT).getData();
+                if (roles != null) {
+                    dto.setRoleIds(roles.stream().map(SysRoleDTO::getId).collect(Collectors.toList()));
+                    dto.setRoleNames(roles.stream().map(SysRoleDTO::getRoleName).collect(Collectors.joining("、")));
+                }
+            }
+        }
+        return R.ok(page);
     }
 
     /** 新建子账号（用户名+密码+姓名+电话+角色），随后分配预设角色 */

@@ -188,6 +188,22 @@ public class RbacServiceImpl implements RbacService {
         return true;
     }
 
+    @Override
+    public List<SysRoleDTO> listUserRoles(Long userId, Integer userType) {
+        List<Long> roleIds = sysUserRoleMapper.selectList(new LambdaQueryWrapper<SysUserRole>()
+                        .eq(SysUserRole::getUserType, userType)
+                        .eq(SysUserRole::getUserId, userId))
+                .stream().map(SysUserRole::getRoleId).collect(Collectors.toList());
+        if (roleIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+        return sysRoleMapper.selectBatchIds(roleIds).stream().map(r -> {
+            SysRoleDTO dto = new SysRoleDTO();
+            BeanUtils.copyProperties(r, dto);
+            return dto;
+        }).collect(Collectors.toList());
+    }
+
     // ===================== 角色 =====================
 
     @Override
