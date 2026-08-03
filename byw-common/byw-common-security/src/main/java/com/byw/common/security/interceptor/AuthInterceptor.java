@@ -5,8 +5,10 @@ import com.byw.common.core.exception.BusinessException;
 import com.byw.common.core.exception.ResultCode;
 import com.byw.common.security.annotation.Public;
 import com.byw.common.security.annotation.RequireAdmin;
+import com.byw.common.security.annotation.RequirePerm;
 import com.byw.common.security.annotation.RequireRole;
 import com.byw.common.security.context.UserContext;
+import com.byw.common.security.service.PermissionChecker;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -16,12 +18,23 @@ import org.springframework.web.servlet.HandlerInterceptor;
 @Slf4j
 public class AuthInterceptor implements HandlerInterceptor {
 
+    private final PermissionChecker permissionChecker;
+
+    public AuthInterceptor() {
+        this(null);
+    }
+
+    public AuthInterceptor(PermissionChecker permissionChecker) {
+        this.permissionChecker = permissionChecker;
+    }
+
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         String userIdStr = request.getHeader(CommonConstants.HEADER_USER_ID);
         String username = request.getHeader(CommonConstants.HEADER_USERNAME);
         String userRole = request.getHeader(CommonConstants.HEADER_USER_ROLE);
         String shopIdStr = request.getHeader(CommonConstants.HEADER_SHOP_ID);
+        String userType = request.getHeader(CommonConstants.HEADER_USER_TYPE);
 
         if (userIdStr != null && !userIdStr.isEmpty()) {
             UserContext.setUserId(Long.parseLong(userIdStr));
@@ -38,6 +51,9 @@ public class AuthInterceptor implements HandlerInterceptor {
         }
         if (shopIdStr != null && !shopIdStr.isEmpty()) {
             UserContext.setShopId(Long.parseLong(shopIdStr));
+        }
+        if (userType != null && !userType.isEmpty()) {
+            UserContext.setUserType(userType);
         }
 
         // 仅对 Controller 方法做注解级鉴权
@@ -64,6 +80,16 @@ public class AuthInterceptor implements HandlerInterceptor {
         RequireRole requireRole = getAnnotation(handlerMethod, RequireRole.class);
         if (requireRole != null && !UserContext.hasAnyRole(requireRole.value())) {
             throw new BusinessException(ResultCode.FORBIDDEN);
+        }
+
+        // @RequirePerm：需拥有指定权限标识（含 * 通配）
+        RequirePerm requirePerm = getAnnotation(handlerMethod, RequirePerm.class);
+        if (requirePerm != null) {
+            if (permissionChecker == null
+                    || !permissionChecker.hasPermission(UserContext.getUserType(),
+                            UserContext.getUserId(), requirePerm.value())) {
+                throw new BusinessException(ResultCode.FORBIDDEN);
+            }
         }
 
         return true;

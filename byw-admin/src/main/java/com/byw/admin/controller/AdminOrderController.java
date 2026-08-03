@@ -4,13 +4,13 @@ import com.byw.api.order.OrderFeignClient;
 import com.byw.api.order.dto.OrderDetailDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.RequireAdmin;
+import com.byw.common.security.annotation.RequirePerm;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/admin/order")
-@RequireAdmin
+@RequirePerm("order:list")
 @RequiredArgsConstructor
 public class AdminOrderController {
 

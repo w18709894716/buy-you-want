@@ -2,10 +2,9 @@ package com.byw.merchant.controller;
 
 import com.byw.api.order.OrderFeignClient;
 import com.byw.api.order.dto.OrderDetailDTO;
-import com.byw.common.core.constant.CommonConstants;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.RequireRole;
+import com.byw.common.security.annotation.RequirePerm;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,7 +15,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/merchant/order")
-@RequireRole({CommonConstants.ROLE_MERCHANT_OWNER, CommonConstants.ROLE_MERCHANT_STAFF})
+@RequirePerm("m:order:list")
 @RequiredArgsConstructor
 public class MerchantOrderController {
 
@@ -39,6 +38,7 @@ public class MerchantOrderController {
      * 订单发货
      */
     @PutMapping("/{orderNo}/ship")
+    @RequirePerm("m:order:ship")
     public R<Boolean> ship(@PathVariable String orderNo,
                            @RequestParam(required = false) String company,
                            @RequestParam(required = false) String trackingNo) {
@@ -49,6 +49,7 @@ public class MerchantOrderController {
      * 拆分发货：对勾选的订单明细发货
      */
     @PostMapping("/{orderNo}/ship-items")
+    @RequirePerm("m:order:ship")
     public R<Boolean> shipItems(@PathVariable String orderNo,
                                 @RequestParam String company,
                                 @RequestParam(required = false) String trackingNo,

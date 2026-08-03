@@ -20,7 +20,7 @@ mvn clean install -DskipTests
 
 ## 第二步：初始化数据库
 
-执行 10 个建库 SQL 脚本（详见 [中间件安装 - MySQL 部分](./middleware-setup.md#mysql-80关系数据库)）：
+执行 10 个建库 SQL 脚本（详见 [中间件安装 - MySQL 部分](middleware-setup.md#mysql-setup)）：
 
 ```bash
 mysql -u root -p < docs/database/byw_user.sql
@@ -35,16 +35,7 @@ mysql -u root -p < docs/database/byw_shop.sql
 mysql -u root -p < docs/database/byw_settle.sql
 ```
 
-> **新部署环境**：直接执行上述 10 个完整建库脚本即可（已包含 shop_id / role / 拆单 / 商品审核等全部字段）。
->
-> **存量环境升级**：在已有数据库上按阶段顺序追加执行增量迁移脚本（详见 [数据库设计 - 增量迁移脚本](../database/database-design.md#增量迁移脚本)）：
->
-> ```bash
-> mysql -u root -p < docs/database/migration_shop_tenancy.sql   # 阶段一：各库补 shop_id、user.role、评价商家回复、优惠券 shop_id
-> mysql -u root -p < docs/database/migration_product_audit.sql  # 阶段四：商品审核字段
-> mysql -u root -p < docs/database/migration_order_split.sql    # 阶段五：拆单父子订单、购物车 shop_id
-> ```
-
+> **新部署环境**：直接执行上述 10 个完整建库脚本即可。
 ---
 
 ## 第三步：配置 Nacos

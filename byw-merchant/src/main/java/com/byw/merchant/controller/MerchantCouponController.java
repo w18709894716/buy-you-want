@@ -2,10 +2,9 @@ package com.byw.merchant.controller;
 
 import com.byw.api.promotion.PromotionFeignClient;
 import com.byw.api.promotion.dto.CouponDTO;
-import com.byw.common.core.constant.CommonConstants;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.RequireRole;
+import com.byw.common.security.annotation.RequirePerm;
 import com.byw.common.security.context.UserContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -15,7 +14,7 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/merchant/coupon")
-@RequireRole({CommonConstants.ROLE_MERCHANT_OWNER, CommonConstants.ROLE_MERCHANT_STAFF})
+@RequirePerm("m:coupon:manage")
 @RequiredArgsConstructor
 public class MerchantCouponController {
 

@@ -1,10 +1,9 @@
 package com.byw.merchant.controller;
 
 import com.byw.api.review.ReviewFeignClient;
-import com.byw.common.core.constant.CommonConstants;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.RequireRole;
+import com.byw.common.security.annotation.RequirePerm;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,7 +14,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/merchant/review")
-@RequireRole({CommonConstants.ROLE_MERCHANT_OWNER, CommonConstants.ROLE_MERCHANT_STAFF})
+@RequirePerm("m:review:manage")
 @RequiredArgsConstructor
 public class MerchantReviewController {
 

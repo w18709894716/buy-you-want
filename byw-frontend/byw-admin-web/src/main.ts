@@ -6,6 +6,7 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import { createPinia } from 'pinia'
 import router from './router'
 import App from './App.vue'
+import { setupPermission } from './utils/permission'
 
 const app = createApp(App)
 
@@ -17,5 +18,8 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
 app.use(ElementPlus, { locale: zhCn })
 app.use(createPinia())
 app.use(router)
+
+// 注册 v-perm 权限指令（需在 Pinia 之后）
+setupPermission(app)
 
 app.mount('#app')

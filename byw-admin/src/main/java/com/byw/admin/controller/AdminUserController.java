@@ -4,13 +4,13 @@ import com.byw.api.user.UserFeignClient;
 import com.byw.api.user.dto.UserDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.RequireAdmin;
+import com.byw.common.security.annotation.RequirePerm;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/admin/user")
-@RequireAdmin
+@RequirePerm("member:list")
 @RequiredArgsConstructor
 public class AdminUserController {
 

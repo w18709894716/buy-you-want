@@ -12,71 +12,7 @@
         :collapse="isCollapse"
         class="side-menu"
       >
-        <el-menu-item index="/dashboard">
-          <el-icon><Odometer /></el-icon>
-          <template #title>控制台</template>
-        </el-menu-item>
-
-        <el-sub-menu index="product">
-          <template #title>
-            <el-icon><Goods /></el-icon>
-            <span>商品管理</span>
-          </template>
-          <el-menu-item index="/product/list">商品列表</el-menu-item>
-          <el-menu-item index="/product/add">发布商品</el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu index="order">
-          <template #title>
-            <el-icon><List /></el-icon>
-            <span>订单管理</span>
-          </template>
-          <el-menu-item index="/order/list">订单列表</el-menu-item>
-          <el-menu-item index="/order/after-sale">售后管理</el-menu-item>
-        </el-sub-menu>
-
-        <el-menu-item index="/im">
-          <!-- 折叠态仅剩图标：用小红点提示；展开态未读数放标题右侧，避免遮挡文字 -->
-          <el-badge :hidden="!imUnread || !isCollapse" is-dot class="im-menu-badge">
-            <el-icon><Service /></el-icon>
-          </el-badge>
-          <template #title>
-            <span>客服工作台</span>
-            <span v-if="imUnread" class="im-unread-pill">{{ imUnread > 99 ? '99+' : imUnread }}</span>
-          </template>
-        </el-menu-item>
-
-        <el-sub-menu index="promotion">
-          <template #title>
-            <el-icon><Present /></el-icon>
-            <span>营销管理</span>
-          </template>
-          <el-menu-item index="/promotion/coupon">店铺优惠券</el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu index="review">
-          <template #title>
-            <el-icon><ChatDotRound /></el-icon>
-            <span>评价管理</span>
-          </template>
-          <el-menu-item index="/review/list">评价列表</el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu index="shop">
-          <template #title>
-            <el-icon><Shop /></el-icon>
-            <span>店铺管理</span>
-          </template>
-          <el-menu-item index="/shop/info">店铺设置</el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu index="settle">
-          <template #title>
-            <el-icon><Wallet /></el-icon>
-            <span>结算管理</span>
-          </template>
-          <el-menu-item index="/settle/index">结算与提现</el-menu-item>
-        </el-sub-menu>
+        <MenuTree :menus="userStore.menus" :im-unread="imUnread" :is-collapse="isCollapse" />
       </el-menu>
     </el-aside>
 
@@ -124,6 +60,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '../stores/user'
 import request from '../utils/request'
 import { connectIm, disconnectIm, addFrameHandler, removeFrameHandler } from '../utils/imSocket'
+import MenuTree from '../components/MenuTree.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -159,6 +96,10 @@ onMounted(() => {
     connectIm()
     addFrameHandler(onImFrame)
     loadImUnread()
+  }
+  // 菜单树若为空（刷新后 store 已从 localStorage 恢复；仍为空则重新拉取）
+  if (!userStore.menus || userStore.menus.length === 0) {
+    userStore.fetchMenus().catch(() => {})
   }
 })
 

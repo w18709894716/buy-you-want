@@ -4,10 +4,9 @@ import com.byw.api.product.ProductFeignClient;
 import com.byw.api.product.dto.BrandDTO;
 import com.byw.api.product.dto.CategoryDTO;
 import com.byw.api.product.dto.ProductDTO;
-import com.byw.common.core.constant.CommonConstants;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.RequireRole;
+import com.byw.common.security.annotation.RequirePerm;
 import com.byw.common.security.context.UserContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -19,7 +18,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/merchant/product")
-@RequireRole({CommonConstants.ROLE_MERCHANT_OWNER, CommonConstants.ROLE_MERCHANT_STAFF})
+@RequirePerm("m:product:list")
 @RequiredArgsConstructor
 public class MerchantProductController {
 
@@ -41,6 +40,7 @@ public class MerchantProductController {
     }
 
     @PostMapping
+    @RequirePerm("m:product:publish")
     public R<Long> createProduct(@RequestBody ProductDTO productDTO) {
         // 强制归属当前商家店铺，防止越权创建
         productDTO.setShopId(UserContext.getShopId());
@@ -48,12 +48,14 @@ public class MerchantProductController {
     }
 
     @PutMapping("/{productId}")
+    @RequirePerm("m:product:publish")
     public R<Boolean> updateProduct(@PathVariable Long productId, @RequestBody ProductDTO productDTO) {
         productDTO.setShopId(UserContext.getShopId());
         return productFeignClient.updateProduct(productId, productDTO);
     }
 
     @DeleteMapping("/{productId}")
+    @RequirePerm("m:product:publish")
     public R<Boolean> deleteProduct(@PathVariable Long productId) {
         return productFeignClient.deleteProduct(productId);
     }
@@ -62,6 +64,7 @@ public class MerchantProductController {
      * 上下架切换
      */
     @PutMapping("/{productId}/status")
+    @RequirePerm("m:product:publish")
     public R<Void> toggleProductStatus(@PathVariable Long productId) {
         return productFeignClient.toggleProductStatus(productId);
     }
@@ -70,6 +73,7 @@ public class MerchantProductController {
      * 提交/重新提交审核（用于驳回后不修改内容直接再次提交）
      */
     @PutMapping("/{productId}/submit")
+    @RequirePerm("m:product:publish")
     public R<Boolean> submitForAudit(@PathVariable Long productId) {
         return productFeignClient.submitProductForAudit(productId);
     }

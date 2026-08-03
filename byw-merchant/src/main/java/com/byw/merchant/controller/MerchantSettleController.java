@@ -6,10 +6,9 @@ import com.byw.api.settle.dto.SettleRecordDTO;
 import com.byw.api.settle.dto.ShopBalanceDTO;
 import com.byw.api.settle.dto.WithdrawApplyDTO;
 import com.byw.api.settle.dto.WithdrawRecordDTO;
-import com.byw.common.core.constant.CommonConstants;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.RequireRole;
+import com.byw.common.security.annotation.RequirePerm;
 import com.byw.common.security.context.UserContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -19,7 +18,7 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/merchant/settle")
-@RequireRole({CommonConstants.ROLE_MERCHANT_OWNER, CommonConstants.ROLE_MERCHANT_STAFF})
+@RequirePerm("m:settle:manage")
 @RequiredArgsConstructor
 public class MerchantSettleController {
 

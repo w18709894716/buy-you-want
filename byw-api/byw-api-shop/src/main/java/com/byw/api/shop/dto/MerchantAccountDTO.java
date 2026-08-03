@@ -4,6 +4,7 @@ import lombok.Data;
 
 import java.io.Serializable;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 商家账号（入驻申请与商家登录主体）。
@@ -52,6 +53,9 @@ public class MerchantAccountDTO implements Serializable {
     /** 关联店铺ID（审核通过后回填） */
     private Long shopId;
 
+    /** 主账号ID：NULL=主账号，非NULL=子账号(员工) */
+    private Long parentId;
+
     /** 角色 merchant_owner / merchant_staff */
     private String role;
 
@@ -65,4 +69,7 @@ public class MerchantAccountDTO implements Serializable {
     private Integer status;
 
     private LocalDateTime createdAt;
+
+    /** 子账号分配的预设角色ID列表（新建/改角色入参，仅商家子账号使用） */
+    private List<Long> roleIds;
 }

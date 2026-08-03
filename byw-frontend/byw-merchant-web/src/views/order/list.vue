@@ -57,6 +57,7 @@
             <el-button type="primary" size="small" text @click="showDetail(row)">详情</el-button>
             <el-button
               v-if="row.status === 1 || row.status === 7"
+              v-perm="'m:order:ship'"
               type="success"
               size="small"
               text

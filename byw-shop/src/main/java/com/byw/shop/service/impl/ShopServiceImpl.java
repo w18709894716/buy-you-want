@@ -244,6 +244,75 @@ public class ShopServiceImpl implements ShopService {
         shopMapper.updateById(shop);
     }
 
+    // ========== 商家子账号（员工）管理 ==========
+
+    @Override
+    public PageResult<MerchantAccountDTO> listStaff(Long parentId, Integer pageNum, Integer pageSize) {
+        Page<MerchantAccount> page = new Page<>(pageNum, pageSize);
+        LambdaQueryWrapper<MerchantAccount> wrapper = new LambdaQueryWrapper<MerchantAccount>()
+                .eq(MerchantAccount::getParentId, parentId)
+                .orderByDesc(MerchantAccount::getId);
+        Page<MerchantAccount> result = merchantAccountMapper.selectPage(page, wrapper);
+        List<MerchantAccountDTO> list = result.getRecords().stream().map(account -> {
+            MerchantAccountDTO dto = toMerchantDTO(account);
+            dto.setPassword(null);
+            return dto;
+        }).toList();
+        return PageResult.of(list, result.getTotal(), pageNum, pageSize);
+    }
+
+    @Override
+    public Long createStaff(Long parentId, Long shopId, MerchantAccountDTO dto) {
+        if (isBlank(dto.getUsername()) || isBlank(dto.getPassword())) {
+            throw new BusinessException("用户名和密码不能为空");
+        }
+        MerchantAccount existing = merchantAccountMapper.selectOne(new LambdaQueryWrapper<MerchantAccount>()
+                .eq(MerchantAccount::getUsername, dto.getUsername()).last("limit 1"));
+        if (existing != null) {
+            throw new BusinessException("账号已存在: " + dto.getUsername());
+        }
+        MerchantAccount account = new MerchantAccount();
+        account.setUsername(dto.getUsername());
+        account.setPassword(passwordEncoder.encode(dto.getPassword()));
+        account.setRealName(dto.getRealName());
+        account.setPhone(dto.getPhone());
+        // 子账号继承主账号店铺，直接启用，无需入驻审核
+        account.setParentId(parentId);
+        account.setShopId(shopId);
+        account.setRole("merchant_staff");
+        account.setAuditStatus(1);
+        account.setStatus(1);
+        merchantAccountMapper.insert(account);
+        log.info("新建商家子账号: parentId={}, shopId={}, username={}", parentId, shopId, dto.getUsername());
+        return account.getId();
+    }
+
+    @Override
+    public void updateStaffStatus(Long parentId, Long staffId, Integer status) {
+        MerchantAccount account = requireOwnedStaff(parentId, staffId);
+        account.setStatus(status);
+        merchantAccountMapper.updateById(account);
+    }
+
+    @Override
+    public void resetStaffPassword(Long parentId, Long staffId, String password) {
+        if (isBlank(password)) {
+            throw new BusinessException("密码不能为空");
+        }
+        MerchantAccount account = requireOwnedStaff(parentId, staffId);
+        account.setPassword(passwordEncoder.encode(password));
+        merchantAccountMapper.updateById(account);
+    }
+
+    /** 校验子账号存在且归属当前主账号，防止越权操作他店员工 */
+    private MerchantAccount requireOwnedStaff(Long parentId, Long staffId) {
+        MerchantAccount account = merchantAccountMapper.selectById(staffId);
+        if (account == null || !parentId.equals(account.getParentId())) {
+            throw new BusinessException("子账号不存在或无权操作");
+        }
+        return account;
+    }
+
     private ShopDTO toShopDTO(Shop shop) {
         if (shop == null) {
             return null;

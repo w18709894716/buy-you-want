@@ -68,4 +68,26 @@ public interface ShopService {
      * 商家端：更新自己的店铺信息
      */
     void updateShop(ShopDTO shopDTO);
+
+    // ========== 商家子账号（员工）管理 ==========
+
+    /**
+     * 分页查询本店子账号（parentId=当前主账号ID）
+     */
+    PageResult<MerchantAccountDTO> listStaff(Long parentId, Integer pageNum, Integer pageSize);
+
+    /**
+     * 新建子账号（parent_id=主账号、shop_id 继承、audit_status=1、role=merchant_staff、入驻资料留空）
+     */
+    Long createStaff(Long parentId, Long shopId, MerchantAccountDTO dto);
+
+    /**
+     * 启停子账号（校验归属当前主账号）
+     */
+    void updateStaffStatus(Long parentId, Long staffId, Integer status);
+
+    /**
+     * 重置子账号密码（校验归属当前主账号）
+     */
+    void resetStaffPassword(Long parentId, Long staffId, String password);
 }

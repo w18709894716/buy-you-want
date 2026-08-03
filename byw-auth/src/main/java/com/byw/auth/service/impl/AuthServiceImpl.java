@@ -1,6 +1,8 @@
 package com.byw.auth.service.impl;
 
 import com.byw.api.user.UserFeignClient;
+import com.byw.api.user.RbacFeignClient;
+import com.byw.api.user.dto.SysUserDTO;
 import com.byw.api.user.dto.UserDTO;
 import com.byw.api.shop.ShopFeignClient;
 import com.byw.api.shop.dto.MerchantAccountDTO;
@@ -19,6 +21,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
@@ -28,10 +32,16 @@ import java.util.concurrent.TimeUnit;
 public class AuthServiceImpl implements AuthService {
 
     private final UserFeignClient userFeignClient;
+    private final RbacFeignClient rbacFeignClient;
     private final ShopFeignClient shopFeignClient;
     private final JwtUtil jwtUtil;
     private final RedisUtil redisUtil;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+
+    /** user_type：平台员工 */
+    private static final int USER_TYPE_SYS = 1;
+    /** user_type：商家账号 */
+    private static final int USER_TYPE_MERCHANT = 2;
 
     @Override
     public LoginResponse login(LoginRequest request) {
@@ -51,12 +61,9 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ResultCode.PASSWORD_ERROR);
         }
 
-        String role = user.getRole() != null ? user.getRole() : "user";
-        // C端商城仅限普通用户登录，管理员账号请走管理后台登录入口
-        if (CommonConstants.ROLE_PLATFORM_ADMIN.equals(role)) {
-            throw new BusinessException("管理员账号请从管理后台登录");
-        }
-        String token = jwtUtil.generateToken(user.getId(), user.getUsername(), role, null);
+        // t_user 已回归纯 C 端会员（无 role 字段），固定角色 user、userType=c，不写权限集
+        String role = "user";
+        String token = jwtUtil.generateToken(user.getId(), user.getUsername(), role, null, CommonConstants.USER_TYPE_C);
 
         // Store token in Redis for validation
         redisUtil.set("auth:token:" + token, user.getId(), 24, TimeUnit.HOURS);
@@ -68,13 +75,14 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public LoginResponse adminLogin(LoginRequest request) {
-        R<UserDTO> result = userFeignClient.getUserByUsername(request.getUsername());
+        // 平台员工登录主体为 t_sys_user（与 C 端会员彻底分离）
+        R<SysUserDTO> result = rbacFeignClient.getSysUserByUsername(request.getUsername());
         if (!result.isSuccess() || result.getData() == null) {
             throw new BusinessException(ResultCode.USER_NOT_FOUND);
         }
 
-        UserDTO user = result.getData();
-        if (user.getStatus() == 0) {
+        SysUserDTO user = result.getData();
+        if (user.getStatus() != null && user.getStatus() == 0) {
             throw new BusinessException(ResultCode.USER_DISABLED);
         }
 
@@ -82,16 +90,17 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ResultCode.PASSWORD_ERROR);
         }
 
-        // 管理后台仅限平台管理员登录，普通用户/商家账号一律拒绝
-        if (!CommonConstants.ROLE_PLATFORM_ADMIN.equals(user.getRole())) {
-            throw new BusinessException("非平台管理员账号，无权登录管理后台");
-        }
-
-        String token = jwtUtil.generateToken(user.getId(), user.getUsername(), user.getRole(), null);
+        // role 统一为平台管理员（标识平台员工身份），细粒度权限由 @RequirePerm + userType 驱动
+        String token = jwtUtil.generateToken(user.getId(), user.getUsername(),
+                CommonConstants.ROLE_PLATFORM_ADMIN, null, CommonConstants.USER_TYPE_SYS);
         redisUtil.set("auth:token:" + token, user.getId(), 24, TimeUnit.HOURS);
 
+        // 聚合权限标识写入 Redis（与 token 同 24h TTL）
+        List<String> perms = rbacFeignClient.listPermCodes(USER_TYPE_SYS, user.getId()).getData();
+        writePerms(CommonConstants.USER_TYPE_SYS, user.getId(), perms);
+
         return new LoginResponse(token, user.getId(), user.getUsername(),
-                user.getNickname(), user.getAvatar(), user.getRole(), null);
+                user.getNickname(), user.getAvatar(), CommonConstants.ROLE_PLATFORM_ADMIN, null);
     }
 
     @Override
@@ -121,9 +130,19 @@ public class AuthServiceImpl implements AuthService {
         }
 
         String role = merchant.getRole() != null ? merchant.getRole() : "merchant_owner";
-        String token = jwtUtil.generateToken(merchant.getId(), merchant.getUsername(), role, merchant.getShopId());
+        String token = jwtUtil.generateToken(merchant.getId(), merchant.getUsername(), role,
+                merchant.getShopId(), CommonConstants.USER_TYPE_MERCHANT);
 
         redisUtil.set("auth:token:" + token, merchant.getId(), 24, TimeUnit.HOURS);
+
+        // 主账号（parentId=NULL）拥有全部商家权限（通配 *）；子账号按角色聚合权限
+        List<String> perms;
+        if (merchant.getParentId() == null) {
+            perms = Collections.singletonList(CommonConstants.PERM_ALL);
+        } else {
+            perms = rbacFeignClient.listPermCodes(USER_TYPE_MERCHANT, merchant.getId()).getData();
+        }
+        writePerms(CommonConstants.USER_TYPE_MERCHANT, merchant.getId(), perms);
 
         return new LoginResponse(token, merchant.getId(), merchant.getUsername(),
                 merchant.getRealName(), null, role, merchant.getShopId());
@@ -174,13 +193,19 @@ public class AuthServiceImpl implements AuthService {
         String username = jwtUtil.getUsername(token);
         String role = jwtUtil.getRole(token);
         Long shopId = jwtUtil.getShopId(token);
+        String userType = jwtUtil.getUserType(token);
 
         // Delete old token
         redisUtil.delete("auth:token:" + token);
 
         // Generate new token
-        String newToken = jwtUtil.generateToken(userId, username, role, shopId);
+        String newToken = jwtUtil.generateToken(userId, username, role, shopId, userType);
         redisUtil.set("auth:token:" + newToken, userId, 24, TimeUnit.HOURS);
+
+        // 同步续期权限集 TTL（C 端会员无权限集）
+        if (userType != null && !CommonConstants.USER_TYPE_C.equals(userType)) {
+            redisUtil.expire(CommonConstants.AUTH_PERMS_KEY_PREFIX + userType + ":" + userId, 24, TimeUnit.HOURS);
+        }
 
         R<UserDTO> userResult = userFeignClient.getUserById(userId);
         UserDTO user = userResult.isSuccess() ? userResult.getData() : null;
@@ -195,6 +220,24 @@ public class AuthServiceImpl implements AuthService {
     public void logout(String authHeader) {
         String token = authHeader.startsWith("Bearer ") ? authHeader.substring(7) : authHeader;
         redisUtil.delete("auth:token:" + token);
+        // 同步删除权限集 key
+        if (jwtUtil.validateToken(token)) {
+            String userType = jwtUtil.getUserType(token);
+            Long userId = jwtUtil.getUserId(token);
+            if (userType != null && userId != null && !CommonConstants.USER_TYPE_C.equals(userType)) {
+                redisUtil.delete(CommonConstants.AUTH_PERMS_KEY_PREFIX + userType + ":" + userId);
+            }
+        }
+    }
+
+    /** 将聚合后的权限标识写入 Redis Set（与 token 同 24h TTL） */
+    private void writePerms(String userType, Long userId, List<String> perms) {
+        String key = CommonConstants.AUTH_PERMS_KEY_PREFIX + userType + ":" + userId;
+        redisUtil.delete(key);
+        if (perms != null && !perms.isEmpty()) {
+            redisUtil.sAdd(key, perms.toArray());
+            redisUtil.expire(key, 24, TimeUnit.HOURS);
+        }
     }
 
     @Override

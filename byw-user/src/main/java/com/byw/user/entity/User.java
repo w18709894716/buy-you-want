@@ -20,7 +20,6 @@ public class User {
     private Integer gender;
     private Integer status;
     private Integer userLevel;
-    private String role;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;

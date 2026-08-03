@@ -4,7 +4,6 @@ import com.byw.api.order.OrderFeignClient;
 import com.byw.api.product.ProductFeignClient;
 import com.byw.api.user.UserFeignClient;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.RequireAdmin;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -16,7 +15,6 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/admin/dashboard")
-@RequireAdmin
 @RequiredArgsConstructor
 public class DashboardController {
 

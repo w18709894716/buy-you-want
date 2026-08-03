@@ -51,6 +51,9 @@ public class MerchantAccount {
     /** 关联店铺ID（审核通过后回填） */
     private Long shopId;
 
+    /** 主账号ID：NULL=主账号，非NULL=子账号(员工) */
+    private Long parentId;
+
     /** 角色 merchant_owner / merchant_staff */
     private String role;
 

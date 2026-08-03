@@ -38,6 +38,7 @@ CREATE TABLE t_merchant_account (
     agreement_signed TINYINT DEFAULT 0 COMMENT '已签署入驻协议 0否 1是',
     apply_user_id   BIGINT COMMENT '发起申请的C端用户ID',
     shop_id         BIGINT COMMENT '关联店铺ID(审核通过后回填)',
+    parent_id       BIGINT COMMENT '主账号ID，NULL=主账号，非NULL=子账号(员工)',
     role            VARCHAR(30) DEFAULT 'merchant_owner' COMMENT 'merchant_owner/merchant_staff',
     audit_status    TINYINT DEFAULT 0 COMMENT '0待审核 1通过 2驳回',
     reject_reason   VARCHAR(255) COMMENT '驳回原因',

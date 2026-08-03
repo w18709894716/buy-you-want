@@ -6,7 +6,7 @@
         <h2 v-show="!isCollapse">BuyYouWant</h2>
         <h2 v-show="isCollapse">BYW</h2>
       </div>
-      <el-menu
+     <el-menu
         :default-active="currentRoute"
         router
         background-color="#304156"
@@ -15,81 +15,7 @@
         :collapse="isCollapse"
         class="side-menu"
       >
-        <el-menu-item index="/dashboard">
-          <el-icon><Odometer /></el-icon>
-          <template #title>控制台</template>
-        </el-menu-item>
-
-        <el-sub-menu index="user">
-          <template #title>
-            <el-icon><User /></el-icon>
-            <span>用户管理</span>
-          </template>
-          <el-menu-item index="/user/list">用户列表</el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu index="shop">
-          <template #title>
-            <el-icon><Shop /></el-icon>
-            <span>商家管理</span>
-          </template>
-          <el-menu-item index="/shop/merchant">入驻审核</el-menu-item>
-          <el-menu-item index="/shop/list">店铺管理</el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu index="product">
-          <template #title>
-            <el-icon><Goods /></el-icon>
-            <span>商品管理</span>
-          </template>
-          <el-menu-item index="/product/list">商品列表</el-menu-item>
-          <el-menu-item index="/product/audit">商品审核</el-menu-item>
-          <el-menu-item index="/product/category">分类管理</el-menu-item>
-          <el-menu-item index="/product/brand">品牌管理</el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu index="order">
-          <template #title>
-            <el-icon><List /></el-icon>
-            <span>订单管理</span>
-          </template>
-          <el-menu-item index="/order/list">订单列表</el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu index="promotion">
-          <template #title>
-            <el-icon><Present /></el-icon>
-            <span>营销管理</span>
-          </template>
-          <el-menu-item index="/promotion/coupon">优惠券管理</el-menu-item>
-          <el-menu-item index="/promotion/seckill">秒杀管理</el-menu-item>
-          <el-menu-item index="/promotion/banner">轮播图管理</el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu index="review">
-          <template #title>
-            <el-icon><ChatDotRound /></el-icon>
-            <span>评论管理</span>
-          </template>
-          <el-menu-item index="/review/list">评论列表</el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu index="logistics">
-          <template #title>
-            <el-icon><Van /></el-icon>
-            <span>物流管理</span>
-          </template>
-          <el-menu-item index="/logistics/list">物流列表</el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu index="settle">
-          <template #title>
-            <el-icon><Wallet /></el-icon>
-            <span>结算管理</span>
-          </template>
-          <el-menu-item index="/settle/commission">佣金规则</el-menu-item>
-          <el-menu-item index="/settle/withdraw">提现审批</el-menu-item>
-        </el-sub-menu>
+        <MenuTree :menus="userStore.menus" />
       </el-menu>
     </el-aside>
 
@@ -132,9 +58,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '../stores/user'
+import MenuTree from '../components/MenuTree.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -142,6 +69,13 @@ const userStore = useUserStore()
 
 const isCollapse = ref(false)
 const currentRoute = computed(() => route.path)
+
+// 菜单树若为空（刷新后 store 已从 localStorage 恢复；仍为空则重新拉取）
+onMounted(() => {
+  if (!userStore.menus || userStore.menus.length === 0) {
+    userStore.fetchMenus().catch(() => {})
+  }
+})
 
 const toggleCollapse = () => {
   isCollapse.value = !isCollapse.value

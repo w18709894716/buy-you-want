@@ -2,7 +2,7 @@ package com.byw.product.controller;
 
 import com.byw.common.core.result.R;
 import com.byw.common.security.annotation.Public;
-import com.byw.common.security.annotation.RequireAdmin;
+import com.byw.common.security.annotation.RequirePerm;
 import com.byw.product.entity.Category;
 import com.byw.product.service.CategoryService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -29,7 +29,7 @@ public class CategoryController {
 
     @Operation(summary = "新增分类(管理员)")
     @PostMapping
-    @RequireAdmin
+    @RequirePerm("category:manage")
     public R<Void> createCategory(@RequestBody Category category) {
         categoryService.save(category);
         return R.ok();
@@ -37,7 +37,7 @@ public class CategoryController {
 
     @Operation(summary = "更新分类(管理员)")
     @PutMapping
-    @RequireAdmin
+    @RequirePerm("category:manage")
     public R<Void> updateCategory(@RequestBody Category category) {
         categoryService.updateById(category);
         return R.ok();
@@ -45,7 +45,7 @@ public class CategoryController {
 
     @Operation(summary = "删除分类(管理员)")
     @DeleteMapping("/{id}")
-    @RequireAdmin
+    @RequirePerm("category:manage")
     public R<Void> deleteCategory(@PathVariable Long id) {
         categoryService.removeById(id);
         return R.ok();

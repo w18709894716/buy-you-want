@@ -37,6 +37,7 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
                     headers.remove(CommonConstants.HEADER_USERNAME);
                     headers.remove(CommonConstants.HEADER_USER_ROLE);
                     headers.remove(CommonConstants.HEADER_SHOP_ID);
+                    headers.remove(CommonConstants.HEADER_USER_TYPE);
                 });
 
         // 有合法 token 才注入身份头；无/失效 token 以游客身份放行
@@ -48,6 +49,7 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
                 String username = jwtUtil.getUsername(token);
                 String role = jwtUtil.getRole(token);
                 Long shopId = jwtUtil.getShopId(token);
+                String userType = jwtUtil.getUserType(token);
 
                 builder.header(CommonConstants.HEADER_USER_ID, String.valueOf(userId))
                         .header(CommonConstants.HEADER_USERNAME, username);
@@ -56,6 +58,9 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
                 }
                 if (shopId != null) {
                     builder.header(CommonConstants.HEADER_SHOP_ID, String.valueOf(shopId));
+                }
+                if (userType != null) {
+                    builder.header(CommonConstants.HEADER_USER_TYPE, userType);
                 }
             }
         }

@@ -3,7 +3,7 @@ package com.byw.admin.controller;
 import com.byw.api.product.ProductFeignClient;
 import com.byw.api.product.dto.BannerDTO;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.RequireAdmin;
+import com.byw.common.security.annotation.RequirePerm;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -14,7 +14,7 @@ import java.util.List;
 @Tag(name = "管理端-轮播Banner", description = "首页轮播图配置管理")
 @RestController
 @RequestMapping("/admin/banner")
-@RequireAdmin
+@RequirePerm("banner:manage")
 @RequiredArgsConstructor
 public class AdminBannerController {
 

@@ -5,7 +5,7 @@ import com.byw.api.shop.dto.ShopDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
 import com.byw.common.security.annotation.Public;
-import com.byw.common.security.annotation.RequireAdmin;
+import com.byw.common.security.annotation.RequirePerm;
 import com.byw.common.security.annotation.RequireRole;
 import com.byw.common.core.constant.CommonConstants;
 import com.byw.common.security.context.UserContext;
@@ -54,7 +54,7 @@ public class ShopController {
     /**
      * 平台端：分页查询商家入驻申请
      */
-    @RequireAdmin
+    @RequirePerm("shop:audit")
     @GetMapping("/admin/merchant/list")
     public R<PageResult<MerchantAccountDTO>> listMerchants(
             @RequestParam(defaultValue = "1") Integer pageNum,
@@ -66,7 +66,7 @@ public class ShopController {
     /**
      * 平台端：审核通过
      */
-    @RequireAdmin
+    @RequirePerm("shop:audit")
     @PostMapping("/admin/merchant/{merchantId}/approve")
     public R<Void> approveMerchant(@PathVariable("merchantId") Long merchantId,
                                    @RequestParam(required = false) String shopName) {
@@ -77,7 +77,7 @@ public class ShopController {
     /**
      * 平台端：审核驳回
      */
-    @RequireAdmin
+    @RequirePerm("shop:audit")
     @PostMapping("/admin/merchant/{merchantId}/reject")
     public R<Void> rejectMerchant(@PathVariable("merchantId") Long merchantId,
                                   @RequestParam(required = false) String rejectReason) {
@@ -88,7 +88,7 @@ public class ShopController {
     /**
      * 平台端：分页查询店铺
      */
-    @RequireAdmin
+    @RequirePerm("shop:list")
     @GetMapping("/admin/list")
     public R<PageResult<ShopDTO>> listShops(
             @RequestParam(defaultValue = "1") Integer pageNum,
@@ -100,7 +100,7 @@ public class ShopController {
     /**
      * 平台端：更新店铺状态
      */
-    @RequireAdmin
+    @RequirePerm("shop:list")
     @PutMapping("/admin/{shopId}/status")
     public R<Void> updateShopStatus(@PathVariable("shopId") Long shopId,
                                     @RequestParam("status") Integer status) {

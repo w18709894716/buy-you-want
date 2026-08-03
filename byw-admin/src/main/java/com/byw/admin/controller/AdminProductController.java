@@ -6,7 +6,7 @@ import com.byw.api.product.dto.CategoryDTO;
 import com.byw.api.product.dto.ProductDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.RequireAdmin;
+import com.byw.common.security.annotation.RequirePerm;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,7 +14,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/admin/product")
-@RequireAdmin
 @RequiredArgsConstructor
 public class AdminProductController {
 
@@ -23,6 +22,7 @@ public class AdminProductController {
     // ========== 商品管理 ==========
 
     @GetMapping("/list")
+    @RequirePerm("product:list")
     public R<PageResult<ProductDTO>> list(@RequestParam(defaultValue = "1") Integer pageNum,
                                           @RequestParam(defaultValue = "10") Integer pageSize,
                                           @RequestParam(required = false) String keyword,
@@ -31,6 +31,7 @@ public class AdminProductController {
     }
 
     @GetMapping("/{productId}")
+    @RequirePerm("product:list")
     public R<ProductDTO> getProductById(@PathVariable Long productId) {
         return productFeignClient.getProductById(productId);
     }
@@ -41,6 +42,7 @@ public class AdminProductController {
     // ========== 商品审核 ==========
 
     @GetMapping("/audit/list")
+    @RequirePerm("product:audit")
     public R<PageResult<ProductDTO>> auditList(@RequestParam(defaultValue = "1") Integer pageNum,
                                                @RequestParam(defaultValue = "10") Integer pageSize,
                                                @RequestParam(required = false) Integer auditStatus,
@@ -49,6 +51,7 @@ public class AdminProductController {
     }
 
     @PutMapping("/{productId}/audit")
+    @RequirePerm("product:audit")
     public R<Boolean> audit(@PathVariable Long productId,
                             @RequestParam Integer auditStatus,
                             @RequestParam(required = false) String rejectReason) {
@@ -58,21 +61,25 @@ public class AdminProductController {
     // ========== 分类管理 ==========
 
     @GetMapping("/category/tree")
+    @RequirePerm("category:manage")
     public R<List<CategoryDTO>> getCategoryTree() {
         return productFeignClient.getCategoryTree();
     }
 
     @PostMapping("/category/create")
+    @RequirePerm("category:manage")
     public R<Void> createCategory(@RequestBody CategoryDTO dto) {
         return productFeignClient.createCategory(dto);
     }
 
     @PutMapping("/category/{id}")
+    @RequirePerm("category:manage")
     public R<Void> updateCategory(@PathVariable Long id, @RequestBody CategoryDTO dto) {
         return productFeignClient.updateCategory(id, dto);
     }
 
     @DeleteMapping("/category/{id}")
+    @RequirePerm("category:manage")
     public R<Void> deleteCategory(@PathVariable Long id) {
         return productFeignClient.deleteCategory(id);
     }
@@ -80,26 +87,31 @@ public class AdminProductController {
     // ========== 品牌管理 ==========
 
     @GetMapping("/brand/list")
+    @RequirePerm("brand:manage")
     public R<List<BrandDTO>> listBrands(@RequestParam(required = false) String name) {
         return productFeignClient.listBrands(name);
     }
 
     @PostMapping("/brand/create")
+    @RequirePerm("brand:manage")
     public R<Void> createBrand(@RequestBody BrandDTO dto) {
         return productFeignClient.createBrand(dto);
     }
 
     @PutMapping("/brand/{id}")
+    @RequirePerm("brand:manage")
     public R<Void> updateBrand(@PathVariable Long id, @RequestBody BrandDTO dto) {
         return productFeignClient.updateBrand(id, dto);
     }
 
     @DeleteMapping("/brand/{id}")
+    @RequirePerm("brand:manage")
     public R<Void> deleteBrand(@PathVariable Long id) {
         return productFeignClient.deleteBrand(id);
     }
 
     @PutMapping("/brand/{id}/status")
+    @RequirePerm("brand:manage")
     public R<Void> toggleBrandStatus(@PathVariable Long id) {
         return productFeignClient.toggleBrandStatus(id);
     }

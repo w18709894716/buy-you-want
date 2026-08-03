@@ -9,6 +9,7 @@ public class UserContext {
     private static final ThreadLocal<Boolean> IS_ADMIN = new ThreadLocal<>();
     private static final ThreadLocal<String> ROLE = new ThreadLocal<>();
     private static final ThreadLocal<Long> SHOP_ID = new ThreadLocal<>();
+    private static final ThreadLocal<String> USER_TYPE = new ThreadLocal<>();
 
     public static void setUserId(Long userId) {
         USER_ID.set(userId);
@@ -54,6 +55,17 @@ public class UserContext {
         return SHOP_ID.get();
     }
 
+    public static void setUserType(String userType) {
+        USER_TYPE.set(userType);
+    }
+
+    /**
+     * 当前登录主体类型：c 会员 / sys 平台员工 / merchant 商家账号。
+     */
+    public static String getUserType() {
+        return USER_TYPE.get();
+    }
+
     /**
      * 是否商家角色（店主或员工）。
      */
@@ -85,5 +97,6 @@ public class UserContext {
         IS_ADMIN.remove();
         ROLE.remove();
         SHOP_ID.remove();
+        USER_TYPE.remove();
     }
 }

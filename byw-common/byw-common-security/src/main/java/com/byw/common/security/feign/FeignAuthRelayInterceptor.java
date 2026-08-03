@@ -29,5 +29,9 @@ public class FeignAuthRelayInterceptor implements RequestInterceptor {
         if (shopId != null) {
             template.header(CommonConstants.HEADER_SHOP_ID, String.valueOf(shopId));
         }
+        String userType = UserContext.getUserType();
+        if (userType != null) {
+            template.header(CommonConstants.HEADER_USER_TYPE, userType);
+        }
     }
 }

@@ -31,13 +31,6 @@
         <el-table-column prop="username" label="用户名" width="120" />
         <el-table-column prop="phone" label="手机号" width="130" />
         <el-table-column prop="nickname" label="昵称" width="120" />
-        <el-table-column prop="role" label="用户类型" width="110">
-          <template #default="{ row }">
-            <el-tag :type="row.role === 'platform_admin' ? 'danger' : 'primary'">
-              {{ row.role === 'platform_admin' ? '平台管理员' : '商城用户' }}
-            </el-tag>
-          </template>
-        </el-table-column>
         <el-table-column prop="status" label="状态" width="90">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'danger'">
@@ -116,7 +109,7 @@ const fetchData = async () => {
     tableData.value = data.list || []
     total.value = data.total || 0
   } catch (error: any) {
-    if (!error._handled) ElMessage.error(error?.message || '获取用户列表失败')
+    if (!error._handled) ElMessage.error(error?.message || '获取会员列表失败')
   } finally {
     loading.value = false
   }
@@ -137,7 +130,7 @@ const resetSearch = () => {
 const toggleStatus = async (row: any) => {
   const action = row.status === 1 ? '禁用' : '启用'
   const newStatus = row.status === 1 ? 0 : 1
-  await ElMessageBox.confirm(`确定要${action}该用户吗？`, '提示', { type: 'warning' })
+  await ElMessageBox.confirm(`确定要${action}该会员吗？`, '提示', { type: 'warning' })
   try {
     await request.put(`/admin/user/${row.id}/status`, null, { params: { status: newStatus } })
     ElMessage.success(`${action}成功`)

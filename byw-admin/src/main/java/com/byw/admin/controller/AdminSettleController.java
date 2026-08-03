@@ -6,7 +6,7 @@ import com.byw.api.settle.dto.SettleRecordDTO;
 import com.byw.api.settle.dto.WithdrawRecordDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.RequireAdmin;
+import com.byw.common.security.annotation.RequirePerm;
 import com.byw.common.security.context.UserContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -18,7 +18,6 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/admin/settle")
-@RequireAdmin
 @RequiredArgsConstructor
 public class AdminSettleController {
 
@@ -27,16 +26,19 @@ public class AdminSettleController {
     // ========== 佣金规则 ==========
 
     @GetMapping("/commission/list")
+    @RequirePerm("settle:commission")
     public R<List<CommissionRuleDTO>> listCommissionRules() {
         return settleFeignClient.listCommissionRules();
     }
 
     @PostMapping("/commission/save")
+    @RequirePerm("settle:commission")
     public R<Boolean> saveCommissionRule(@RequestBody CommissionRuleDTO dto) {
         return settleFeignClient.saveCommissionRule(dto);
     }
 
     @DeleteMapping("/commission/{id}")
+    @RequirePerm("settle:commission")
     public R<Boolean> deleteCommissionRule(@PathVariable Long id) {
         return settleFeignClient.deleteCommissionRule(id);
     }
@@ -44,6 +46,7 @@ public class AdminSettleController {
     // ========== 结算单监管 ==========
 
     @GetMapping("/record/list")
+    @RequirePerm("settle:commission")
     public R<PageResult<SettleRecordDTO>> listSettleRecords(@RequestParam(required = false) Long shopId,
                                                             @RequestParam(required = false) Integer status,
                                                             @RequestParam(defaultValue = "1") Integer pageNum,
@@ -54,6 +57,7 @@ public class AdminSettleController {
     // ========== 提现审批 ==========
 
     @GetMapping("/withdraw/list")
+    @RequirePerm("settle:withdraw")
     public R<PageResult<WithdrawRecordDTO>> listWithdraws(@RequestParam(required = false) Long shopId,
                                                           @RequestParam(required = false) Integer status,
                                                           @RequestParam(defaultValue = "1") Integer pageNum,
@@ -62,6 +66,7 @@ public class AdminSettleController {
     }
 
     @PostMapping("/withdraw/audit")
+    @RequirePerm("settle:withdraw")
     public R<Boolean> auditWithdraw(@RequestParam Long withdrawId,
                                     @RequestParam Boolean pass,
                                     @RequestParam(required = false) String rejectReason) {

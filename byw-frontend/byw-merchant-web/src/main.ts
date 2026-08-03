@@ -7,6 +7,7 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import { createPinia } from 'pinia'
 import router from './router'
 import App from './App.vue'
+import { setupPermission } from './utils/permission'
 
 const app = createApp(App)
 
@@ -17,6 +18,7 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
 
 app.use(ElementPlus, { locale: zhCn })
 app.use(createPinia())
+setupPermission(app)
 app.use(router)
 
 app.mount('#app')

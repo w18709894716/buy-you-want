@@ -3,7 +3,7 @@ package com.byw.admin.controller;
 import com.byw.api.logistics.LogisticsFeignClient;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.RequireAdmin;
+import com.byw.common.security.annotation.RequirePerm;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -12,7 +12,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/admin/logistics")
-@RequireAdmin
+@RequirePerm("logistics:list")
 @RequiredArgsConstructor
 public class AdminLogisticsController {
 

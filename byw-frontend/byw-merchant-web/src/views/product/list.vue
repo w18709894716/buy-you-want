@@ -24,7 +24,7 @@
             <el-icon><Search /></el-icon>搜索
           </el-button>
           <el-button @click="resetSearch">重置</el-button>
-          <el-button type="success" @click="$router.push('/product/add')">
+          <el-button type="success" v-perm="'m:product:publish'" @click="$router.push('/product/add')">
             <el-icon><Plus /></el-icon>发布商品
           </el-button>
         </el-form-item>

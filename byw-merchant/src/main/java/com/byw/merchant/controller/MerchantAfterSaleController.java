@@ -2,10 +2,9 @@ package com.byw.merchant.controller;
 
 import com.byw.api.order.AfterSaleFeignClient;
 import com.byw.api.order.dto.AfterSaleDTO;
-import com.byw.common.core.constant.CommonConstants;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.RequireRole;
+import com.byw.common.security.annotation.RequirePerm;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/merchant/after-sale")
-@RequireRole({CommonConstants.ROLE_MERCHANT_OWNER, CommonConstants.ROLE_MERCHANT_STAFF})
+@RequirePerm("m:aftersale:manage")
 @RequiredArgsConstructor
 public class MerchantAfterSaleController {
 

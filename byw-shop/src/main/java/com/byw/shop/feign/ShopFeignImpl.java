@@ -3,6 +3,7 @@ package com.byw.shop.feign;
 import com.byw.api.shop.ShopFeignClient;
 import com.byw.api.shop.dto.MerchantAccountDTO;
 import com.byw.api.shop.dto.ShopDTO;
+import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
 import com.byw.common.security.annotation.Public;
 import com.byw.common.security.context.UserContext;
@@ -50,6 +51,40 @@ public class ShopFeignImpl implements ShopFeignClient {
         // 强制作用于当前登录商家的 shopId（由 BFF 透传身份头重建上下文）
         shopDTO.setId(UserContext.getShopId());
         shopService.updateShop(shopDTO);
+        return R.ok();
+    }
+
+    @Override
+    @GetMapping("/staff/page")
+    public R<PageResult<MerchantAccountDTO>> listStaff(@RequestParam("parentId") Long parentId,
+                                                       @RequestParam(value = "pageNum", defaultValue = "1") Integer pageNum,
+                                                       @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize) {
+        return R.ok(shopService.listStaff(parentId, pageNum, pageSize));
+    }
+
+    @Override
+    @PostMapping("/staff")
+    public R<Long> createStaff(@RequestParam("parentId") Long parentId,
+                               @RequestParam("shopId") Long shopId,
+                               @RequestBody MerchantAccountDTO dto) {
+        return R.ok(shopService.createStaff(parentId, shopId, dto));
+    }
+
+    @Override
+    @PutMapping("/staff/{staffId}/status")
+    public R<Void> updateStaffStatus(@PathVariable("staffId") Long staffId,
+                                     @RequestParam("parentId") Long parentId,
+                                     @RequestParam("status") Integer status) {
+        shopService.updateStaffStatus(parentId, staffId, status);
+        return R.ok();
+    }
+
+    @Override
+    @PutMapping("/staff/{staffId}/password")
+    public R<Void> resetStaffPassword(@PathVariable("staffId") Long staffId,
+                                      @RequestParam("parentId") Long parentId,
+                                      @RequestParam("password") String password) {
+        shopService.resetStaffPassword(parentId, staffId, password);
         return R.ok();
     }
 }
