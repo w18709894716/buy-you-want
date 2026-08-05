@@ -39,6 +39,24 @@ public class ImMessage {
     /** 文本内容或图片URL */
     private String content;
 
+    /** 发送者显示名（商家侧为客服姓名） */
+    private String senderName;
+
+    /** 引用消息ID（im_messages._id），非空表示该消息为引用消息 */
+    private String quoteId;
+
+    /** 被引用消息内容快照（防原消息撤回后引用失效） */
+    private String quoteContent;
+
+    /** 被引用消息发送者姓名 */
+    private String quoteSenderName;
+
+    /** 是否已撤回（软撤回：内容替换为提示文案，保留记录） */
+    private Boolean recalled;
+
+    /** 系统消息类型：assign/transfer/join；普通消息为 null */
+    private String systemType;
+
     /** 卡片扩展字段：商品卡片{productId,name,image,price}，订单卡片{orderNo,status,items...} */
     private Map<String, Object> extra;
 

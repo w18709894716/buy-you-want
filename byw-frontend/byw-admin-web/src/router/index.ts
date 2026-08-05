@@ -125,6 +125,12 @@ const routes: RouteRecordRaw[] = [
         name: 'SystemRole',
         component: () => import('../views/system/role.vue'),
         meta: { title: '角色管理', perm: 'sys:role' }
+      },
+      {
+        path: 'system/menu',
+        name: 'SystemMenu',
+        component: () => import('../views/system/menu.vue'),
+        meta: { title: '菜单管理', perm: 'sys:menu' }
       }
     ]
   }

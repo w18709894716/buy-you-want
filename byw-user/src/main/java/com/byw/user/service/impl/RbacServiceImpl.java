@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -226,9 +227,15 @@ public class RbacServiceImpl implements RbacService {
                 .eq(SysRole::getStatus, 1)
                 .and(q -> q.isNull(SysRole::getShopId).or().eq(SysRole::getShopId, shopId))
                 .orderByAsc(SysRole::getId);
-        return sysRoleMapper.selectList(wrapper).stream().map(r -> {
+        List<SysRole> roles = sysRoleMapper.selectList(wrapper);
+        // 统计每个角色绑定的商家账号数
+        Map<Long, Long> countMap = sysUserRoleMapper.selectList(new LambdaQueryWrapper<SysUserRole>()
+                        .eq(SysUserRole::getUserType, USER_TYPE_MERCHANT))
+                .stream().collect(Collectors.groupingBy(SysUserRole::getRoleId, Collectors.counting()));
+        return roles.stream().map(r -> {
             SysRoleDTO dto = new SysRoleDTO();
             BeanUtils.copyProperties(r, dto);
+            dto.setUserCount(countMap.getOrDefault(r.getId(), 0L).intValue());
             return dto;
         }).collect(Collectors.toList());
     }
@@ -249,6 +256,7 @@ public class RbacServiceImpl implements RbacService {
         if (dto.getRoleName() == null || dto.getRoleName().trim().isEmpty()) {
             throw new BusinessException("角色名称不能为空");
         }
+        validateRoleNameUnique(dto.getScope(), dto.getShopId(), dto.getRoleName().trim());
         String code = dto.getRoleCode();
         if (code == null || code.trim().isEmpty()) {
             // 商家自定义角色无需手填标识，自动生成唯一 code
@@ -269,6 +277,70 @@ public class RbacServiceImpl implements RbacService {
         role.setStatus(1);
         sysRoleMapper.insert(role);
         return role.getId();
+    }
+
+    /** 校验同 scope 且同 shopId（NULL 按 NULL 处理）下角色名唯一 */
+    private void validateRoleNameUnique(String scope, Long shopId, String roleName) {
+        Long nameExists = sysRoleMapper.selectCount(new LambdaQueryWrapper<SysRole>()
+                .eq(SysRole::getScope, scope)
+                .eq(shopId != null, SysRole::getShopId, shopId)
+                .isNull(shopId == null, SysRole::getShopId)
+                .eq(SysRole::getRoleName, roleName));
+        if (nameExists != null && nameExists > 0) {
+            throw new BusinessException("同名角色已存在");
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Long copyRole(Long sourceRoleId, SysRoleDTO dto) {
+        SysRole source = sysRoleMapper.selectById(sourceRoleId);
+        if (source == null) {
+            throw new BusinessException("源角色不存在");
+        }
+        if (dto.getRoleName() == null || dto.getRoleName().trim().isEmpty()) {
+            throw new BusinessException("角色名称不能为空");
+        }
+        validateRoleNameUnique(dto.getScope(), dto.getShopId(), dto.getRoleName().trim());
+        // 自动生成唯一 code，新角色始终为自定义角色（非预设）
+        String code = (SCOPE_MERCHANT.equals(dto.getScope()) ? "m_shop" + dto.getShopId() + "_" : "role_") + System.currentTimeMillis();
+        SysRole role = new SysRole();
+        role.setRoleCode(code);
+        role.setRoleName(dto.getRoleName().trim());
+        role.setScope(dto.getScope());
+        role.setShopId(dto.getShopId());
+        role.setIsPreset(0);
+        role.setRemark(dto.getRemark());
+        role.setStatus(1);
+        sysRoleMapper.insert(role);
+        // 继承源角色的菜单授权
+        List<SysRoleMenu> binds = sysRoleMenuMapper.selectList(new LambdaQueryWrapper<SysRoleMenu>()
+                .eq(SysRoleMenu::getRoleId, sourceRoleId));
+        for (SysRoleMenu rm : binds) {
+            SysRoleMenu copy = new SysRoleMenu();
+            copy.setRoleId(role.getId());
+            copy.setMenuId(rm.getMenuId());
+            sysRoleMenuMapper.insert(copy);
+        }
+        return role.getId();
+    }
+
+    @Override
+    public List<Long> listRoleUserIds(Long roleId) {
+        return sysUserRoleMapper.selectList(new LambdaQueryWrapper<SysUserRole>()
+                        .eq(SysUserRole::getUserType, USER_TYPE_MERCHANT)
+                        .eq(SysUserRole::getRoleId, roleId))
+                .stream().map(SysUserRole::getUserId).collect(Collectors.toList());
+    }
+
+    @Override
+    public boolean unbindUserRole(Long userId, Integer userType, Long roleId) {
+        sysUserRoleMapper.delete(new LambdaQueryWrapper<SysUserRole>()
+                .eq(SysUserRole::getUserType, userType)
+                .eq(SysUserRole::getUserId, userId)
+                .eq(SysUserRole::getRoleId, roleId));
+        evictPerms(userType, userId);
+        return true;
     }
 
     @Override
@@ -429,6 +501,171 @@ public class RbacServiceImpl implements RbacService {
         Map<Long, List<SysMenu>> byParent = menus.stream()
                 .collect(Collectors.groupingBy(m -> m.getParentId() == null ? 0L : m.getParentId()));
         return buildFullTree(0L, byParent);
+    }
+
+    @Override
+    public List<SysMenuDTO> getMenuTreeAll(String scope) {
+        // 菜单管理页需要完整树（含停用菜单），不做状态过滤
+        List<SysMenu> menus = sysMenuMapper.selectList(new LambdaQueryWrapper<SysMenu>()
+                .eq(SysMenu::getScope, scope)
+                .orderByAsc(SysMenu::getSortOrder));
+        Map<Long, List<SysMenu>> byParent = menus.stream()
+                .collect(Collectors.groupingBy(m -> m.getParentId() == null ? 0L : m.getParentId()));
+        return buildFullTree(0L, byParent);
+    }
+
+    @Override
+    public Long createMenu(SysMenuDTO dto) {
+        validateMenu(dto, null);
+        SysMenu menu = new SysMenu();
+        BeanUtils.copyProperties(dto, menu);
+        menu.setId(null);
+        if (menu.getSortOrder() == null) {
+            // 默认排在同父级菜单之后
+            menu.setSortOrder(maxSiblingSort(menu.getScope(), menu.getParentId()) + 10);
+        }
+        if (menu.getVisible() == null) {
+            menu.setVisible(1);
+        }
+        if (menu.getStatus() == null) {
+            menu.setStatus(1);
+        }
+        sysMenuMapper.insert(menu);
+        return menu.getId();
+    }
+
+    @Override
+    public boolean updateMenu(SysMenuDTO dto) {
+        if (dto.getId() == null) {
+            throw new BusinessException("菜单ID不能为空");
+        }
+        SysMenu menu = sysMenuMapper.selectById(dto.getId());
+        if (menu == null) {
+            throw new BusinessException("菜单不存在");
+        }
+        // 菜单类型不可变更（避免破坏子树层级），以库内原值为准校验
+        dto.setMenuType(menu.getMenuType());
+        validateMenu(dto, dto.getId());
+        boolean permChanged = !Objects.equals(menu.getPermCode(),
+                dto.getPermCode() == null ? null : dto.getPermCode().trim());
+        SysMenu update = new SysMenu();
+        update.setId(dto.getId());
+        update.setMenuName(dto.getMenuName().trim());
+        update.setPath(dto.getPath());
+        update.setPermCode(dto.getPermCode() == null ? null : dto.getPermCode().trim());
+        update.setIcon(dto.getIcon());
+        update.setSortOrder(dto.getSortOrder());
+        update.setVisible(dto.getVisible());
+        update.setStatus(dto.getStatus());
+        sysMenuMapper.updateById(update);
+        if (permChanged) {
+            // 权限标识变更：清理绑定该菜单的所有角色的用户权限缓存
+            evictMenuPermHolders(menu.getId());
+        }
+        return true;
+    }
+
+    @Override
+    public boolean deleteMenu(Long menuId) {
+        SysMenu menu = sysMenuMapper.selectById(menuId);
+        if (menu == null) {
+            throw new BusinessException("菜单不存在");
+        }
+        Long children = sysMenuMapper.selectCount(new LambdaQueryWrapper<SysMenu>()
+                .eq(SysMenu::getParentId, menuId));
+        if (children != null && children > 0) {
+            throw new BusinessException("存在子菜单，请先删除子菜单");
+        }
+        Long bound = sysRoleMenuMapper.selectCount(new LambdaQueryWrapper<SysRoleMenu>()
+                .eq(SysRoleMenu::getMenuId, menuId));
+        if (bound != null && bound > 0) {
+            throw new BusinessException("该菜单已被角色绑定，请先解绑后再删除");
+        }
+        sysMenuMapper.deleteById(menuId);
+        return true;
+    }
+
+    /** 菜单新增/编辑校验：名称、类型、路径/权限标识、层级、权限标识唯一性 */
+    private void validateMenu(SysMenuDTO dto, Long excludeId) {
+        if (dto.getMenuName() == null || dto.getMenuName().trim().isEmpty()) {
+            throw new BusinessException("菜单名称不能为空");
+        }
+        if (dto.getScope() == null || dto.getScope().trim().isEmpty()) {
+            throw new BusinessException("所属端不能为空");
+        }
+        if (dto.getMenuType() == null || dto.getMenuType() < 1 || dto.getMenuType() > 3) {
+            throw new BusinessException("菜单类型不正确");
+        }
+        if (dto.getMenuType() == 2 && (dto.getPath() == null || dto.getPath().trim().isEmpty())) {
+            throw new BusinessException("菜单类型必须配置路由路径");
+        }
+        if (dto.getMenuType() == 3) {
+            if (dto.getPermCode() == null || dto.getPermCode().trim().isEmpty()) {
+                throw new BusinessException("按钮权限必须配置权限标识");
+            }
+            dto.setPath(null);
+        }
+        // 权限标识同 scope 内唯一（NULL 不参与，公共菜单机制不变）
+        if (dto.getPermCode() != null && !dto.getPermCode().trim().isEmpty()) {
+            Long exists = sysMenuMapper.selectCount(new LambdaQueryWrapper<SysMenu>()
+                    .eq(SysMenu::getScope, dto.getScope())
+                    .eq(SysMenu::getPermCode, dto.getPermCode().trim())
+                    .ne(excludeId != null, SysMenu::getId, excludeId));
+            if (exists != null && exists > 0) {
+                throw new BusinessException("权限标识已存在");
+            }
+        }
+        // 层级约束：按钮挂菜单下，菜单挂目录下，目录挂目录下
+        if (dto.getParentId() != null && dto.getParentId() != 0) {
+            SysMenu parent = sysMenuMapper.selectById(dto.getParentId());
+            if (parent == null) {
+                throw new BusinessException("父级菜单不存在");
+            }
+            int parentType = parent.getMenuType() == null ? 0 : parent.getMenuType();
+            int menuType = dto.getMenuType();
+            if (menuType == 3 && parentType != 2) {
+                throw new BusinessException("按钮只能挂在菜单下");
+            }
+            if (menuType == 2 && parentType != 1) {
+                throw new BusinessException("菜单只能挂在目录下");
+            }
+            if (menuType == 1 && parentType != 1) {
+                throw new BusinessException("目录只能挂在目录下");
+            }
+        } else {
+            dto.setParentId(null);
+        }
+    }
+
+    /** 同 scope 下同父级菜单的最大排序值（无则 0） */
+    private Integer maxSiblingSort(String scope, Long parentId) {
+        LambdaQueryWrapper<SysMenu> wrapper = new LambdaQueryWrapper<SysMenu>()
+                .eq(SysMenu::getScope, scope);
+        if (parentId == null) {
+            wrapper.isNull(SysMenu::getParentId);
+        } else {
+            wrapper.eq(SysMenu::getParentId, parentId);
+        }
+        return sysMenuMapper.selectList(wrapper).stream()
+                .map(SysMenu::getSortOrder)
+                .filter(Objects::nonNull)
+                .max(Integer::compareTo)
+                .orElse(0);
+    }
+
+    /** 菜单权限标识变更后，清理绑定该菜单的所有角色的用户权限缓存 */
+    private void evictMenuPermHolders(Long menuId) {
+        List<Long> roleIds = sysRoleMenuMapper.selectList(new LambdaQueryWrapper<SysRoleMenu>()
+                        .eq(SysRoleMenu::getMenuId, menuId))
+                .stream().map(SysRoleMenu::getRoleId).collect(Collectors.toList());
+        if (roleIds.isEmpty()) {
+            return;
+        }
+        List<SysUserRole> holders = sysUserRoleMapper.selectList(new LambdaQueryWrapper<SysUserRole>()
+                .in(SysUserRole::getRoleId, roleIds));
+        for (SysUserRole ur : holders) {
+            evictPerms(ur.getUserType(), ur.getUserId());
+        }
     }
 
     private List<SysMenuDTO> buildFullTree(Long parentId, Map<Long, List<SysMenu>> byParent) {

@@ -26,6 +26,7 @@ export const useUserStore = defineStore('user', () => {
   const token = ref<string>(localStorage.getItem('merchant_token') || '')
   const username = ref<string>(localStorage.getItem('merchant_username') || '')
   const shopId = ref<string>(localStorage.getItem('merchant_shop_id') || '')
+  const userId = ref<string>(localStorage.getItem('merchant_user_id') || '')
   const menus = ref<MenuNode[]>(readJson<MenuNode[]>('merchant_menus', []))
   const perms = ref<string[]>(readJson<string[]>('merchant_perms', []))
 
@@ -34,9 +35,11 @@ export const useUserStore = defineStore('user', () => {
     token.value = data.token
     username.value = data.username || loginForm.username
     shopId.value = data.shopId != null ? String(data.shopId) : ''
+    userId.value = data.userId != null ? String(data.userId) : ''
     localStorage.setItem('merchant_token', data.token)
     localStorage.setItem('merchant_username', data.username || loginForm.username)
     if (data.shopId != null) localStorage.setItem('merchant_shop_id', String(data.shopId))
+    if (data.userId != null) localStorage.setItem('merchant_user_id', String(data.userId))
     return data
   }
 
@@ -54,11 +57,13 @@ export const useUserStore = defineStore('user', () => {
     token.value = ''
     username.value = ''
     shopId.value = ''
+    userId.value = ''
     menus.value = []
     perms.value = []
     localStorage.removeItem('merchant_token')
     localStorage.removeItem('merchant_username')
     localStorage.removeItem('merchant_shop_id')
+    localStorage.removeItem('merchant_user_id')
     localStorage.removeItem('merchant_menus')
     localStorage.removeItem('merchant_perms')
   }
@@ -67,6 +72,7 @@ export const useUserStore = defineStore('user', () => {
     token,
     username,
     shopId,
+    userId,
     menus,
     perms,
     login,

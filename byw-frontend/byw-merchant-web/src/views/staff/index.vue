@@ -70,8 +70,13 @@
           <el-input v-model="form.phone" placeholder="联系电话" />
         </el-form-item>
         <el-form-item label="角色">
-          <el-select v-model="form.roleIds" multiple placeholder="选择角色" style="width: 100%">
-            <el-option v-for="r in roleOptions" :key="r.id" :label="r.roleName" :value="r.id" />
+          <el-select v-model="form.roleIds" multiple filterable :teleported="false" placeholder="选择角色（可搜索）" style="width: 100%">
+            <el-option v-for="r in roleOptions" :key="r.id" :label="r.roleName" :value="r.id" style="height: auto; min-height: 44px; line-height: 1.5;">
+              <div class="role-option">
+                <span class="role-option-name">{{ r.roleName }}</span>
+                <span v-if="r.remark" class="role-option-remark">{{ r.remark }}</span>
+              </div>
+            </el-option>
           </el-select>
         </el-form-item>
       </el-form>
@@ -83,8 +88,13 @@
 
     <!-- 分配角色弹窗 -->
     <el-dialog v-model="roleDialogVisible" title="分配角色" width="420px">
-      <el-select v-model="roleForm.roleIds" multiple placeholder="选择角色" style="width: 100%">
-        <el-option v-for="r in roleOptions" :key="r.id" :label="r.roleName" :value="r.id" />
+      <el-select v-model="roleForm.roleIds" multiple filterable :teleported="false" placeholder="选择角色（可搜索）" style="width: 100%">
+        <el-option v-for="r in roleOptions" :key="r.id" :label="r.roleName" :value="r.id" style="height: auto; min-height: 44px; line-height: 1.5;">
+          <div class="role-option">
+            <span class="role-option-name">{{ r.roleName }}</span>
+            <span v-if="r.remark" class="role-option-remark">{{ r.remark }}</span>
+          </div>
+        </el-option>
       </el-select>
       <template #footer>
         <el-button @click="roleDialogVisible = false">取消</el-button>
@@ -227,7 +237,21 @@ onMounted(() => {
   .toolbar {
     margin-bottom: 16px;
   }
-
+  .role-option {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.5;
+    padding: 2px 0;
+    .role-option-name {
+      font-weight: 500;
+    }
+    .role-option-remark {
+      color: #909399;
+      font-size: 12px;
+      line-height: 1.4;
+      word-break: break-word;
+    }
+  }
   .pagination-wrapper {
     margin-top: 16px;
     display: flex;

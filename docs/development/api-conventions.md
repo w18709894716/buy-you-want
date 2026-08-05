@@ -121,11 +121,17 @@ byw-admin / byw-merchant 为无库 BFF，经 `RbacFeignClient` 转发 byw-user �
 ### 权限标识清单
 格式 `模块:操作`，与菜单/按钮一一对应。
 
-**平台端（scope=platform）**：`member:list`、`shop:audit`、`shop:list`、`product:list`、`product:audit`、`category:manage`、`brand:manage`、`order:list`、`coupon:manage`、`seckill:manage`、`banner:manage`、`review:manage`、`logistics:list`、`settle:commission`、`settle:withdraw`、`sys:user`、`sys:role`
+**平台端（scope=platform）**：`member:list`、`shop:audit`、`shop:list`、`product:list`、`product:audit`、`category:manage`、`brand:manage`、`order:list`、`coupon:manage`、`seckill:manage`、`banner:manage`、`review:manage`、`logistics:list`、`settle:commission`、`settle:withdraw`、`sys:user`、`sys:role`、`sys:menu`
 
-**商家端（scope=merchant）**：`m:product:list`、`m:product:publish`、`m:order:list`、`m:order:ship`、`m:aftersale:manage`、`m:im:workbench`、`m:coupon:manage`、`m:review:manage`、`m:shop:info`、`m:settle:manage`、`m:staff:manage`
+**商家端（scope=merchant）**：`m:product:list`、`m:product:publish`、`m:order:list`、`m:order:ship`、`m:aftersale:manage`、`m:im:workbench`、`m:coupon:manage`、`m:review:manage`、`m:shop:info`、`m:settle:manage`、`m:staff:manage`、`m:role:manage`
 
 > 说明：IM 端点（`/im/**`）由买家与商家共享，仍用 `@RequireLogin`，运行时按 `UserContext` 区分数据范围；商家侧 `m:im:workbench` 仅用于前端菜单/按钮可见性控制。
+
+### 菜单管理（二期）
+- 平台端「系统管理-菜单管理」（`sys:menu`）按 `scope` 切换维护 platform/merchant 两套菜单树，商家端菜单同样由平台统一维护（商家端不提供入口）
+- 菜单类型：1目录（可挂目录/菜单）2菜单（必须配 path，可挂目录或顶层）3按钮（必须配 perm_code，只能挂菜单下）；`perm_code` 同 scope 内唯一，NULL 视为公共菜单（如控制台，所有人可见）
+- 删除约束：存在子菜单或被角色绑定（t_sys_role_menu）时拒绝删除，需先清理
+- 缓存失效：修改菜单 `perm_code` 后自动清理绑定该菜单角色的所有用户 `auth:perms:*` key，权限即时生效（菜单管理页渲染使用含停用菜单的全量树 `getMenuTreeAll`，授权树/导航仍用启用树）
 
 ### 前端权限渲染
 - 登录后调用 `/admin/me/menus`（或 `/merchant/me/menus`）获取菜单树 + 权限集，存 Pinia + localStorage

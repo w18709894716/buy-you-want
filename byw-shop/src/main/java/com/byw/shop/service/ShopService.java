@@ -30,6 +30,11 @@ public interface ShopService {
     MerchantAccountDTO getMerchantById(Long merchantId);
 
     /**
+     * 批量查询商家账号（角色成员列表聚合用，脱敏不含密码）
+     */
+    List<MerchantAccountDTO> getMerchantsByIds(List<Long> ids);
+
+    /**
      * 商家入驻申请（创建待审核商家账号；以申请账号为键防重复，驳回后凭原密码重新提交复用原记录）
      */
     Long applyMerchant(MerchantAccount account);

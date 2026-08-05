@@ -55,52 +55,80 @@
         <!-- 消息流 -->
         <div v-else ref="msgScroll" class="flex-1 overflow-y-auto px-3 py-3 bg-gray-50 space-y-3">
           <div v-if="im.loadingMessages" class="text-center text-gray-400 text-xs py-4">加载中…</div>
-          <div v-for="(m, i) in im.messages" :key="m.id || ('l' + i)" class="flex" :class="isMine(m) ? 'justify-end' : 'justify-start'">
-            <div class="max-w-[75%]">
-              <!-- 文本 -->
-              <div
-                v-if="m.type === 'text'"
-                class="px-3 py-2 rounded-2xl text-sm break-words"
-                :class="isMine(m) ? 'bg-primary text-white rounded-br-sm' : 'bg-white text-gray-800 rounded-bl-sm shadow-sm'"
-              >{{ m.content }}</div>
+          <template v-for="(m, i) in im.messages" :key="m.id || ('l' + i)">
+            <!-- 系统提示（如客服接入）：居中灰色小字，不用气泡 -->
+            <div v-if="m.systemType" class="text-center">
+              <span class="text-[11px] text-gray-400">{{ m.content }}</span>
+            </div>
+            <div v-else class="flex items-start gap-2" :class="isMine(m) ? 'justify-end' : 'justify-start'" :data-msg-id="m.id" @contextmenu.prevent="showCtxMenu(m, $event)">
+              <!-- 左侧：客服头像（名字首字） -->
+              <div v-if="!isMine(m)" class="w-8 h-8 rounded-full bg-primary text-white text-sm flex items-center justify-center flex-shrink-0">
+                {{ avatarText(m) }}
+              </div>
+              <div class="max-w-[75%]">
+                <!-- 客服名字：仅对方消息显示，自己的消息只显示头像 -->
+                <div v-if="!isMine(m)" class="text-[11px] text-gray-400 mb-1 text-left">{{ msgName(m) }}</div>
+                <!-- 引用条：点击定位到被引用消息 -->
+                <div
+                  v-if="m.quoteId"
+                  class="cursor-pointer bg-black/5 rounded-lg px-2 py-1 mb-1 text-xs text-gray-500 flex items-center gap-1 min-w-0"
+                  @click="scrollToMessage(m.quoteId)"
+                >
+                  <span class="flex-shrink-0">{{ m.quoteSenderName || '消息' }}：</span>
+                  <span v-if="isQuoteRecalled(m)" class="truncate text-gray-400">消息已撤回</span>
+                  <span v-else class="truncate">{{ m.quoteContent }}</span>
+                </div>
+                <!-- 撤回态：统一显示灰色撤回提示，不渲染原内容 -->
+                <div v-if="m.recalled" class="recalled-tip w-fit text-xs text-gray-400 bg-gray-100 rounded-lg px-3 py-1.5">{{ m.content || '消息已撤回' }}</div>
+                <!-- 文本 -->
+                <div
+                  v-else-if="m.type === 'text'"
+                  class="px-3 py-2 rounded-2xl text-sm break-words"
+                  :class="isMine(m) ? 'bg-primary text-white rounded-br-sm' : 'bg-white text-gray-800 rounded-bl-sm shadow-sm'"
+                >{{ m.content }}</div>
 
-              <!-- 图片 -->
-              <a v-else-if="m.type === 'image'" :href="m.content" target="_blank" class="block">
-                <img :src="m.content" class="max-w-[180px] rounded-lg border border-gray-100" />
-              </a>
+                <!-- 图片 -->
+                <a v-else-if="m.type === 'image'" :href="m.content" target="_blank" class="block">
+                  <img :src="m.content" class="max-w-[180px] rounded-lg border border-gray-100" />
+                </a>
 
-              <!-- 商品卡片 -->
-              <div v-else-if="m.type === 'product_card'" class="bg-white rounded-lg shadow-sm border border-gray-100 p-2 w-[220px]">
-                <div class="text-[11px] text-gray-400 mb-1">商品咨询</div>
-                <div class="flex gap-2">
-                  <img :src="m.extra?.image" class="w-14 h-14 rounded object-cover bg-gray-100 flex-shrink-0" />
-                  <div class="min-w-0">
-                    <div class="text-xs text-gray-800 line-clamp-2">{{ m.extra?.name }}</div>
-                    <div class="text-primary text-sm font-medium mt-1">¥{{ fmtPrice(m.extra?.price) }}</div>
+                <!-- 商品卡片 -->
+                <div v-else-if="m.type === 'product_card'" class="bg-white rounded-lg shadow-sm border border-gray-100 p-2 w-[220px]">
+                  <div class="text-[11px] text-gray-400 mb-1">商品咨询</div>
+                  <div class="flex gap-2">
+                    <img :src="m.extra?.image" class="w-14 h-14 rounded object-cover bg-gray-100 flex-shrink-0" />
+                    <div class="min-w-0">
+                      <div class="text-xs text-gray-800 line-clamp-2">{{ m.extra?.name }}</div>
+                      <div class="text-primary text-sm font-medium mt-1">¥{{ fmtPrice(m.extra?.price) }}</div>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <!-- 订单卡片 -->
-              <div v-else-if="m.type === 'order_card'" class="bg-white rounded-lg shadow-sm border border-gray-100 p-2 w-[220px]">
-                <div class="text-[11px] text-gray-400 mb-1">订单咨询 · {{ m.extra?.status }}</div>
-                <div class="flex gap-2">
-                  <img v-if="m.extra?.image" :src="m.extra?.image" class="w-14 h-14 rounded object-cover bg-gray-100 flex-shrink-0" />
-                  <div class="min-w-0">
-                    <div class="text-xs text-gray-800 line-clamp-2">{{ m.extra?.productName || '订单商品' }}</div>
-                    <div class="text-[11px] text-gray-400 mt-1">订单号 {{ m.extra?.orderNo }}</div>
+                <!-- 订单卡片 -->
+                <div v-else-if="m.type === 'order_card'" class="bg-white rounded-lg shadow-sm border border-gray-100 p-2 w-[220px]">
+                  <div class="text-[11px] text-gray-400 mb-1">订单咨询 · {{ m.extra?.status }}</div>
+                  <div class="flex gap-2">
+                    <img v-if="m.extra?.image" :src="m.extra?.image" class="w-14 h-14 rounded object-cover bg-gray-100 flex-shrink-0" />
+                    <div class="min-w-0">
+                      <div class="text-xs text-gray-800 line-clamp-2">{{ m.extra?.productName || '订单商品' }}</div>
+                      <div class="text-[11px] text-gray-400 mt-1">订单号 {{ m.extra?.orderNo }}</div>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <!-- 时间 + 已读回执 -->
-              <div class="text-[10px] text-gray-400 mt-0.5" :class="isMine(m) ? 'text-right' : 'text-left'">
-                {{ shortTime(m.createdAt) }}
-                <span v-if="isMine(m) && m.read" class="text-primary ml-1">已读</span>
-                <span v-else-if="isMine(m)" class="text-gray-400 ml-1">未读</span>
+                <!-- 时间 + 已读回执 -->
+                <div class="text-[10px] text-gray-400 mt-0.5" :class="isMine(m) ? 'text-right' : 'text-left'">
+                  {{ shortTime(m.createdAt) }}
+                  <span v-if="isMine(m) && m.read" class="text-primary ml-1">已读</span>
+                  <span v-else-if="isMine(m)" class="text-gray-400 ml-1">未读</span>
+                </div>
+              </div>
+              <!-- 右侧：自己头像 -->
+              <div v-if="isMine(m)" class="w-8 h-8 rounded-full bg-gray-300 text-white text-sm flex items-center justify-center flex-shrink-0">
+                {{ avatarText(m) }}
               </div>
             </div>
-          </div>
+          </template>
 
          <!-- 会话超时提示：空闲 5 分钟自动断开，发消息会自动重连 -->
           <div v-if="idleClosed" class="text-center py-1">
@@ -140,6 +168,13 @@
 
         <!-- 输入区（淘宝式：工具栏在上，输入框居中，发送按钮右下） -->
         <div v-if="im.activeId" class="relative border-t border-gray-100 flex-shrink-0 bg-white">
+          <!-- 引用输入条：可取消 -->
+          <div v-if="quoteTarget" class="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border-b border-gray-100">
+            <span class="text-xs text-gray-600 truncate flex-1">引用 {{ quoteTarget.name }}：{{ quoteTarget.content }}</span>
+            <button class="text-gray-400 hover:text-gray-600 flex-shrink-0" aria-label="取消引用" @click="quoteTarget = null">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" /></svg>
+            </button>
+          </div>
           <!-- 表情选择器面板 -->
           <div v-if="showEmoji" ref="emojiPanel" class="absolute bottom-full left-2 mb-2 z-10">
             <ClientOnly>
@@ -184,11 +219,43 @@
         </div>
       </div>
     </transition>
+
+    <!-- 操作错误提示（如撤回超时/非发送者撤回） -->
+    <Teleport to="body">
+      <div
+        v-if="errorTip.visible"
+        class="fixed top-20 left-1/2 -translate-x-1/2 z-[70] px-5 py-2.5 rounded-lg shadow-lg text-sm bg-red-500 text-white"
+      >
+        <span>{{ errorTip.message }}</span>
+      </div>
+    </Teleport>
+
+    <!-- 右键菜单：撤回/引用 -->
+    <Teleport to="body">
+      <div
+        v-if="ctxMenu.visible"
+        ref="ctxMenuRef"
+        class="fixed z-[90] bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[110px]"
+        :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+        @click.stop
+      >
+        <button
+          v-if="ctxMenu.canRecall"
+          class="w-full px-4 py-1.5 text-sm text-left text-gray-700 hover:bg-gray-50 hover:text-red-500"
+          @click="doRecall(ctxMenu.message)"
+        >撤回</button>
+        <button
+          v-if="ctxMenu.canQuote"
+          class="w-full px-4 py-1.5 text-sm text-left text-gray-700 hover:bg-gray-50"
+          @click="doQuote(ctxMenu.message)"
+        >引用</button>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, watch } from 'vue'
+import { ref, reactive, nextTick, watch, onUnmounted } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import EmojiPicker from 'vue3-emoji-picker'
 import 'vue3-emoji-picker/css'
@@ -216,8 +283,170 @@ const draft = ref('')
 const uploading = ref(false)
 const msgScroll = ref<HTMLElement | null>(null)
 
+// 引用目标（输入框上方显示，发送时随帧携带 quoteId）
+const quoteTarget = ref<{ id: string; name: string; content: string } | null>(null)
+
+// 引用摘要：图片/卡片显示占位文案，与后端 summarize 保持一致
+function quoteSummary(m: any): string {
+  if (m.recalled) return '消息已撤回'
+  switch (m.type) {
+    case 'image': return '[图片]'
+    case 'product_card': return '[商品]'
+    case 'order_card': return '[订单]'
+    default: return m.content || ''
+  }
+}
+
+// 设置引用目标：引用对方或自己的消息（已撤回的消息不支持引用）
+function startQuote(m: any) {
+  if (!m.id || m.recalled) return
+  quoteTarget.value = {
+    id: m.id,
+    name: isMine(m) ? '我' : msgName(m),
+    content: quoteSummary(m),
+  }
+}
+
+// 被引用消息是否已撤回（从本地消息列表中查找，引用条改为显示"消息已撤回"）
+function isQuoteRecalled(m: any): boolean {
+  if (!m.quoteId) return false
+  const quoted = im.messages.find(msg => msg.id === m.quoteId)
+  return quoted?.recalled === true
+}
+
+// 仅自己的消息且发送 2 分钟内可撤回（后端强校验，前端仅控制按钮显隐）
+function canRecall(m: any): boolean {
+  if (!isMine(m) || m.recalled || !m.createdAt) return false
+  const d = parseTime(m.createdAt)
+  return d != null && Date.now() - d.getTime() < 120_000
+}
+
+// 撤回消息：发送 recall 帧，失败经 error 帧返回原因
+function recallMessage(m: any) {
+  if (!m.id || !im.activeId) return
+  const ok = im.recallMessage(m.id)
+  if (!ok) showErrorTip('连接已断开，请稍后重试')
+}
+
+// 右键菜单状态
+const ctxMenu = reactive<{
+  visible: boolean
+  x: number
+  y: number
+  message: any
+  canRecall: boolean
+  canQuote: boolean
+}>({
+  visible: false,
+  x: 0,
+  y: 0,
+  message: null,
+  canRecall: false,
+  canQuote: false,
+})
+const ctxMenuRef = ref<HTMLElement | null>(null)
+
+// 点击菜单外部任意处关闭（document 级监听，不遮挡页面其他交互）
+function onDocClick(e: MouseEvent) {
+  const el = ctxMenuRef.value
+  if (el && !el.contains(e.target as Node)) closeCtxMenu()
+}
+function closeCtxMenu() {
+  ctxMenu.visible = false
+  document.removeEventListener('click', onDocClick)
+}
+
+// 右键点击气泡显示操作菜单
+function showCtxMenu(m: any, e: MouseEvent) {
+  const canDoRecall = canRecall(m)
+  const canDoQuote = !!m.id && !m.recalled
+  // 无可用操作（如已撤回消息）时不弹菜单，避免空白色长条
+  if (!canDoRecall && !canDoQuote) return
+  const menuW = 110
+  const menuH = 80
+  let x = e.clientX
+  let y = e.clientY
+  // 避免菜单溢出视口
+  if (x + menuW > window.innerWidth) x = window.innerWidth - menuW - 8
+  if (y + menuH > window.innerHeight) y = window.innerHeight - menuH - 8
+  ctxMenu.x = x
+  ctxMenu.y = y
+  ctxMenu.message = m
+  ctxMenu.canRecall = canDoRecall
+  ctxMenu.canQuote = canDoQuote
+  ctxMenu.visible = true
+  document.addEventListener('click', onDocClick)
+}
+
+// 右键菜单：撤回
+function doRecall(m: any) {
+  closeCtxMenu()
+  recallMessage(m)
+}
+
+// 右键菜单：引用
+function doQuote(m: any) {
+  closeCtxMenu()
+  startQuote(m)
+}
+
+// 组件卸载时清理全局监听
+onUnmounted(() => {
+  document.removeEventListener('click', onDocClick)
+})
+
+// 点击引用条定位到被引用消息（滚动 + 高亮闪烁）
+function scrollToMessage(messageId?: string) {
+  if (!messageId) return
+  const el = document.querySelector(`[data-msg-id="${messageId}"]`)
+  if (!el) return
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  el.classList.add('msg-flash')
+  setTimeout(() => el.classList.remove('msg-flash'), 1200)
+}
+
+// 解析服务端时间（LocalDateTime 序列化可能为数组或字符串）
+function parseTime(t: any): Date | null {
+  if (!t) return null
+  let d: Date
+  if (Array.isArray(t)) {
+    const [y, mo, day, h = 0, mi = 0, s = 0] = t
+    d = new Date(y, (mo || 1) - 1, day, h, mi, s)
+  } else {
+    d = new Date(t)
+  }
+  return isNaN(d.getTime()) ? null : d
+}
+
+// 操作错误提示：后端 error 帧（如撤回超时）与本地失败（连接断开）统一展示
+const errorTip = reactive({ visible: false, message: '' })
+let errorTimer: ReturnType<typeof setTimeout> | null = null
+function showErrorTip(message: string) {
+  if (errorTimer) clearTimeout(errorTimer)
+  errorTip.visible = true
+  errorTip.message = message
+  errorTimer = setTimeout(() => { errorTip.visible = false }, 2500)
+}
+// 后端 error 帧到达时经 store 透出，此处消费并清空
+watch(() => im.lastError, (msg) => {
+  if (!msg) return
+  showErrorTip(msg)
+  im.clearError()
+})
+
 function isMine(m: any) {
   return m.senderRole === 'user'
+}
+
+// 消息发送者显示名：客服消息显示客服姓名（后端已填真实姓名，仅对方消息使用）
+function msgName(m: any) {
+  return m.senderName || '客服'
+}
+
+// 头像文字：名字首字；用户用"我"占位
+function avatarText(m: any) {
+  if (m.senderRole === 'user') return '我'
+  return (m.senderName || '客').charAt(0)
 }
 
 function backToList() {
@@ -228,8 +457,9 @@ function backToList() {
 function send() {
   const text = draft.value.trim()
   if (!text) return
-  im.sendText(text)
+  im.sendText(text, quoteTarget.value?.id)
   draft.value = ''
+  quoteTarget.value = null
 }
 
 async function onPickImage(e: Event) {
@@ -288,4 +518,14 @@ watch(idleClosed, (closed) => { if (closed) scrollToBottom() })
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 .slide-up-enter-active, .slide-up-leave-active { transition: transform .25s ease, opacity .25s ease; }
 .slide-up-enter-from, .slide-up-leave-to { transform: translateY(20px); opacity: 0; }
+
+/* 引用定位高亮闪烁 */
+.msg-flash {
+  animation: msg-flash 1.2s ease;
+  border-radius: 8px;
+}
+@keyframes msg-flash {
+  0%, 100% { box-shadow: none; }
+  30% { box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.4); }
+}
 </style>

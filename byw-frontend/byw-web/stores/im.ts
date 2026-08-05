@@ -10,10 +10,20 @@ export interface ImMessage {
   userId?: number
   type: string // text | image | product_card | order_card
   content?: string
+  /** 引用消息ID（im_messages._id），非空表示该消息为引用消息 */
+  quoteId?: string
+  /** 被引用消息内容快照（防原消息撤回后引用失效） */
+  quoteContent?: string
+  /** 被引用消息发送者姓名 */
+  quoteSenderName?: string
+  /** 是否已撤回（软撤回：内容替换为提示文案，保留记录） */
+  recalled?: boolean
   extra?: Record<string, any>
   read?: boolean
   createdAt?: string
   _local?: boolean
+  /** 系统消息类型（如 assign=客服接入），命中时用居中灰色小字提示，不走气泡 */
+  systemType?: string
 }
 
 export interface ImConversation {
@@ -38,6 +48,8 @@ interface ImState {
   loadingMessages: boolean
   /** 待确认发送的商品/订单卡片：进入会话不自动发送，需用户点“发送”确认 */
   pendingCard: { type: string; extra: Record<string, any> } | null
+  /** 最近一次后端操作失败原因（如撤回超时/非发送者撤回），UI 消费后调用 clearError 清空 */
+  lastError: string | null
 }
 
 let typingTimer: any = null
@@ -53,6 +65,7 @@ export const useImStore = defineStore('im', {
     peerTyping: false,
     loadingMessages: false,
     pendingCard: null,
+    lastError: null,
   }),
 
   getters: {
@@ -177,10 +190,10 @@ export const useImStore = defineStore('im', {
       this.pendingCard = null
     },
 
-    sendText(content: string) {
+    sendText(content: string, quoteId?: string) {
       const text = (content || '').trim()
       if (!text || !this.activeId) return
-      this.doSend({ type: 'text', content: text })
+      this.doSend({ type: 'text', content: text, quoteId })
     },
 
     sendImage(url: string) {
@@ -193,7 +206,7 @@ export const useImStore = defineStore('im', {
       this.doSend({ type, content: '', extra })
     },
 
-    doSend(payload: { type: string; content: string; extra?: Record<string, any> }) {
+    doSend(payload: { type: string; content: string; extra?: Record<string, any>; quoteId?: string }) {
       const conv = this.activeConversation
       const shopId = conv?.shopId
       // 若已因空闲超时断开，sendOrReconnect 会排队暂存并触发重连，连上后自动补发
@@ -204,7 +217,19 @@ export const useImStore = defineStore('im', {
         type: payload.type,
         content: payload.content,
         extra: payload.extra || null,
+        quoteId: payload.quoteId || null,
       })
+    },
+
+    /** 限时撤回消息：发送 recall 帧，仅发送者本人 2 分钟内有效（后端强校验，失败经 error 帧返回原因） */
+    recallMessage(messageId: string): boolean {
+      if (!messageId || !this.activeId) return false
+      return sendFrame({ action: 'recall', conversationId: this.activeId, messageId })
+    },
+
+    /** 清空最近一次后端操作错误（UI 展示后调用） */
+    clearError() {
+      this.lastError = null
     },
 
     notifyTyping() {
@@ -251,12 +276,29 @@ export const useImStore = defineStore('im', {
         if (data?.conversationId === this.activeId && data?.readerRole === 'merchant') {
           this.messages.forEach(m => { if (m.senderRole === 'user') m.read = true })
         }
+      } else if (action === 'recall') {
+        // 消息被撤回：更新对应消息内容与标记（客服端/买家端均实时同步）
+        const d = data as ImMessage
+        if (!d?.id) return
+        const target = this.messages.find(m => m.id === d.id)
+        if (target) {
+          target.content = d.content
+          target.recalled = true
+        }
+        // 被撤回消息是会话最后一条时，同步会话列表摘要
+        const conv = this.conversations.find(c => c.id === d.conversationId)
+        if (conv && target && this.messages.indexOf(target) === this.messages.length - 1) {
+          conv.lastMessage = d.content
+        }
+      } else if (action === 'error') {
+        // 后端操作失败（如撤回超时/非发送者撤回），携带具体原因
+        this.lastError = data?.message || '操作失败'
       }
     },
 
     onMessage(msg: ImMessage) {
       if (!msg || !msg.conversationId) return
-      const fromPeer = msg.senderRole !== 'user'
+      const fromPeer = msg.senderRole !== 'user' && !msg.systemType
       const isActive = msg.conversationId === this.activeId && this.open
 
       // 更新会话摘要
@@ -290,6 +332,7 @@ export const useImStore = defineStore('im', {
 })
 
 function summarize(msg: ImMessage): string {
+  if (msg.systemType) return msg.content || '[系统通知]'
   switch (msg.type) {
     case 'image': return '[图片]'
     case 'product_card': return '[商品]'

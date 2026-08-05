@@ -21,5 +21,9 @@ public class SendMessageCommand {
     /** text / image / product_card / order_card */
     private String type;
     private String content;
+    /** 发送者显示名（商家侧为客服姓名，买家侧留空） */
+    private String senderName;
+    /** 引用消息ID（im_messages._id），非空表示该消息为引用消息 */
+    private String quoteId;
     private Map<String, Object> extra;
 }

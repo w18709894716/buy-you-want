@@ -43,6 +43,21 @@ public class UserFeignImpl implements UserFeignClient {
         return R.ok(dto);
     }
 
+    @Override
+    @GetMapping("/batch")
+    public R<List<UserDTO>> getUsersByIds(@RequestParam("ids") List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return R.ok(java.util.Collections.emptyList());
+        }
+        List<UserDTO> list = userService.listByIds(ids).stream().map(user -> {
+            UserDTO dto = new UserDTO();
+            BeanUtils.copyProperties(user, dto);
+            dto.setPassword(null);
+            return dto;
+        }).collect(Collectors.toList());
+        return R.ok(list);
+    }
+
     @GetMapping("/username/{username}")
     public R<UserDTO> getUserByUsername(@PathVariable String username) {
         User user = userService.getByUsername(username);

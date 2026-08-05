@@ -20,4 +20,6 @@ public class SysRoleDTO implements Serializable {
     private Integer isPreset;
     private String remark;
     private Integer status;
+    /** 绑定该角色的用户数（列表展示用） */
+    private Integer userCount;
 }

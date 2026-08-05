@@ -1,5 +1,7 @@
 package com.byw.merchant.controller;
 
+import com.byw.api.shop.ShopFeignClient;
+import com.byw.api.shop.dto.MerchantAccountDTO;
 import com.byw.api.user.RbacFeignClient;
 import com.byw.api.user.dto.SysMenuDTO;
 import com.byw.api.user.dto.SysRoleDTO;
@@ -10,7 +12,8 @@ import com.byw.common.security.context.UserContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 商家端角色管理：主账号维护本店自定义角色（scope=merchant, shop_id=本店）。
@@ -23,13 +26,42 @@ import java.util.List;
 public class MerchantRoleController {
 
     private static final String SCOPE_MERCHANT = "merchant";
+    /** user_type：商家账号 */
+    private static final int USER_TYPE_MERCHANT = 2;
 
     private final RbacFeignClient rbacFeignClient;
+    private final ShopFeignClient shopFeignClient;
 
     /** 本店可见角色：平台预设模板 + 本店自定义角色 */
     @GetMapping("/list")
     public R<List<SysRoleDTO>> list() {
-        return rbacFeignClient.listMerchantRoles(UserContext.getShopId());
+        Long shopId = UserContext.getShopId();
+        List<SysRoleDTO> roles = rbacFeignClient.listMerchantRoles(shopId).getData();
+        if (roles != null && !roles.isEmpty()) {
+            // 逐个角色获取 userIds，收集所有 userId 去重用于批量查询
+            Map<Long, List<Long>> roleUserMap = new HashMap<>();
+            Set<Long> allUserIds = new HashSet<>();
+            for (SysRoleDTO role : roles) {
+                List<Long> userIds = rbacFeignClient.listRoleUserIds(role.getId()).getData();
+                if (userIds != null) {
+                    roleUserMap.put(role.getId(), userIds);
+                    allUserIds.addAll(userIds);
+                }
+            }
+            // 批量查询员工信息，过滤本店后覆盖 userCount
+            if (!allUserIds.isEmpty()) {
+                List<MerchantAccountDTO> members = shopFeignClient.getMerchantsByIds(new ArrayList<>(allUserIds)).getData();
+                Set<Long> shopMemberIds = members == null ? Collections.emptySet()
+                        : members.stream().filter(m -> m.getShopId() != null && m.getShopId().equals(shopId))
+                        .map(MerchantAccountDTO::getId).collect(Collectors.toSet());
+                for (SysRoleDTO role : roles) {
+                    List<Long> userIds = roleUserMap.getOrDefault(role.getId(), Collections.emptyList());
+                    long count = userIds.stream().filter(shopMemberIds::contains).count();
+                    role.setUserCount((int) count);
+                }
+            }
+        }
+        return R.ok(roles);
     }
 
     /** 商家菜单树（用于授权勾选） */
@@ -74,6 +106,43 @@ public class MerchantRoleController {
     public R<Boolean> bindMenus(@PathVariable Long roleId, @RequestBody List<Long> menuIds) {
         verifyOwn(roleId);
         return rbacFeignClient.bindRoleMenus(roleId, menuIds);
+    }
+
+    /** 复制角色（含预设模板）：以源角色为蓝本创建本店自定义角色并继承其菜单授权 */
+    @PostMapping("/{roleId}/copy")
+    public R<Long> copy(@PathVariable Long roleId, @RequestBody SysRoleDTO dto) {
+        verifyViewable(roleId);
+        dto.setScope(SCOPE_MERCHANT);
+        dto.setShopId(UserContext.getShopId());
+        dto.setIsPreset(0);
+        dto.setRoleCode(null);
+        return rbacFeignClient.copyRole(roleId, dto);
+    }
+
+    /** 角色成员列表（仅本店员工，不含跨店绑定） */
+    @GetMapping("/{roleId}/members")
+    public R<List<MerchantAccountDTO>> members(@PathVariable Long roleId) {
+        verifyViewable(roleId);
+        List<Long> userIds = rbacFeignClient.listRoleUserIds(roleId).getData();
+        if (userIds == null || userIds.isEmpty()) {
+            return R.ok(new ArrayList<>());
+        }
+        List<MerchantAccountDTO> all = shopFeignClient.getMerchantsByIds(userIds).getData();
+        if (all == null) {
+            return R.ok(new ArrayList<>());
+        }
+        Long shopId = UserContext.getShopId();
+        List<MerchantAccountDTO> filtered = all.stream()
+                .filter(m -> m.getShopId() != null && m.getShopId().equals(shopId))
+                .toList();
+        return R.ok(filtered);
+    }
+
+    /** 解绑角色成员（仅本店自定义角色） */
+    @DeleteMapping("/{roleId}/members/{userId}")
+    public R<Boolean> unbindMember(@PathVariable Long roleId, @PathVariable Long userId) {
+        verifyOwn(roleId);
+        return rbacFeignClient.unbindUserRole(userId, USER_TYPE_MERCHANT, roleId);
     }
 
     /** 校验角色归属本店且非预设，防止越权操作他店角色或修改预设模板 */

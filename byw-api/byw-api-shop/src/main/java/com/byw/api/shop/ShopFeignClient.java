@@ -29,6 +29,9 @@ public interface ShopFeignClient {
     @GetMapping("/feign/shop/merchant/{merchantId}")
     R<MerchantAccountDTO> getMerchantById(@PathVariable("merchantId") Long merchantId);
 
+    @GetMapping("/feign/shop/merchant/batch")
+    R<List<MerchantAccountDTO>> getMerchantsByIds(@RequestParam("ids") List<Long> ids);
+
     @PutMapping("/feign/shop/update")
     R<Void> updateShop(@RequestBody ShopDTO shopDTO);
 

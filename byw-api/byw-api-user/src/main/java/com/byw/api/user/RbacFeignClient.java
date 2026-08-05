@@ -56,6 +56,12 @@ public interface RbacFeignClient {
     R<List<SysRoleDTO>> listUserRoles(@PathVariable("userId") Long userId,
                                       @RequestParam("userType") Integer userType);
 
+    /** 解绑用户与角色的绑定关系。userType：1平台员工 2商家账号 */
+    @DeleteMapping("/feign/rbac/user/{userId}/roles/{roleId}")
+    R<Boolean> unbindUserRole(@PathVariable("userId") Long userId,
+                              @RequestParam("userType") Integer userType,
+                              @PathVariable("roleId") Long roleId);
+
     // ===== 角色 =====
 
     @GetMapping("/feign/rbac/role/list")
@@ -70,6 +76,14 @@ public interface RbacFeignClient {
 
     @PostMapping("/feign/rbac/role")
     R<Long> createRole(@RequestBody SysRoleDTO dto);
+
+    /** 复制角色（含预设模板）：创建自定义角色并继承源角色菜单授权 */
+    @PostMapping("/feign/rbac/role/copy/{sourceRoleId}")
+    R<Long> copyRole(@PathVariable("sourceRoleId") Long sourceRoleId, @RequestBody SysRoleDTO dto);
+
+    /** 查询绑定指定角色的用户ID列表（商家账号 user_type=2） */
+    @GetMapping("/feign/rbac/role/{roleId}/user-ids")
+    R<List<Long>> listRoleUserIds(@PathVariable("roleId") Long roleId);
 
     @PutMapping("/feign/rbac/role")
     R<Boolean> updateRole(@RequestBody SysRoleDTO dto);
@@ -99,4 +113,19 @@ public interface RbacFeignClient {
     /** 指定 scope 的完整菜单树（用于角色授权配置） */
     @GetMapping("/feign/rbac/menu/all")
     R<List<SysMenuDTO>> getAllMenuTree(@RequestParam("scope") String scope);
+
+    // ===== 菜单管理（平台端动态维护两端菜单树） =====
+
+    /** 指定 scope 的全量菜单树（含停用，用于菜单管理页） */
+    @GetMapping("/feign/rbac/menu/all-tree")
+    R<List<SysMenuDTO>> getMenuTreeAll(@RequestParam("scope") String scope);
+
+    @PostMapping("/feign/rbac/menu")
+    R<Long> createMenu(@RequestBody SysMenuDTO dto);
+
+    @PutMapping("/feign/rbac/menu")
+    R<Boolean> updateMenu(@RequestBody SysMenuDTO dto);
+
+    @DeleteMapping("/feign/rbac/menu/{menuId}")
+    R<Boolean> deleteMenu(@PathVariable("menuId") Long menuId);
 }

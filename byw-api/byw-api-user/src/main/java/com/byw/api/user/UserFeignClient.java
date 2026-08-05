@@ -12,11 +12,16 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 
+import java.util.List;
+
 @FeignClient(name = "byw-user", contextId = "userFeignClient")
 public interface UserFeignClient {
 
     @GetMapping("/feign/user/{userId}")
     R<UserDTO> getUserById(@PathVariable("userId") Long userId);
+
+    @GetMapping("/feign/user/batch")
+    R<List<UserDTO>> getUsersByIds(@RequestParam("ids") List<Long> ids);
 
     @GetMapping("/feign/user/username/{username}")
     R<UserDTO> getUserByUsername(@PathVariable("username") String username);

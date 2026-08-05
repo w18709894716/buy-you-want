@@ -18,6 +18,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -54,6 +55,18 @@ public class ShopServiceImpl implements ShopService {
     @Override
     public MerchantAccountDTO getMerchantById(Long merchantId) {
         return toMerchantDTO(merchantAccountMapper.selectById(merchantId));
+    }
+
+    @Override
+    public List<MerchantAccountDTO> getMerchantsByIds(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return new ArrayList<>();
+        }
+        return merchantAccountMapper.selectBatchIds(ids).stream().map(account -> {
+            MerchantAccountDTO dto = toMerchantDTO(account);
+            dto.setPassword(null);
+            return dto;
+        }).toList();
     }
 
     @Override

@@ -17,9 +17,14 @@
           </template>
         </el-table-column>
         <el-table-column prop="remark" label="说明" min-width="200" />
-        <el-table-column label="操作" width="240" fixed="right">
+        <el-table-column prop="userCount" label="成员数" width="80" align="center">
+          <template #default="{ row }">{{ row.userCount ?? 0 }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="380" fixed="right">
           <template #default="{ row }">
             <el-button size="small" text type="primary" @click="openAuth(row)">菜单授权</el-button>
+            <el-button size="small" text type="primary" @click="openCopy(row)">复制</el-button>
+            <el-button size="small" text type="primary" @click="openMembers(row)">成员</el-button>
             <el-button v-if="row.isPreset !== 1" size="small" text type="primary" @click="openEdit(row)">编辑</el-button>
             <el-button v-if="row.isPreset !== 1" size="small" text type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
@@ -40,6 +45,50 @@
       <template #footer>
         <el-button @click="editVisible = false">取消</el-button>
         <el-button type="primary" :loading="editSubmitting" @click="submitEdit">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 复制角色 -->
+    <el-dialog v-model="copyVisible" :title="`复制角色 - ${currentCopyRole?.roleName || ''}`" width="460px">
+      <el-form ref="copyFormRef" :model="copyForm" :rules="copyRules" label-width="90px">
+        <el-form-item label="角色名称" prop="roleName">
+          <el-input v-model="copyForm.roleName" placeholder="请输入新角色名称（不能与现有角色同名）" maxlength="20" />
+        </el-form-item>
+        <el-form-item label="说明" prop="remark">
+          <el-input v-model="copyForm.remark" type="textarea" :rows="3" placeholder="请输入角色说明" maxlength="100" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="copyVisible = false">取消</el-button>
+        <el-button type="primary" :loading="copySubmitting" @click="submitCopy">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 角色成员 -->
+    <el-dialog v-model="memberVisible" :title="`角色成员 - ${currentCopyRole?.roleName || ''}`" width="620px">
+      <el-table :data="memberList" v-loading="memberLoading" stripe border size="small">
+        <el-table-column prop="username" label="用户名" min-width="140" />
+        <el-table-column prop="realName" label="姓名" min-width="120">
+          <template #default="{ row }">{{ row.realName || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="status" label="状态" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 1 ? 'success' : 'danger'" size="small">
+              {{ row.status === 1 ? '正常' : '禁用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="90" align="center">
+          <template #default="{ row }">
+            <el-button v-if="currentRole?.isPreset !== 1" size="small" text type="danger" @click="unbindMember(row)">解绑</el-button>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <el-empty description="暂无成员" :image-size="80" />
+        </template>
+      </el-table>
+      <template #footer>
+        <el-button @click="memberVisible = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -179,6 +228,76 @@ const handleDelete = async (row: any) => {
     await fetchData()
   } catch (error: any) {
     if (!error._handled) ElMessage.error(error?.message || '删除失败')
+  }
+}
+
+// ===== 复制角色（预设模板/自定义角色均可作为蓝本） =====
+const copyVisible = ref(false)
+const copySubmitting = ref(false)
+const copyFormRef = ref<FormInstance>()
+const currentCopyRole = ref<any>(null)
+const copyForm = ref<any>({ roleName: '', remark: '' })
+const copyRules: FormRules = {
+  roleName: [{ required: true, message: '请输入角色名称', trigger: 'blur' }]
+}
+
+const openCopy = (row: any) => {
+  currentCopyRole.value = row
+  copyForm.value = { roleName: '', remark: '' }
+  copyVisible.value = true
+  nextTick(() => copyFormRef.value?.clearValidate())
+}
+
+const submitCopy = async () => {
+  await copyFormRef.value?.validate()
+  copySubmitting.value = true
+  try {
+    await request.post(`/merchant/role/${currentCopyRole.value.id}/copy`, copyForm.value)
+    ElMessage.success('复制成功，可在下方菜单授权中调整权限')
+    copyVisible.value = false
+    await fetchData()
+  } catch (error: any) {
+    if (!error._handled) ElMessage.error(error?.message || '复制失败')
+  } finally {
+    copySubmitting.value = false
+  }
+}
+
+// ===== 角色成员查看/解绑 =====
+const memberVisible = ref(false)
+const memberLoading = ref(false)
+const memberList = ref<any[]>([])
+
+const openMembers = async (row: any) => {
+  currentRole.value = row
+  currentCopyRole.value = row
+  memberVisible.value = true
+  memberLoading.value = true
+  try {
+    const data: any = await request.get(`/merchant/role/${row.id}/members`)
+    memberList.value = data || []
+  } catch (error: any) {
+    if (!error._handled) ElMessage.error(error?.message || '获取成员列表失败')
+  } finally {
+    memberLoading.value = false
+  }
+}
+
+const unbindMember = async (member: any) => {
+  try {
+    await ElMessageBox.confirm(`确认将员工“${member.username}”从角色“${currentRole.value.roleName}”中解绑？解绑后该员工将立即失去此角色的权限。`, '解绑确认', {
+      type: 'warning', confirmButtonText: '解绑', cancelButtonText: '取消'
+    })
+  } catch {
+    return
+  }
+  try {
+    await request.delete(`/merchant/role/${currentRole.value.id}/members/${member.id}`)
+    ElMessage.success('解绑成功，该员工权限已即时更新')
+    memberList.value = memberList.value.filter((m: any) => m.id !== member.id)
+    await fetchData()
+  } catch (error: any) {
+    if (!error._handled) ElMessage.error(error?.message || '解绑失败')
   }
 }
 

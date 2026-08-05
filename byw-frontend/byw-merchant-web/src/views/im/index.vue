@@ -7,19 +7,27 @@
         <span class="online-dot" :class="connected ? 'on' : 'off'" :title="connected ? '在线' : '连接中'" />
         <el-button link size="small" @click="loadConversations">刷新</el-button>
       </div>
+      <!-- 会话筛选：全部 / 待接入 / 我的 / 介入 -->
+      <div class="conv-tabs">
+        <span class="tab" :class="{ on: filterState === 'all' }" @click="filterState = 'all'">全部</span>
+        <span class="tab" :class="{ on: filterState === 'pending' }" @click="filterState = 'pending'">待接入</span>
+        <span class="tab" :class="{ on: filterState === 'mine' }" @click="filterState = 'mine'">我的</span>
+        <span class="tab" :class="{ on: filterState === 'joined' }" @click="filterState = 'joined'">介入</span>
+      </div>
       <div class="conv-list">
-        <div v-if="conversations.length === 0" class="empty">暂无会话</div>
+        <div v-if="filteredConversations.length === 0" class="empty">暂无会话</div>
         <div
-          v-for="c in conversations"
+          v-for="c in filteredConversations"
           :key="c.id"
           class="conv-item"
           :class="{ active: c.id === activeId }"
           @click="selectConversation(c.id)"
         >
-          <el-avatar :size="40" class="avatar">{{ ('U' + c.userId).slice(-2) }}</el-avatar>
+          <el-avatar :size="40" class="avatar">{{ convAvatarText(c) }}</el-avatar>
           <div class="conv-main">
             <div class="conv-line">
-              <span class="name">用户 {{ c.userId }}</span>
+              <span class="name">{{ convName(c) }}</span>
+              <span class="assign-tag" :class="assignTagClass(c)">{{ assignTagText(c) }}</span>
               <span class="time">{{ shortTime(c.lastMessageTime) }}</span>
             </div>
             <div class="conv-line">
@@ -35,55 +43,80 @@
     <div class="chat-panel">
       <template v-if="activeId">
         <div class="chat-header">
-          <span>用户 {{ activeConversation?.userId }}</span>
+          <span>{{ convName(activeConversation) }}</span>
           <span v-if="peerTyping" class="typing">对方正在输入…</span>
+          <el-button v-if="isMyConversation" link size="small" type="primary" class="transfer-btn" @click="openTransferDialog">转接</el-button>
+        </div>
+        <!-- 只读提示：非接待/非介入客服打开已分配会话时显示，介入或接管后可回复 -->
+        <div v-if="!canReply" class="readonly-bar">
+          <span>当前由 {{ activeConversation?.assigneeName || '其他客服' }} 接待，只读模式</span>
+          <el-button size="small" @click="joinActive">介入</el-button>
+          <el-button type="primary" size="small" @click="takeOverActive">接管</el-button>
         </div>
         <div ref="msgScroll" class="chat-body">
           <div v-if="loadingMessages" class="loading">加载中…</div>
-          <div
-            v-for="(m, i) in messages"
-            :key="m.id || ('l' + i)"
-            class="msg-row"
-            :class="isMine(m) ? 'mine' : 'peer'"
-          >
-            <div class="bubble-wrap">
-              <!-- 文本 -->
-              <div v-if="m.type === 'text'" class="bubble" :class="isMine(m) ? 'b-mine' : 'b-peer'">{{ m.content }}</div>
-              <!-- 图片 -->
-              <a v-else-if="m.type === 'image'" :href="m.content" target="_blank" class="img-msg">
-                <img :src="m.content" />
-              </a>
-              <!-- 商品卡片 -->
-              <div v-else-if="m.type === 'product_card'" class="card">
-                <div class="card-tag">商品咨询</div>
-                <div class="card-body">
-                  <img :src="m.extra?.image" class="card-img" />
-                  <div class="card-info">
-                    <div class="card-name">{{ m.extra?.name }}</div>
-                    <div class="card-price">¥{{ fmtPrice(m.extra?.price) }}</div>
+          <template v-for="(m, i) in messages" :key="m.id || ('l' + i)">
+            <!-- 系统提示（如客服接入）：居中灰色小字，不用气泡 -->
+            <div v-if="m.systemType" class="sys-msg">{{ m.content }}</div>
+            <div v-else class="msg-row" :class="isMine(m) ? 'mine' : 'peer'" :data-msg-id="m.id" @contextmenu.prevent="showCtxMenu(m, $event)">
+              <!-- 左侧：对方头像（名字首字） -->
+              <div v-if="!isMine(m)" class="msg-avatar" :class="avatarClass(m)">{{ avatarText(m) }}</div>
+              <div class="bubble-wrap">
+                <!-- 名字：仅对方消息显示，自己的消息只显示头像 -->
+                <div v-if="!isMine(m)" class="msg-name left">{{ msgName(m) }}</div>
+                <!-- 引用条：点击定位到被引用消息 -->
+                <div v-if="m.quoteId" class="quote-bar" @click="scrollToMessage(m.quoteId)">
+                  <span class="q-name">{{ m.quoteSenderName || '消息' }}：</span>
+                  <span v-if="isQuoteRecalled(m)" class="q-content">消息已撤回</span>
+                  <span v-else class="q-content">{{ m.quoteContent }}</span>
+                </div>
+                <!-- 撤回态：统一显示撤回提示，不渲染原内容 -->
+                <div v-if="m.recalled" class="recalled-tip">{{ m.content || '消息已撤回' }}</div>
+                <!-- 文本 -->
+                <div v-else-if="m.type === 'text'" class="bubble" :class="isMine(m) ? 'b-mine' : 'b-peer'">{{ m.content }}</div>
+                <!-- 图片 -->
+                <a v-else-if="m.type === 'image'" :href="m.content" target="_blank" class="img-msg">
+                  <img :src="m.content" />
+                </a>
+                <!-- 商品卡片 -->
+                <div v-else-if="m.type === 'product_card'" class="card">
+                  <div class="card-tag">商品咨询</div>
+                  <div class="card-body">
+                    <img :src="m.extra?.image" class="card-img" />
+                    <div class="card-info">
+                      <div class="card-name">{{ m.extra?.name }}</div>
+                      <div class="card-price">¥{{ fmtPrice(m.extra?.price) }}</div>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <!-- 订单卡片（可点击查看详情） -->
-              <div v-else-if="m.type === 'order_card'" class="card card-clickable" @click="openOrderDetail(m.extra?.orderNo)">
-                <div class="card-tag">订单咨询 · {{ m.extra?.status }}</div>
-                <div class="card-body">
-                  <img v-if="m.extra?.image" :src="m.extra?.image" class="card-img" />
-                  <div class="card-info">
-                    <div class="card-name">{{ m.extra?.productName || '订单商品' }}</div>
-                    <div class="card-no">订单号 {{ m.extra?.orderNo }}</div>
+                <!-- 订单卡片（可点击查看详情） -->
+                <div v-else-if="m.type === 'order_card'" class="card card-clickable" @click="openOrderDetail(m.extra?.orderNo)">
+                  <div class="card-tag">订单咨询 · {{ m.extra?.status }}</div>
+                  <div class="card-body">
+                    <img v-if="m.extra?.image" :src="m.extra?.image" class="card-img" />
+                    <div class="card-info">
+                      <div class="card-name">{{ m.extra?.productName || '订单商品' }}</div>
+                      <div class="card-no">订单号 {{ m.extra?.orderNo }}</div>
+                    </div>
                   </div>
+                  <div class="card-detail-link">查看订单详情 ›</div>
                 </div>
-                <div class="card-detail-link">查看订单详情 ›</div>
+                <div class="msg-meta" :class="isMine(m) ? 'right' : 'left'">
+                  {{ shortTime(m.createdAt) }}
+                  <span v-if="isMine(m) && m.read" class="read">已读</span>
+                </div>
               </div>
-              <div class="msg-meta" :class="isMine(m) ? 'right' : 'left'">
-                {{ shortTime(m.createdAt) }}
-                <span v-if="isMine(m) && m.read" class="read">已读</span>
-              </div>
+              <!-- 右侧：自己头像（名字首字） -->
+              <div v-if="isMine(m)" class="msg-avatar mine-avatar">{{ avatarText(m) }}</div>
             </div>
-          </div>
+          </template>
         </div>
         <div class="chat-input">
+          <!-- 引用输入条：可取消 -->
+          <div v-if="quoteTarget" class="quote-input-bar">
+            <span class="q-text">引用 {{ quoteTarget.name }}：{{ quoteTarget.content }}</span>
+            <el-icon class="q-close" @click="quoteTarget = null"><Close /></el-icon>
+          </div>
           <!-- 工具栏 -->
           <div class="input-toolbar">
             <el-popover placement="top-start" :width="320" trigger="click" popper-class="emoji-popover">
@@ -115,6 +148,7 @@
             :rows="3"
             resize="none"
             maxlength="500"
+            :disabled="!canReply"
             placeholder="请输入消息，按 Enter 发送 / Shift+Enter 换行"
             class="input-textarea"
             @input="notifyTyping"
@@ -123,7 +157,7 @@
           <!-- 底部操作条：字数统计 + 发送按钮 -->
           <div class="input-footer">
             <span class="count">{{ draft.length }}/500</span>
-            <el-button type="primary" :disabled="!draft.trim()" @click="send">发送</el-button>
+            <el-button type="primary" :disabled="!canReply || !draft.trim()" @click="send">发送</el-button>
           </div>
         </div>
       </template>
@@ -196,17 +230,49 @@
         <el-button @click="orderDetailVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+    <!-- 转接弹窗：接待客服选择在线客服进行转接 -->
+    <el-dialog v-model="transferVisible" title="转接给在线客服" width="420px" append-to-body>
+      <div v-loading="transferLoading" class="transfer-list">
+        <div v-for="s in onlineStaff" :key="s.id" class="transfer-item" @click="doTransfer(s)">
+          <span class="t-name">{{ s.name }}</span>
+          <span class="t-id">ID: {{ s.id }}</span>
+        </div>
+        <el-empty v-if="!transferLoading && onlineStaff.length === 0" description="暂无其他在线客服" />
+      </div>
+      <template #footer>
+        <el-button @click="transferVisible = false">取消</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 右键菜单：撤回/引用 -->
+    <Teleport to="body">
+      <div
+        v-if="ctxMenu.visible"
+        ref="ctxMenuRef"
+        class="im-ctx-menu"
+        :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+        @click.stop
+      >
+        <div v-if="ctxMenu.canRecall" class="im-ctx-item" @click="doRecall(ctxMenu.message)">撤回</div>
+        <div v-if="ctxMenu.canQuote" class="im-ctx-item" @click="doQuote(ctxMenu.message)">引用</div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
-import { ChatDotRound, Picture } from '@element-plus/icons-vue'
+import { ref, reactive, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ChatDotRound, Close, Picture } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import EmojiPicker from 'vue3-emoji-picker'
 import 'vue3-emoji-picker/css'
 import request from '../../utils/request'
 import { connected, connectIm, sendFrame, addFrameHandler, removeFrameHandler } from '../../utils/imSocket'
+import { useUserStore } from '../../stores/user'
+
+const userStore = useUserStore()
+// 当前登录客服ID（merchant_account.id），用于判断会话归属
+const myStaffId = computed(() => (userStore.userId ? Number(userStore.userId) : null))
 
 interface ImMessage {
   id?: string
@@ -217,19 +283,38 @@ interface ImMessage {
   userId?: number
   type: string
   content?: string
+  /** 发送者展示姓名（用户=昵称，客服=真实姓名） */
+  senderName?: string
+  /** 引用消息ID（im_messages._id），非空表示该消息为引用消息 */
+  quoteId?: string
+  /** 被引用消息内容快照 */
+  quoteContent?: string
+  /** 被引用消息发送者姓名 */
+  quoteSenderName?: string
+  /** 是否已撤回（软撤回：内容替换为提示文案） */
+  recalled?: boolean
   extra?: Record<string, any>
   read?: boolean
   createdAt?: any
+  /** 系统消息类型（如 assign=客服接入），命中时用居中灰色小字提示，不走气泡 */
+  systemType?: string
 }
 
 interface ImConversation {
   id: number
   userId: number
   shopId: number
+  /** 买家昵称（商家侧展示用，反查失败为空） */
+  userNickname?: string
   lastMessage?: string
   lastMessageType?: string
   lastMessageTime?: any
   unread?: number
+  /** 接待客服ID（merchant_account.id），null=待接入 */
+  assigneeId?: number | null
+  assigneeName?: string
+  /** 介入客服ID集合（介入不影响原接待客服，可共同服务用户） */
+  joiners?: number[]
 }
 
 const conversations = ref<ImConversation[]>([])
@@ -241,7 +326,49 @@ const draft = ref('')
 const msgScroll = ref<HTMLElement | null>(null)
 let typingTimer: ReturnType<typeof setTimeout> | null = null
 
+// 会话筛选：全部 / 待接入 / 我的 / 介入（纯前端过滤）
+const filterState = ref<'all' | 'pending' | 'mine' | 'joined'>('all')
+const filteredConversations = computed(() => {
+  if (filterState.value === 'pending') return conversations.value.filter(c => c.assigneeId == null)
+  if (filterState.value === 'mine') return conversations.value.filter(
+    c => c.assigneeId != null && Number(c.assigneeId) === myStaffId.value,
+  )
+  // 我介入的会话：joiners 包含当前客服（介入不影响原接待客服）
+  if (filterState.value === 'joined') return conversations.value.filter(
+    c => myStaffId.value != null && (c.joiners || []).some(j => Number(j) === myStaffId.value),
+  )
+  return conversations.value
+})
+
 const activeConversation = computed(() => conversations.value.find(c => c.id === activeId.value))
+
+// 是否可回复：待接入会话点开后自动接入即可回复；已分配会话仅接待者/介入者可回复（其余只读）
+const canReply = computed(() => {
+  const c = activeConversation.value
+  if (!c) return false
+  if (c.assigneeId == null) return true
+  if (Number(c.assigneeId) === myStaffId.value) return true
+  return (c.joiners || []).some(j => Number(j) === myStaffId.value)
+})
+// 是否我接待的会话（显示转接按钮）
+const isMyConversation = computed(() => {
+  const c = activeConversation.value
+  return !!c && c.assigneeId != null && Number(c.assigneeId) === myStaffId.value
+})
+
+// 会话归属标签：待接入（橙）/ 我（蓝）/ 介入中（紫）/ 客服名（灰）
+function assignTagText(c: ImConversation): string {
+  if (c.assigneeId == null) return '待接入'
+  if (Number(c.assigneeId) === myStaffId.value) return '我'
+  if ((c.joiners || []).some(j => Number(j) === myStaffId.value)) return '介入中'
+  return c.assigneeName || '其他客服'
+}
+function assignTagClass(c: ImConversation): string {
+  if (c.assigneeId == null) return 'pending'
+  if (Number(c.assigneeId) === myStaffId.value) return 'mine'
+  if ((c.joiners || []).some(j => Number(j) === myStaffId.value)) return 'join'
+  return 'other'
+}
 
 // 取当前会话内最近一条商品/订单卡片作为右栏上下文
 const lastCard = computed<ImMessage | undefined>(() => {
@@ -259,7 +386,157 @@ const uploadHeaders = computed(() => {
 })
 
 function isMine(m: ImMessage) {
-  return m.senderRole === 'merchant'
+  // 仅当前登录客服自己的消息在右侧；其他客服的消息在左侧（带头像/名字）
+  return m.senderRole === 'merchant' && m.senderId != null && Number(m.senderId) === myStaffId.value
+}
+
+// 会话/聊天框对端展示名：昵称优先，兜底"用户 {id}"
+function convName(c: ImConversation | null | undefined): string {
+  if (!c) return ''
+  return c.userNickname || ('用户 ' + c.userId)
+}
+
+// 会话列表头像文字：昵称首字，无昵称时取用户ID后两位
+function convAvatarText(c: ImConversation): string {
+  if (c.userNickname) return c.userNickname.charAt(0)
+  return ('U' + c.userId).slice(-2)
+}
+
+// 消息发送者显示名：用户消息昵称（实时消息已填充，历史消息兜底会话昵称），客服消息真实姓名（仅对方消息使用）
+function msgName(m: ImMessage): string {
+  if (m.senderRole === 'user') {
+    return m.senderName || activeConversation.value?.userNickname || ('用户 ' + (m.userId ?? ''))
+  }
+  return m.senderName || '客服'
+}
+
+// 头像文字：名字首字；用户消息无昵称时用"用"占位
+function avatarText(m: ImMessage): string {
+  if (m.senderRole === 'user') return (m.senderName || '用').charAt(0)
+  return (m.senderName || '客').charAt(0)
+}
+
+// 头像配色：用户（橙）/ 其他客服（紫）；自己的头像用主色
+function avatarClass(m: ImMessage): string {
+  return m.senderRole === 'user' ? 'user-avatar' : 'staff-avatar'
+}
+
+// 引用目标（输入框上方显示，发送时随帧携带 quoteId）
+const quoteTarget = ref<{ id: string; name: string; content: string } | null>(null)
+
+// 设置引用目标：引用对方或自己的消息（已撤回的消息不支持引用）
+function startQuote(m: ImMessage) {
+  if (!m.id || m.recalled || !canReply.value) return
+  quoteTarget.value = {
+    id: m.id,
+    name: msgName(m),
+    content: m.recalled ? '消息已撤回' : (m.content || ''),
+  }
+}
+
+// 被引用消息是否已撤回（从本地消息列表中查找，引用条改为显示"消息已撤回"）
+function isQuoteRecalled(m: ImMessage): boolean {
+  if (!m.quoteId) return false
+  const quoted = messages.value.find(msg => msg.id === m.quoteId)
+  return quoted?.recalled === true
+}
+
+// 仅自己的消息且发送 2 分钟内可撤回（后端强校验，前端仅控制按钮显隐）
+function canRecall(m: ImMessage): boolean {
+  if (!isMine(m) || m.recalled || !m.createdAt) return false
+  const d = parseTime(m.createdAt)
+  return d != null && Date.now() - d.getTime() < 120_000
+}
+
+// 撤回消息：发送 recall 帧，失败经 error 帧返回原因
+function recallMessage(m: ImMessage) {
+  if (!m.id || !activeId.value) return
+  const ok = sendFrame({ action: 'recall', conversationId: activeId.value, messageId: m.id })
+  if (!ok) { connectIm(); ElMessage.warning('连接已断开，正在重连…'); return }
+}
+
+// 右键菜单状态
+const ctxMenu = reactive<{
+  visible: boolean
+  x: number
+  y: number
+  message: ImMessage | null
+  canRecall: boolean
+  canQuote: boolean
+}>({
+  visible: false,
+  x: 0,
+  y: 0,
+  message: null,
+  canRecall: false,
+  canQuote: false,
+})
+const ctxMenuRef = ref<HTMLElement | null>(null)
+
+// 点击菜单外部任意处关闭（document 级监听，不遮挡页面其他交互）
+function onDocClick(e: MouseEvent) {
+  const el = ctxMenuRef.value
+  if (el && !el.contains(e.target as Node)) closeCtxMenu()
+}
+function closeCtxMenu() {
+  ctxMenu.visible = false
+  document.removeEventListener('click', onDocClick)
+}
+
+// 右键点击气泡显示操作菜单
+function showCtxMenu(m: ImMessage, e: MouseEvent) {
+  const canDoRecall = canRecall(m)
+  const canDoQuote = !!m.id && !m.recalled && canReply.value
+  // 无可用操作（如已撤回消息）时不弹菜单，避免空白色长条
+  if (!canDoRecall && !canDoQuote) return
+  const menuW = 110
+  const menuH = 80
+  let x = e.clientX
+  let y = e.clientY
+  if (x + menuW > window.innerWidth) x = window.innerWidth - menuW - 8
+  if (y + menuH > window.innerHeight) y = window.innerHeight - menuH - 8
+  ctxMenu.x = x
+  ctxMenu.y = y
+  ctxMenu.message = m
+  ctxMenu.canRecall = canDoRecall
+  ctxMenu.canQuote = canDoQuote
+  ctxMenu.visible = true
+  document.addEventListener('click', onDocClick)
+}
+
+// 右键菜单：撤回
+function doRecall(m: ImMessage) {
+  closeCtxMenu()
+  recallMessage(m)
+}
+
+// 右键菜单：引用
+function doQuote(m: ImMessage) {
+  closeCtxMenu()
+  startQuote(m)
+}
+
+// 点击引用条定位到被引用消息（滚动 + 高亮闪烁）
+function scrollToMessage(messageId?: string) {
+  if (!messageId) return
+  const el = document.querySelector(`[data-msg-id="${messageId}"]`)
+  if (!el) return
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  el.classList.add('msg-flash')
+  setTimeout(() => el.classList.remove('msg-flash'), 1200)
+}
+
+// 解析服务端时间（LocalDateTime 序列化可能为数组或字符串）
+function parseTime(t: any): Date | null {
+  if (!t) return null
+  let d: Date
+  if (Array.isArray(t)) {
+    const [y, mo, day, h = 0, mi = 0, s = 0] = t
+    d = new Date(y, (mo || 1) - 1, day, h, mi, s)
+  } else {
+    d = new Date(t)
+  }
+  return isNaN(d.getTime()) ? null : d
 }
 
 async function loadConversations() {
@@ -300,14 +577,27 @@ async function selectConversation(conversationId: number) {
   peerTyping.value = false
   await loadMessages(conversationId)
   markRead(conversationId)
+  // 待接入会话：客服点开对话框即主动接入（仅 assigneeId 为空时生效，不抢占已分配会话）
+  const conv = conversations.value.find(c => c.id === conversationId)
+  if (conv && conv.assigneeId == null) {
+    sendFrame({ action: 'take', conversationId })
+  }
 }
 
 function send() {
   const text = draft.value.trim()
   if (!text || !activeId.value) return
-  const ok = sendFrame({ action: 'send', conversationId: activeId.value, type: 'text', content: text })
+  if (!canReply.value) { ElMessage.warning('当前会话为只读，请先接管'); return }
+  const ok = sendFrame({
+    action: 'send',
+    conversationId: activeId.value,
+    type: 'text',
+    content: text,
+    quoteId: quoteTarget.value?.id,
+  })
   if (!ok) { connectIm(); ElMessage.warning('连接已断开，正在重连…'); return }
   draft.value = ''
+  quoteTarget.value = null
 }
 
 // 表情选择：把 Unicode 字符追加到输入框，仍作为 text 消息发送
@@ -326,6 +616,7 @@ function beforeUpload(file: File) {
 function onImageUploaded(response: any) {
   const url = typeof response?.data === 'string' ? response.data : (response?.data?.url || response?.url || '')
   if (!url || !activeId.value) { ElMessage.error('上传成功但未获取到文件地址'); return }
+  if (!canReply.value) { ElMessage.warning('当前会话为只读，请先接管'); return }
   sendFrame({ action: 'send', conversationId: activeId.value, type: 'image', content: url })
 }
 
@@ -339,6 +630,51 @@ function markRead(conversationId: number) {
   if (conv) conv.unread = 0
   sendFrame({ action: 'read', conversationId })
   request.post('/im/read', { conversationId }).catch(() => { /* ignore */ })
+}
+
+// 介入当前会话：不影响原接待客服，可共同服务用户（广播后 onMessage 同步 joiners 并自动解锁输入）
+function joinActive() {
+  if (!activeId.value) return
+  const ok = sendFrame({ action: 'join', conversationId: activeId.value })
+  if (!ok) { connectIm(); ElMessage.warning('连接已断开，正在重连…'); return }
+}
+
+// 接管当前会话：待接入直接接入，已分配则替换接待者（广播后 onMessage 同步归属并自动解锁输入）
+function takeOverActive() {
+  if (!activeId.value) return
+  const ok = sendFrame({ action: 'takeover', conversationId: activeId.value })
+  if (!ok) { connectIm(); ElMessage.warning('连接已断开，正在重连…'); return }
+}
+
+// ---- 转接：拉取在线客服列表，选择目标后发送 transfer 帧 ----
+const transferVisible = ref(false)
+const transferLoading = ref(false)
+const onlineStaff = ref<{ id: number; name: string }[]>([])
+
+async function openTransferDialog() {
+  if (!activeId.value) return
+  transferVisible.value = true
+  transferLoading.value = true
+  try {
+    const list = await request.get<any, any[]>('/im/staff/online')
+    // 不显示自己（接待者不能转给自己）
+    onlineStaff.value = (list || []).filter(s => Number(s.id) !== myStaffId.value)
+  } catch {
+    onlineStaff.value = []
+  } finally {
+    transferLoading.value = false
+  }
+}
+
+function doTransfer(target: { id: number; name: string }) {
+  if (!activeId.value) return
+  const ok = sendFrame({ action: 'transfer', conversationId: activeId.value, targetStaffId: target.id })
+  if (ok) {
+    transferVisible.value = false
+    ElMessage.success(`已转接给 ${target.name}`)
+  } else {
+    connectIm(); ElMessage.warning('连接已断开，正在重连…')
+  }
 }
 
 // 处理服务端下推帧
@@ -358,6 +694,29 @@ function onFrame(frame: Record<string, any>) {
     if (data?.conversationId === activeId.value && data?.readerRole === 'user') {
       messages.value.forEach(m => { if (m.senderRole === 'merchant') m.read = true })
     }
+    // 其他客服已读该会话 -> 清零本店会话未读角标（本店客服共享未读状态，实时同步无需刷新）
+    if (data?.readerRole === 'merchant') {
+      const conv = conversations.value.find(c => c.id === data.conversationId)
+      if (conv) conv.unread = 0
+    }
+  } else if (action === 'recall') {
+    // 消息被撤回：更新对应消息内容与标记（本店客服/买家端均实时同步）
+    const d = data as ImMessage
+    if (!d?.id) return
+    const target = messages.value.find(m => m.id === d.id)
+    if (target) {
+      target.content = d.content
+      target.recalled = true
+    }
+    // 被撤回消息是会话最后一条时，同步会话列表摘要
+    const conv = conversations.value.find(c => c.id === d.conversationId)
+    if (conv && target && messages.value.indexOf(target) === messages.value.length - 1) {
+      conv.lastMessage = d.content
+      conv.lastMessageType = d.type
+    }
+  } else if (action === 'error') {
+    // 后端操作失败（如撤回超时/非发送者撤回），携带具体原因
+    ElMessage.error(data?.message || '操作失败')
   }
 }
 
@@ -370,6 +729,17 @@ function onMessage(msg: ImMessage) {
   if (!conv) {
     conv = { id: msg.conversationId, userId: msg.userId || 0, shopId: msg.shopId || 0, unread: 0 }
     conversations.value.unshift(conv)
+  }
+  // 系统消息（客服接入/接管/转接）：同步会话归属，其他客服实时看到最新接待者
+  if (msg.systemType === 'assign' || msg.systemType === 'takeover' || msg.systemType === 'transfer') {
+    conv.assigneeId = msg.senderId
+    conv.assigneeName = msg.senderName
+  }
+  // 系统消息（客服介入）：同步介入者集合，不影响原接待客服
+  if (msg.systemType === 'join' && msg.senderId != null) {
+    if (!(conv.joiners || []).some(j => Number(j) === Number(msg.senderId))) {
+      conv.joiners = [...(conv.joiners || []), msg.senderId]
+    }
   }
   conv.lastMessage = summarize(msg)
   conv.lastMessageType = msg.type
@@ -393,6 +763,7 @@ function onMessage(msg: ImMessage) {
 }
 
 function summarize(msg: ImMessage): string {
+  if (msg.systemType) return msg.content || '[系统通知]'
   switch (msg.type) {
     case 'image': return '[图片]'
     case 'product_card': return '[商品]'
@@ -456,15 +827,8 @@ async function openOrderDetail(orderNo?: string) {
 }
 
 function shortTime(t: any): string {
-  if (!t) return ''
-  let d: Date
-  if (Array.isArray(t)) {
-    const [y, mo, day, h = 0, mi = 0] = t
-    d = new Date(y, (mo || 1) - 1, day, h, mi)
-  } else {
-    d = new Date(t)
-  }
-  if (isNaN(d.getTime())) return ''
+  const d = parseTime(t)
+  if (!d) return ''
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
   return `${hh}:${mm}`
@@ -481,10 +845,30 @@ onUnmounted(() => {
   // 仅移除本页面的帧监听；不断开全局连接，以保证离开客服页后菜单未读角标仍能实时更新
   removeFrameHandler(onFrame)
   if (typingTimer) clearTimeout(typingTimer)
+  // 清理右键菜单全局点击监听
+  document.removeEventListener('click', onDocClick)
 })
 </script>
 
 <style scoped lang="scss">
+.transfer-list {
+  max-height: 320px;
+  overflow-y: auto;
+
+  .transfer-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+
+    &:hover { background: #f5f7fa; }
+    .t-name { font-size: 14px; color: #303133; }
+    .t-id { font-size: 12px; color: #c0c4cc; }
+  }
+}
+
 .im-workbench {
   display: flex;
   height: calc(100vh - 100px);
@@ -516,6 +900,25 @@ onUnmounted(() => {
     .online-dot.off { background: #dcdfe6; }
   }
 
+  .conv-tabs {
+    display: flex;
+    gap: 6px;
+    padding: 8px 12px;
+    border-bottom: 1px solid #f5f5f5;
+
+    .tab {
+      flex: 1;
+      text-align: center;
+      font-size: 12px;
+      color: #909399;
+      padding: 4px 0;
+      border-radius: 4px;
+      cursor: pointer;
+
+      &.on { color: var(--el-color-primary); background: var(--el-color-primary-light-9); font-weight: 500; }
+    }
+  }
+
   .conv-list {
     flex: 1;
     overflow-y: auto;
@@ -537,6 +940,17 @@ onUnmounted(() => {
       .conv-main { flex: 1; min-width: 0; }
       .conv-line { display: flex; align-items: center; justify-content: space-between; }
       .name { font-size: 14px; color: #303133; font-weight: 500; }
+      .assign-tag {
+        font-size: 11px;
+        border-radius: 3px;
+        padding: 1px 6px;
+        flex-shrink: 0;
+        margin-left: 6px;
+      }
+      .assign-tag.pending { color: #e6a23c; background: #fdf6ec; }
+      .assign-tag.mine { color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
+      .assign-tag.join { color: #9254de; background: #f9f0ff; }
+      .assign-tag.other { color: #909399; background: #f4f4f5; }
       .time { font-size: 12px; color: #c0c4cc; }
       .last { font-size: 12px; color: #909399; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; margin-top: 2px; }
     }
@@ -560,6 +974,19 @@ onUnmounted(() => {
     font-weight: 500;
 
     .typing { font-size: 12px; color: var(--el-color-primary); font-weight: normal; }
+    .transfer-btn { margin-left: auto; }
+  }
+
+  .readonly-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 8px;
+    font-size: 13px;
+    color: #909399;
+    background: #fafafa;
+    border-bottom: 1px solid #f0f0f0;
   }
 
   .chat-body {
@@ -570,9 +997,35 @@ onUnmounted(() => {
 
     .loading { text-align: center; color: #c0c4cc; font-size: 12px; padding: 8px; }
 
-    .msg-row { display: flex; margin-bottom: 14px; }
+    .msg-row { display: flex; margin-bottom: 14px; align-items: flex-start; }
     .msg-row.mine { justify-content: flex-end; }
     .msg-row.peer { justify-content: flex-start; }
+
+    .msg-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .msg-row.peer .msg-avatar { margin-right: 8px; }
+    .msg-row.mine .msg-avatar { margin-left: 8px; }
+    .staff-avatar { background: #9254de; }
+    .user-avatar { background: #e6a23c; }
+    .mine-avatar { background: var(--el-color-primary); }
+
+    .msg-name { font-size: 12px; color: #909399; margin-bottom: 4px; }
+
+    .sys-msg {
+      text-align: center;
+      color: #909399;
+      font-size: 12px;
+      margin: 10px 0;
+    }
 
     .bubble-wrap { max-width: 60%; }
 
@@ -628,6 +1081,56 @@ onUnmounted(() => {
     .msg-meta.right { text-align: right; }
     .msg-meta.left { text-align: left; }
     .read { color: var(--el-color-primary); margin-left: 4px; }
+
+    // 消息操作按钮（悬停消息行显示：引用/撤回）
+    .msg-actions {
+      display: none;
+      margin-left: 8px;
+
+      a {
+        color: var(--el-color-primary);
+        margin-left: 6px;
+        cursor: pointer;
+        font-size: 11px;
+      }
+    }
+    .msg-row:hover .msg-actions { display: inline; }
+
+    // 消息引用条：点击定位到被引用消息
+    .quote-bar {
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+      max-width: 260px;
+      margin-bottom: 4px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.06);
+      font-size: 12px;
+      color: #909399;
+      cursor: pointer;
+      overflow: hidden;
+
+      .q-name { flex-shrink: 0; }
+      .q-content { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    }
+
+    // 撤回态提示
+    .recalled-tip {
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-size: 12px;
+      color: #c0c4cc;
+      background: rgba(0, 0, 0, 0.03);
+    }
+
+    // 引用定位高亮闪烁
+    .msg-row[data-msg-id] { scroll-margin: 12px; }
+    .msg-flash .bubble { animation: msg-flash 1.2s ease; }
+    @keyframes msg-flash {
+      0%, 100% { box-shadow: none; }
+      30% { box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.4); }
+    }
   }
 
   .chat-input {
@@ -635,6 +1138,23 @@ onUnmounted(() => {
     flex-direction: column;
     padding: 6px 12px 10px;
     border-top: 1px solid #f5f5f5;
+
+    // 引用输入条
+    .quote-input-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: #f5f7fa;
+      font-size: 12px;
+      color: #606266;
+
+      .q-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .q-close { cursor: pointer; color: #909399; }
+      .q-close:hover { color: #606266; }
+    }
 
     .input-toolbar {
       display: flex;
@@ -710,5 +1230,30 @@ onUnmounted(() => {
 .emoji-popover.el-popover.el-popper {
   padding: 0;
   min-width: unset;
+}
+
+/* 右键菜单：撤回/引用 */
+.im-ctx-menu {
+  position: fixed;
+  z-index: 1001;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  border: 1px solid #e8e8e8;
+  padding: 4px 0;
+  min-width: 110px;
+}
+.im-ctx-item {
+  padding: 6px 16px;
+  font-size: 13px;
+  color: #303133;
+  cursor: pointer;
+  user-select: none;
+}
+.im-ctx-item:hover {
+  background: #f5f7fa;
+}
+.im-ctx-item:first-child:hover {
+  color: #f56c6c;
 }
 </style>

@@ -209,7 +209,8 @@ INSERT INTO t_sys_menu (id, parent_id, menu_name, menu_type, scope, path, perm_c
 (182, 180, '提现审批',   2, 'platform', '/settle/withdraw',    'settle:withdraw',  NULL,          82),
 (190, 0,   '系统管理',   1, 'platform', NULL,                  NULL,               'Tools',       90),
 (191, 190, '员工管理',   2, 'platform', '/system/user',        'sys:user',         NULL,          91),
-(192, 190, '角色管理',   2, 'platform', '/system/role',        'sys:role',         NULL,          92);
+(192, 190, '角色管理',   2, 'platform', '/system/role',        'sys:role',         NULL,          92),
+(193, 190, '菜单管理',   2, 'platform', '/system/menu',        'sys:menu',         'Menu',         93);
 
 -- ========== 商家菜单树（scope=merchant） ==========
 INSERT INTO t_sys_menu (id, parent_id, menu_name, menu_type, scope, path, perm_code, icon, sort_order) VALUES

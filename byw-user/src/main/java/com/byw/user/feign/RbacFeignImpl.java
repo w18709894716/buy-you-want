@@ -78,6 +78,14 @@ public class RbacFeignImpl implements RbacFeignClient {
     }
 
     @Override
+    @DeleteMapping("/user/{userId}/roles/{roleId}")
+    public R<Boolean> unbindUserRole(@PathVariable("userId") Long userId,
+                                     @RequestParam("userType") Integer userType,
+                                     @PathVariable("roleId") Long roleId) {
+        return R.ok(rbacService.unbindUserRole(userId, userType, roleId));
+    }
+
+    @Override
     @GetMapping("/role/list")
     public R<List<SysRoleDTO>> listRoles(@RequestParam("scope") String scope) {
         return R.ok(rbacService.listRoles(scope));
@@ -99,6 +107,18 @@ public class RbacFeignImpl implements RbacFeignClient {
     @PostMapping("/role")
     public R<Long> createRole(@RequestBody SysRoleDTO dto) {
         return R.ok(rbacService.createRole(dto));
+    }
+
+    @Override
+    @PostMapping("/role/copy/{sourceRoleId}")
+    public R<Long> copyRole(@PathVariable("sourceRoleId") Long sourceRoleId, @RequestBody SysRoleDTO dto) {
+        return R.ok(rbacService.copyRole(sourceRoleId, dto));
+    }
+
+    @Override
+    @GetMapping("/role/{roleId}/user-ids")
+    public R<List<Long>> listRoleUserIds(@PathVariable("roleId") Long roleId) {
+        return R.ok(rbacService.listRoleUserIds(roleId));
     }
 
     @Override
@@ -144,5 +164,29 @@ public class RbacFeignImpl implements RbacFeignClient {
     @GetMapping("/menu/all")
     public R<List<SysMenuDTO>> getAllMenuTree(@RequestParam("scope") String scope) {
         return R.ok(rbacService.getAllMenuTree(scope));
+    }
+
+    @Override
+    @GetMapping("/menu/all-tree")
+    public R<List<SysMenuDTO>> getMenuTreeAll(@RequestParam("scope") String scope) {
+        return R.ok(rbacService.getMenuTreeAll(scope));
+    }
+
+    @Override
+    @PostMapping("/menu")
+    public R<Long> createMenu(@RequestBody SysMenuDTO dto) {
+        return R.ok(rbacService.createMenu(dto));
+    }
+
+    @Override
+    @PutMapping("/menu")
+    public R<Boolean> updateMenu(@RequestBody SysMenuDTO dto) {
+        return R.ok(rbacService.updateMenu(dto));
+    }
+
+    @Override
+    @DeleteMapping("/menu/{menuId}")
+    public R<Boolean> deleteMenu(@PathVariable("menuId") Long menuId) {
+        return R.ok(rbacService.deleteMenu(menuId));
     }
 }

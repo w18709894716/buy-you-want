@@ -6,6 +6,7 @@ import com.byw.common.security.annotation.RequireLogin;
 import com.byw.common.security.context.UserContext;
 import com.byw.im.dto.ConversationView;
 import com.byw.im.dto.MessageView;
+import com.byw.im.dto.StaffBriefDTO;
 import com.byw.im.entity.Conversation;
 import com.byw.im.service.ImService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -77,6 +78,16 @@ public class ImController {
         boolean merchant = UserContext.isMerchant();
         String role = merchant ? "merchant" : "user";
         return R.ok(imService.unreadTotal(UserContext.getUserId(), UserContext.getShopId(), role));
+    }
+
+    @Operation(summary = "本店在线可接待客服列表（转接选人）")
+    @RequireLogin
+    @GetMapping("/staff/online")
+    public R<List<StaffBriefDTO>> staffOnline() {
+        if (UserContext.getShopId() == null) {
+            return R.fail("仅商家端可用");
+        }
+        return R.ok(imService.listOnlineStaff(UserContext.getShopId()));
     }
 
     @Data

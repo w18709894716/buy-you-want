@@ -37,6 +37,15 @@ public class Conversation {
     /** 商家未读数 */
     private Integer shopUnread;
 
+    /** 当前接待客服ID（merchant_account.id） */
+    private Long assigneeId;
+
+    /** 接待客服姓名 */
+    private String assigneeName;
+
+    /** 介入客服ID集合（JSON数组，如 "[3,5]"；介入不影响原接待客服，可共同服务用户） */
+    private String joiners;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 

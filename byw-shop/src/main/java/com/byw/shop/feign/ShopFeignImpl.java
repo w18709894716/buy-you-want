@@ -46,6 +46,12 @@ public class ShopFeignImpl implements ShopFeignClient {
     }
 
     @Override
+    @GetMapping("/merchant/batch")
+    public R<List<MerchantAccountDTO>> getMerchantsByIds(@RequestParam("ids") List<Long> ids) {
+        return R.ok(shopService.getMerchantsByIds(ids));
+    }
+
+    @Override
     @PutMapping("/update")
     public R<Void> updateShop(@RequestBody ShopDTO shopDTO) {
         // 强制作用于当前登录商家的 shopId（由 BFF 透传身份头重建上下文）
