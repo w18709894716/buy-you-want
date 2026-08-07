@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { connectIm, disconnectIm, sendFrame, sendOrReconnect, markActivity, setFrameHandler } from '~/composables/useImSocket'
+import { connectIm, disconnectIm, sendFrame, sendOrReconnect, setFrameHandler } from '~/composables/useImSocket'
 
 export interface ImMessage {
   id?: string
@@ -21,7 +21,10 @@ export interface ImMessage {
   extra?: Record<string, any>
   read?: boolean
   createdAt?: string
+  /** 本地乐观消息标记（无 id，等待 WS echo 到达后按内容+时间差匹配移除） */
   _local?: boolean
+  /** 乐观消息的本地发送时间戳（ms，用于 echo 匹配） */
+  _sentAt?: number
   /** 系统消息类型（如 assign=客服接入），命中时用居中灰色小字提示，不走气泡 */
   systemType?: string
 }
@@ -31,6 +34,8 @@ export interface ImConversation {
   userId: number
   shopId: number
   shopName?: string
+  /** 当前接待客服ID（无接待/服务已结束为空；用于判断是否处于机器人引导阶段） */
+  assigneeId?: number
   lastMessage?: string
   lastMessageType?: string
   lastMessageTime?: string
@@ -53,6 +58,8 @@ interface ImState {
 }
 
 let typingTimer: any = null
+// 消息加载请求序号：快速切换会话/重复加载时用于丢弃过期响应，防止旧快照覆盖新会话消息
+let msgLoadSeq = 0
 
 export const useImStore = defineStore('im', {
   state: (): ImState => ({
@@ -125,28 +132,40 @@ export const useImStore = defineStore('im', {
     },
 
     async loadMessages(conversationId: number) {
+      const seq = ++msgLoadSeq
       this.loadingMessages = true
       try {
         const page = await get<any>('/im/messages', { conversationId, page: 1, pageSize: 50 })
+        // 响应过期（期间已切换会话/再次加载）：丢弃，避免旧会话快照覆盖当前会话消息
+        if (conversationId !== this.activeId || seq !== msgLoadSeq) return
         // 后端按时间倒序返回，前端展示需正序
         const fetched: ImMessage[] = (page?.list || []).slice().reverse()
         // 合并：GET 在途期间可能已有实时消息经 WS echo 进入当前会话，
         // 分页快照未必包含它们，若直接整体替换会把这些新消息冲掉（首句消失、刷新才出现）。
-        // 故按 id 去重合并，保留快照中缺失的本会话消息（含无 id 的乐观消息）。
-        if (conversationId === this.activeId) {
-          const fetchedIds = new Set(fetched.filter(m => m.id).map(m => m.id))
-          const extras = this.messages.filter(
-            m => m.conversationId === conversationId && (!m.id || !fetchedIds.has(m.id)),
-          )
-          this.messages = [...fetched, ...extras]
-        } else {
-          this.messages = fetched
-        }
+        // extras 只保留快照中没有的消息：按 id 排除快照已有消息（否则每次重开面板都会把
+        // 整份快照再 append 一遍导致重复）；无 id 的乐观消息直接保留；再按时间过滤掉
+        // 早于快照最早消息的历史残留（防止旧消息被带到最新区域）。
+        const fetchedIds = new Set(fetched.filter(m => m.id).map(m => m.id))
+        const snapshotStart = fetched.length ? (fetched[0].createdAt || '') : null
+        // 快照中已含同内容 echo 时，切走期间未在本地处理的乐观消息应移除（防重复显示）
+        const fetchedContents = new Set(fetched.filter(m => m.content).map(m => m.type + '|' + m.content))
+        const extras = this.messages.filter(
+          m => m.conversationId === conversationId
+            && (!m.id || !fetchedIds.has(m.id))
+            && (snapshotStart == null || (m.createdAt && m.createdAt > snapshotStart))
+            && !(m._local && fetchedContents.has(m.type + '|' + m.content)),
+        )
+        this.messages = [...fetched, ...extras].sort(
+          (a, b) => (a.createdAt || '\uffff').localeCompare(b.createdAt || '\uffff'),
+        )
       } catch {
-        // 加载失败不清空已有消息（可能含 echo 到达的实时消息）
-        if (conversationId !== this.activeId) this.messages = []
+        // 加载失败不清空已有消息（可能含 echo 到达的实时消息）；本会话无任何消息时清空残留
+        if (conversationId === this.activeId && seq === msgLoadSeq
+          && !this.messages.some(m => m.conversationId === conversationId)) {
+          this.messages = []
+        }
       } finally {
-        this.loadingMessages = false
+        if (seq === msgLoadSeq) this.loadingMessages = false
       }
     },
 
@@ -154,7 +173,6 @@ export const useImStore = defineStore('im', {
       this.activeId = conversationId
       this.peerTyping = false
       this.pendingCard = null
-      markActivity()
       await this.loadMessages(conversationId)
       this.markRead(conversationId)
     },
@@ -196,6 +214,13 @@ export const useImStore = defineStore('im', {
       this.doSend({ type: 'text', content: text, quoteId })
     },
 
+    /** 发送 FAQ 快捷问题（extra.faqClick 标记：后端据此走机器人自动回复，不创建服务、不转人工） */
+    sendFaq(question: string) {
+      const text = (question || '').trim()
+      if (!text || !this.activeId) return
+      this.doSend({ type: 'text', content: text, extra: { faqClick: true } })
+    },
+
     sendImage(url: string) {
       if (!url || !this.activeId) return
       this.doSend({ type: 'image', content: url })
@@ -209,6 +234,22 @@ export const useImStore = defineStore('im', {
     doSend(payload: { type: string; content: string; extra?: Record<string, any>; quoteId?: string }) {
       const conv = this.activeConversation
       const shopId = conv?.shopId
+      // 本地乐观消息：点击发送后立即上屏（无 id，_local 标记），避免等待 WS echo 的空窗；
+      // echo 到达后按“会话+类型+内容+发送时间差”匹配移除，保证不重复
+      if (this.activeId) {
+        this.messages.push({
+          conversationId: this.activeId,
+          senderRole: 'user',
+          type: payload.type,
+          content: payload.content,
+          extra: payload.extra,
+          quoteId: payload.quoteId,
+          createdAt: new Date().toISOString(),
+          _local: true,
+          _sentAt: Date.now(),
+        })
+        this.messages.sort((a, b) => (a.createdAt || '\uffff').localeCompare(b.createdAt || '\uffff'))
+      }
       // 若已因空闲超时断开，sendOrReconnect 会排队暂存并触发重连，连上后自动补发
       sendOrReconnect({
         action: 'send',
@@ -301,6 +342,11 @@ export const useImStore = defineStore('im', {
       const fromPeer = msg.senderRole !== 'user' && !msg.systemType
       const isActive = msg.conversationId === this.activeId && this.open
 
+      // 接待/接管/服务结束系统消息会改变会话接待状态（assigneeId），刷新列表让 FAQ 引导实时切换
+      if (msg.systemType === 'assign' || msg.systemType === 'takeover' || msg.systemType === 'service-ended') {
+        this.loadConversations()
+      }
+
       // 更新会话摘要
       let conv = this.conversations.find(c => c.id === msg.conversationId)
       if (!conv) {
@@ -314,8 +360,17 @@ export const useImStore = defineStore('im', {
 
       // 合并到当前会话消息流（按 id 去重）
       if (msg.conversationId === this.activeId) {
+        if (msg.id) {
+          // echo 到达：先移除对应的本地乐观消息（同会话+同类型+同内容，且发送时间差 3 秒内；只删一条，避免连发相同内容误删）
+          const localIdx = this.messages.findIndex(m =>
+            m._local && m.conversationId === msg.conversationId && m.type === msg.type && m.content === msg.content
+            && Math.abs((m._sentAt || 0) - new Date(msg.createdAt || '').getTime()) < 3000)
+          if (localIdx >= 0) this.messages.splice(localIdx, 1)
+        }
         if (!msg.id || !this.messages.some(m => m.id && m.id === msg.id)) {
           this.messages.push(msg)
+          // 实时消息可能乱序到达（如 FAQ 机器人回复先于用户消息 echo），按时间排序恢复正确顺序
+          this.messages.sort((a, b) => (a.createdAt || '\uffff').localeCompare(b.createdAt || '\uffff'))
         }
       }
 

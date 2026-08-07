@@ -7,12 +7,19 @@
         <span class="online-dot" :class="connected ? 'on' : 'off'" :title="connected ? '在线' : '连接中'" />
         <el-button link size="small" @click="loadConversations">刷新</el-button>
       </div>
-      <!-- 会话筛选：全部 / 待接入 / 我的 / 介入 -->
+      <!-- 会话筛选：全部 / 待接入 / 我的 / 介入 / 已结束（服务结束的会话不属待接入，单独分组只读查看） -->
       <div class="conv-tabs">
         <span class="tab" :class="{ on: filterState === 'all' }" @click="filterState = 'all'">全部</span>
         <span class="tab" :class="{ on: filterState === 'pending' }" @click="filterState = 'pending'">待接入</span>
         <span class="tab" :class="{ on: filterState === 'mine' }" @click="filterState = 'mine'">我的</span>
         <span class="tab" :class="{ on: filterState === 'joined' }" @click="filterState = 'joined'">介入</span>
+        <span class="tab" :class="{ on: filterState === 'ended' }" @click="filterState = 'ended'">服务结束</span>
+      </div>
+      <div class="conv-filter">
+        <el-select v-model="selectedSkillGroupId" placeholder="全部技能组" clearable size="small" style="width: 100%" @change="onSkillGroupFilterChange">
+          <el-option label="全部技能组" :value="null" />
+          <el-option v-for="g in skillGroupOptions" :key="g.id" :label="g.groupName" :value="g.id" />
+        </el-select>
       </div>
       <div class="conv-list">
         <div v-if="filteredConversations.length === 0" class="empty">暂无会话</div>
@@ -47,11 +54,16 @@
           <span v-if="peerTyping" class="typing">对方正在输入…</span>
           <el-button v-if="isMyConversation" link size="small" type="primary" class="transfer-btn" @click="openTransferDialog">转接</el-button>
         </div>
-        <!-- 只读提示：非接待/非介入客服打开已分配会话时显示，介入或接管后可回复 -->
+        <!-- 只读提示：非接待/非介入客服打开已分配会话时显示，介入或接管后可回复；已结束服务会话显示专属提示 -->
         <div v-if="!canReply" class="readonly-bar">
-          <span>当前由 {{ activeConversation?.assigneeName || '其他客服' }} 接待，只读模式</span>
-          <el-button size="small" @click="joinActive">介入</el-button>
-          <el-button type="primary" size="small" @click="takeOverActive">接管</el-button>
+          <template v-if="activeConversation?.assigneeId == null && activeConversation?.serviceActive === false">
+            <span>该会话服务已结束，等待用户再次发起消息后自动分配</span>
+          </template>
+          <template v-else>
+            <span>当前由 {{ activeConversation?.assigneeName || '其他客服' }} 接待，只读模式</span>
+            <el-button size="small" @click="joinActive">介入</el-button>
+            <el-button type="primary" size="small" @click="takeOverActive">接管</el-button>
+          </template>
         </div>
         <div ref="msgScroll" class="chat-body">
           <div v-if="loadingMessages" class="loading">加载中…</div>
@@ -315,6 +327,10 @@ interface ImConversation {
   assigneeName?: string
   /** 介入客服ID集合（介入不影响原接待客服，可共同服务用户） */
   joiners?: number[]
+  /** 所属技能组ID */
+  skillGroupId?: number | null
+  /** 是否有进行中的服务（false=服务已结束，不可接入，等用户再次发消息自动分配） */
+  serviceActive?: boolean
 }
 
 const conversations = ref<ImConversation[]>([])
@@ -325,28 +341,41 @@ const peerTyping = ref(false)
 const draft = ref('')
 const msgScroll = ref<HTMLElement | null>(null)
 let typingTimer: ReturnType<typeof setTimeout> | null = null
+// 消息加载请求序号：快速切换会话/重复加载时用于丢弃过期响应，防止旧快照覆盖新会话消息
+let msgLoadSeq = 0
 
-// 会话筛选：全部 / 待接入 / 我的 / 介入（纯前端过滤）
-const filterState = ref<'all' | 'pending' | 'mine' | 'joined'>('all')
+// 会话筛选：全部 / 待接入 / 我的 / 介入 / 服务结束（纯前端过滤）
+const filterState = ref<'all' | 'pending' | 'mine' | 'joined' | 'ended'>('all')
+const skillGroupOptions = ref<any[]>([])
+const selectedSkillGroupId = ref<number | null>(null)
+
 const filteredConversations = computed(() => {
-  if (filterState.value === 'pending') return conversations.value.filter(c => c.assigneeId == null)
-  if (filterState.value === 'mine') return conversations.value.filter(
+  let list = conversations.value
+  // 技能组筛选
+  if (selectedSkillGroupId.value != null) {
+    list = list.filter(c => c.skillGroupId != null && Number(c.skillGroupId) === Number(selectedSkillGroupId.value))
+  }
+  if (filterState.value === 'pending') return list.filter(c => c.assigneeId == null && c.serviceActive !== false)
+  if (filterState.value === 'mine') return list.filter(
     c => c.assigneeId != null && Number(c.assigneeId) === myStaffId.value,
   )
   // 我介入的会话：joiners 包含当前客服（介入不影响原接待客服）
-  if (filterState.value === 'joined') return conversations.value.filter(
+  if (filterState.value === 'joined') return list.filter(
     c => myStaffId.value != null && (c.joiners || []).some(j => Number(j) === myStaffId.value),
   )
-  return conversations.value
+  // 服务已结束的会话：只读查看历史，不可接入（等用户再次发消息自动分配新服务）
+  if (filterState.value === 'ended') return list.filter(c => c.assigneeId == null && c.serviceActive === false)
+  return list
 })
 
 const activeConversation = computed(() => conversations.value.find(c => c.id === activeId.value))
 
-// 是否可回复：待接入会话点开后自动接入即可回复；已分配会话仅接待者/介入者可回复（其余只读）
+// 是否可回复：待接入会话点开后自动接入即可回复；已分配会话仅接待者/介入者可回复（其余只读）；
+// 已结束服务的会话不可回复（接入无意义，等用户再次发消息自动分配）
 const canReply = computed(() => {
   const c = activeConversation.value
   if (!c) return false
-  if (c.assigneeId == null) return true
+  if (c.assigneeId == null) return c.serviceActive !== false
   if (Number(c.assigneeId) === myStaffId.value) return true
   return (c.joiners || []).some(j => Number(j) === myStaffId.value)
 })
@@ -356,15 +385,15 @@ const isMyConversation = computed(() => {
   return !!c && c.assigneeId != null && Number(c.assigneeId) === myStaffId.value
 })
 
-// 会话归属标签：待接入（橙）/ 我（蓝）/ 介入中（紫）/ 客服名（灰）
+// 会话归属标签：待接入（橙）/ 服务结束（灰）/ 我（蓝）/ 介入中（紫）/ 客服名（灰）
 function assignTagText(c: ImConversation): string {
-  if (c.assigneeId == null) return '待接入'
+  if (c.assigneeId == null) return c.serviceActive === false ? '服务结束' : '待接入'
   if (Number(c.assigneeId) === myStaffId.value) return '我'
   if ((c.joiners || []).some(j => Number(j) === myStaffId.value)) return '介入中'
   return c.assigneeName || '其他客服'
 }
 function assignTagClass(c: ImConversation): string {
-  if (c.assigneeId == null) return 'pending'
+  if (c.assigneeId == null) return c.serviceActive === false ? 'ended' : 'pending'
   if (Number(c.assigneeId) === myStaffId.value) return 'mine'
   if ((c.joiners || []).some(j => Number(j) === myStaffId.value)) return 'join'
   return 'other'
@@ -546,28 +575,49 @@ async function loadConversations() {
   } catch { /* handled */ }
 }
 
+const fetchSkillGroups = async () => {
+  try {
+    const data: any = await request.get('/im/skill-group/list')
+    skillGroupOptions.value = data || []
+  } catch { /* handled */ }
+}
+
+function onSkillGroupFilterChange() {
+  loadConversations()
+}
+
 async function loadMessages(conversationId: number) {
+  const seq = ++msgLoadSeq
   loadingMessages.value = true
   try {
     const page = await request.get<any, any>('/im/messages', { params: { conversationId, page: 1, pageSize: 50 } })
+    // 响应过期（期间已切换会话/再次加载）：丢弃，避免旧会话快照覆盖当前会话消息
+    if (conversationId !== activeId.value || seq !== msgLoadSeq) return
     // 后端按时间倒序返回，前端展示需正序
     const fetched = ((page?.list || []) as ImMessage[]).slice().reverse()
     // 合并：GET 在途期间可能已有实时消息经 WS echo 进入当前会话，
-    // 若直接整体替换会把这些新消息冲掉（首句消失、刷新才出现），故按 id 去重合并。
-    if (conversationId === activeId.value) {
-      const fetchedIds = new Set(fetched.filter(m => m.id).map(m => m.id))
-      const extras = messages.value.filter(
-        m => m.conversationId === conversationId && (!m.id || !fetchedIds.has(m.id)),
-      )
-      messages.value = [...fetched, ...extras]
-    } else {
-      messages.value = fetched
-    }
+    // 分页快照未必包含它们，若直接整体替换会把这些新消息冲掉（首句消失、刷新才出现）。
+    // extras 只保留快照中没有的消息：按 id 排除快照已有消息（否则每次重开面板都会把
+    // 整份快照再 append 一遍导致重复）；无 id 的乐观消息直接保留；再按时间过滤掉
+    // 早于快照最早消息的历史残留（防止旧消息被带到最新区域）。
+    const fetchedIds = new Set(fetched.filter(m => m.id).map(m => m.id))
+    const snapshotStart = fetched.length ? (fetched[0].createdAt || '') : null
+    const extras = messages.value.filter(
+      m => m.conversationId === conversationId
+        && (!m.id || !fetchedIds.has(m.id))
+        && (snapshotStart == null || (m.createdAt && m.createdAt > snapshotStart)),
+    )
+    messages.value = [...fetched, ...extras].sort(
+      (a, b) => (a.createdAt || '\uffff').localeCompare(b.createdAt || '\uffff'),
+    )
   } catch {
-    // 加载失败不清空已有消息（可能含 echo 到达的实时消息）
-    if (conversationId !== activeId.value) messages.value = []
+    // 加载失败不清空已有消息（可能含 echo 到达的实时消息）；本会话无任何消息时清空残留
+    if (conversationId === activeId.value && seq === msgLoadSeq
+      && !messages.value.some(m => m.conversationId === conversationId)) {
+      messages.value = []
+    }
   } finally {
-    loadingMessages.value = false
+    if (seq === msgLoadSeq) loadingMessages.value = false
     scrollToBottom()
   }
 }
@@ -577,9 +627,9 @@ async function selectConversation(conversationId: number) {
   peerTyping.value = false
   await loadMessages(conversationId)
   markRead(conversationId)
-  // 待接入会话：客服点开对话框即主动接入（仅 assigneeId 为空时生效，不抢占已分配会话）
+  // 待接入会话：客服点开对话框即主动接入（仅 assigneeId 为空且服务未结束时生效，不抢占已分配会话）
   const conv = conversations.value.find(c => c.id === conversationId)
-  if (conv && conv.assigneeId == null) {
+  if (conv && conv.assigneeId == null && conv.serviceActive !== false) {
     sendFrame({ action: 'take', conversationId })
   }
 }
@@ -734,12 +784,20 @@ function onMessage(msg: ImMessage) {
   if (msg.systemType === 'assign' || msg.systemType === 'takeover' || msg.systemType === 'transfer') {
     conv.assigneeId = msg.senderId
     conv.assigneeName = msg.senderName
+    // 服务已结束的会话收到接入广播 = 用户已再次发消息触发新服务，刷新列表同步服务状态标记
+    if (conv.serviceActive === false) loadConversations()
   }
   // 系统消息（客服介入）：同步介入者集合，不影响原接待客服
   if (msg.systemType === 'join' && msg.senderId != null) {
     if (!(conv.joiners || []).some(j => Number(j) === Number(msg.senderId))) {
       conv.joiners = [...(conv.joiners || []), msg.senderId]
     }
+  }
+  // 服务超时结束：会话回到待接入状态，刷新会话列表（下次用户发消息自动重新分配）
+  if (msg.systemType === 'service-ended') {
+    conv.assigneeId = null
+    conv.assigneeName = null
+    loadConversations()
   }
   conv.lastMessage = summarize(msg)
   conv.lastMessageType = msg.type
@@ -839,6 +897,7 @@ onMounted(() => {
   // 连接由布局层全局接管；此处 connectIm 幂等，仅处理直接深入 /im 页面的场景
   connectIm()
   loadConversations()
+  fetchSkillGroups()
 })
 
 onUnmounted(() => {
@@ -919,6 +978,11 @@ onUnmounted(() => {
     }
   }
 
+  .conv-filter {
+    padding: 6px 12px;
+    border-bottom: 1px solid #f5f5f5;
+  }
+
   .conv-list {
     flex: 1;
     overflow-y: auto;
@@ -948,6 +1012,7 @@ onUnmounted(() => {
         margin-left: 6px;
       }
       .assign-tag.pending { color: #e6a23c; background: #fdf6ec; }
+      .assign-tag.ended { color: #909399; background: #f4f4f5; }
       .assign-tag.mine { color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
       .assign-tag.join { color: #9254de; background: #f9f0ff; }
       .assign-tag.other { color: #909399; background: #f4f4f5; }

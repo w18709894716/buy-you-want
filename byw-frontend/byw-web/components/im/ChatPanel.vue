@@ -55,12 +55,54 @@
         <!-- 消息流 -->
         <div v-else ref="msgScroll" class="flex-1 overflow-y-auto px-3 py-3 bg-gray-50 space-y-3">
           <div v-if="im.loadingMessages" class="text-center text-gray-400 text-xs py-4">加载中…</div>
+
+          <!-- FAQ 引导兜底：无锚点（全新会话/历史太远）时作为消息流第一条渲染，问答消息在其下方推进 -->
+          <div v-if="showFaqGuide && !guideAnchorId && lastServiceEndedIndex < 0" class="flex items-start gap-2">
+            <div class="w-8 h-8 rounded-full bg-primary text-white text-sm flex items-center justify-center flex-shrink-0">智</div>
+            <div class="max-w-[75%]">
+              <div class="text-[11px] text-gray-400 mb-1">智能客服</div>
+              <div class="bg-white rounded-2xl rounded-bl-sm shadow-sm px-3 py-2">
+                <div class="text-sm text-gray-800 mb-2">智能客服为您服务，请选择您要咨询的问题：</div>
+                <div class="flex flex-col gap-1.5">
+                  <button
+                    v-for="faq in faqList"
+                    :key="faq.id"
+                    class="text-left text-xs text-primary bg-primary/5 hover:bg-primary/10 rounded-lg px-3 py-1.5 transition-colors"
+                    @click="im.sendFaq(faq.question)"
+                  >{{ faq.question }}</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <template v-for="(m, i) in im.messages" :key="m.id || ('l' + i)">
             <!-- 系统提示（如客服接入）：居中灰色小字，不用气泡 -->
             <div v-if="m.systemType" class="text-center">
               <span class="text-[11px] text-gray-400">{{ m.content }}</span>
             </div>
-            <div v-else class="flex items-start gap-2" :class="isMine(m) ? 'justify-end' : 'justify-start'" :data-msg-id="m.id" @contextmenu.prevent="showCtxMenu(m, $event)">
+            <!-- 评价入口：跟随最近一次“服务结束”消息渲染，随消息流滚动（不固定钉在底部） -->
+            <div v-if="showSatisfactionEntry && m.systemType === 'service-ended' && i === lastServiceEndedIndex" class="text-center py-2">
+              <button class="text-xs text-primary underline hover:text-primary-600" @click="openSatisfaction">评价本次服务</button>
+            </div>
+            <!-- FAQ 引导：优先锚定“重新引导”位置（新一轮咨询时的最新消息后）；否则锚定最后一条服务结束消息后（评价入口下方），随消息流一起滚动 -->
+            <div v-if="showFaqGuide && ((guideAnchorId && m.id === guideAnchorId) || (!guideAnchorId && m.systemType === 'service-ended' && i === lastServiceEndedIndex))" class="flex items-start gap-2">
+              <div class="w-8 h-8 rounded-full bg-primary text-white text-sm flex items-center justify-center flex-shrink-0">智</div>
+              <div class="max-w-[75%]">
+                <div class="text-[11px] text-gray-400 mb-1">智能客服</div>
+                <div class="bg-white rounded-2xl rounded-bl-sm shadow-sm px-3 py-2">
+                  <div class="text-sm text-gray-800 mb-2">智能客服为您服务，请选择您要咨询的问题：</div>
+                  <div class="flex flex-col gap-1.5">
+                    <button
+                      v-for="faq in faqList"
+                      :key="faq.id"
+                      class="text-left text-xs text-primary bg-primary/5 hover:bg-primary/10 rounded-lg px-3 py-1.5 transition-colors"
+                      @click="im.sendFaq(faq.question)"
+                    >{{ faq.question }}</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-if="!m.systemType" class="flex items-start gap-2" :class="isMine(m) ? 'justify-end' : 'justify-start'" :data-msg-id="m.id" @contextmenu.prevent="showCtxMenu(m, $event)">
               <!-- 左侧：客服头像（名字首字） -->
               <div v-if="!isMine(m)" class="w-8 h-8 rounded-full bg-primary text-white text-sm flex items-center justify-center flex-shrink-0">
                 {{ avatarText(m) }}
@@ -130,9 +172,9 @@
             </div>
           </template>
 
-         <!-- 会话超时提示：空闲 5 分钟自动断开，发消息会自动重连 -->
-          <div v-if="idleClosed" class="text-center py-1">
-            <span class="text-[11px] text-gray-500 bg-gray-100 rounded-full px-3 py-1">会话已超时结束，发送消息将自动重新连接</span>
+          <!-- 评价入口兜底：服务结束消息不在当前加载范围（历史太远）时，显示在消息流末尾 -->
+          <div v-if="showSatisfactionEntry && lastServiceEndedIndex < 0" class="text-center py-2">
+            <button class="text-xs text-primary underline hover:text-primary-600" @click="openSatisfaction">评价本次服务</button>
           </div>
 
           <!-- 正在输入 -->
@@ -251,20 +293,44 @@
         >引用</button>
       </div>
     </Teleport>
+
+    <!-- 满意度评价弹窗 -->
+    <Teleport to="body">
+      <div v-if="satVisible" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/30" @click.self="satVisible = false">
+        <div class="bg-white rounded-xl shadow-2xl w-[320px] p-5">
+          <h3 class="text-sm font-medium text-gray-800 mb-4">评价本次服务</h3>
+          <!-- 星星评分 -->
+          <div class="flex justify-center gap-1 mb-4">
+            <button v-for="i in 5" :key="i" class="text-2xl" :class="i <= satRating ? 'text-yellow-400' : 'text-gray-300'" @click="satRating = i">★</button>
+          </div>
+          <!-- 评价标签 -->
+          <div class="flex flex-wrap gap-2 mb-3">
+            <button v-for="tag in satTags" :key="tag" class="text-xs px-3 py-1 rounded-full border" :class="satSelectedTags.includes(tag) ? 'bg-primary text-white border-primary' : 'border-gray-200 text-gray-500 hover:border-gray-300'" @click="toggleSatTag(tag)">{{ tag }}</button>
+          </div>
+          <!-- 留言 -->
+          <textarea v-model="satComment" rows="3" maxlength="500" placeholder="说说您的感受（选填）" class="w-full resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary" />
+          <!-- 按钮 -->
+          <div class="flex justify-end gap-2 mt-4">
+            <button class="text-xs px-4 py-1.5 rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50" @click="satVisible = false">取消</button>
+            <button class="text-xs px-4 py-1.5 rounded-full bg-primary text-white disabled:opacity-40" :disabled="satRating === 0" @click="submitSat">提交</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, nextTick, watch, onUnmounted } from 'vue'
+import { ref, reactive, computed, nextTick, watch, onUnmounted } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import EmojiPicker from 'vue3-emoji-picker'
 import 'vue3-emoji-picker/css'
 import { useImStore } from '~/stores/im'
 import { useImSocket } from '~/composables/useImSocket'
-import { upload } from '~/utils/request'
+import { upload, post, get } from '~/utils/request'
 
 const im = useImStore()
-const { connected, idleClosed } = useImSocket()
+const { connected } = useImSocket()
 
 // 表情选择器：选中后把 Unicode 字符追加到输入框，仍作为 text 消息发送
 const showEmoji = ref(false)
@@ -395,6 +461,45 @@ onUnmounted(() => {
   document.removeEventListener('click', onDocClick)
 })
 
+// ========== FAQ 智能客服引导 ==========
+
+/** 当前会话可选的 FAQ 快捷问题（打开会话时拉取，仅启用状态） */
+const faqList = ref<{ id: number; question: string }[]>([])
+/** 是否展示智能客服引导：店铺配置了 FAQ 即常驻展示（客服接待后仍可点击，问题将直接发送给接待客服） */
+const showFaqGuide = computed(() => faqList.value.length > 0)
+/** “重新引导”锚点消息 id：间隔超过阈值再次进线时，引导重新锚定到该消息之后（最新位置，避免翻聊天记录） */
+const guideAnchorId = ref<string | null>(null)
+/** 重新引导间隔阈值：距最后一条消息超过该时长视为新一轮咨询，引导重新出现在最新位置 */
+const GUIDE_REFRESH_GAP = 30 * 60 * 1000
+
+/**
+ * 判定是否需要重新引导：无人工接待且距最后一条消息超过阈值时，把引导锚定到当前最新消息之后；
+ * 短间隔/人工接待中保持原锚点（最后一条服务结束消息后）
+ */
+function refreshGuideAnchor() {
+  const conv = im.activeConversation
+  if (!conv || conv.assigneeId) { guideAnchorId.value = null; return }
+  const last = parseTime(conv.lastMessageTime)
+  if (!last || Date.now() - last.getTime() < GUIDE_REFRESH_GAP) { guideAnchorId.value = null; return }
+  // 锚定当前快照中最后一条真实消息（从后往前找有 id 的；乐观消息无 id 不可作锚点）
+  const lastReal = [...im.messages].reverse().find(m => m.id)
+  guideAnchorId.value = lastReal?.id || null
+}
+
+// 切换会话时拉取该店铺的 FAQ 引导选项（immediate：面板重新打开时 activeId 可能不变，仍需重新拉取）
+watch(() => im.activeId, async (id) => {
+  faqList.value = []
+  guideAnchorId.value = null
+  if (!id) return
+  const conv = im.conversations.find(c => c.id === id)
+  if (!conv?.shopId) return
+  try {
+    faqList.value = (await get<{ id: number; question: string }[]>('/im/faq/options', { shopId: conv.shopId })) || []
+  } catch {
+    faqList.value = []
+  }
+}, { immediate: true })
+
 // 点击引用条定位到被引用消息（滚动 + 高亮闪烁）
 function scrollToMessage(messageId?: string) {
   if (!messageId) return
@@ -404,6 +509,86 @@ function scrollToMessage(messageId?: string) {
   el.classList.add('msg-flash')
   setTimeout(() => el.classList.remove('msg-flash'), 1200)
 }
+
+// ========== 满意度评价 ==========
+
+/** 是否展示评价入口 */
+const showSatisfactionEntry = ref(false)
+/** 消息流中最近一次“服务结束”消息的下标（评价入口跟随其渲染随消息滚动；-1=无） */
+const lastServiceEndedIndex = computed(() => {
+  for (let i = im.messages.length - 1; i >= 0; i--) {
+    if (im.messages[i].systemType === 'service-ended') return i
+  }
+  return -1
+})
+/** 评价弹窗可见 */
+const satVisible = ref(false)
+/** 评分 1-5 */
+const satRating = ref(0)
+/** 可选标签 */
+const satTags = ['响应快', '态度好', '专业解答', '未解决问题', '其他']
+/** 已选标签 */
+const satSelectedTags = ref<string[]>([])
+/** 留言 */
+const satComment = ref('')
+
+function toggleSatTag(tag: string) {
+  const idx = satSelectedTags.value.indexOf(tag)
+  if (idx >= 0) {
+    satSelectedTags.value.splice(idx, 1)
+  } else {
+    satSelectedTags.value.push(tag)
+  }
+}
+
+/** 打开评价弹窗 */
+function openSatisfaction() {
+  satRating.value = 0
+  satSelectedTags.value = []
+  satComment.value = ''
+  satVisible.value = true
+}
+
+/** 提交评价 */
+async function submitSat() {
+  if (satRating.value === 0) return
+  try {
+    await post('/im/satisfaction', {
+      conversationId: im.activeId,
+      rating: satRating.value,
+      tags: satSelectedTags.value.join(','),
+      comment: satComment.value,
+    })
+    satVisible.value = false
+    showSatisfactionEntry.value = false
+    showErrorTip('评价已提交，感谢您的反馈')
+  } catch {
+    showErrorTip('评价提交失败，请稍后重试')
+  }
+}
+
+/** 检查当前会话是否可评价（有人工回复且存在已结束未评价的服务） */
+async function checkSatisfaction() {
+  const hasHumanReply = im.messages.some(m => m.senderRole === 'merchant' && !m.systemType)
+  if (!hasHumanReply) { showSatisfactionEntry.value = false; return }
+  try {
+    const ratable = await get<boolean>('/im/satisfaction/check', { conversationId: im.activeId })
+    showSatisfactionEntry.value = ratable
+  } catch {
+    showSatisfactionEntry.value = false
+  }
+}
+
+// 会话切换/消息加载完成时检查评价入口
+watch([() => im.activeId, () => im.loadingMessages], ([id, loading]) => {
+  if (!id || loading) { showSatisfactionEntry.value = false; return }
+  nextTick(() => checkSatisfaction())
+})
+
+// 服务超时自动结束（service-ended 系统消息）到达时重新检查评价入口
+watch(() => im.messages[im.messages.length - 1]?.systemType, (t) => {
+  if (t === 'service-ended' && im.activeId) nextTick(() => checkSatisfaction())
+})
 
 // 解析服务端时间（LocalDateTime 序列化可能为数组或字符串）
 function parseTime(t: any): Date | null {
@@ -507,10 +692,32 @@ function scrollToBottom() {
 // 新消息到达时滚动到底部
 watch(() => im.messages.length, scrollToBottom)
 watch(() => im.peerTyping, scrollToBottom)
-// 会话加载完成后滚动到底部：切换会话/重新打开时消息条数可能不变，仅靠 length 监听会漏触发导致停留在顶部
-watch(() => im.loadingMessages, (loading) => { if (!loading) scrollToBottom() })
-// 会话超时横幅出现时滚动到底部，避免被输入区遮挡
-watch(idleClosed, (closed) => { if (closed) scrollToBottom() })
+// 会话加载完成后：先判定是否需要“重新引导”（间隔超阈值时锚定最新消息），再按其位置滚动——
+// 引导锚定在服务结束消息后（存量会话，滚底即见）；无锚点且尚无人工接待（全新会话，引导在消息流开头）则滚顶；其余一律滚底看最新消息
+watch(() => im.loadingMessages, (loading) => {
+  if (loading) return
+  refreshGuideAnchor()
+  nextTick(() => {
+    if (showFaqGuide.value && !guideAnchorId.value && !im.activeConversation?.assigneeId && lastServiceEndedIndex.value < 0) scrollToTop()
+    else scrollToBottom()
+  })
+})
+// FAQ 选项异步拉取（可能晚于消息加载完成）：引导此时才出现，按其锚点位置滚动使其可见
+watch(faqList, (list) => {
+  if (!list.length || !showFaqGuide.value) return
+  nextTick(() => {
+    if (!guideAnchorId.value && !im.activeConversation?.assigneeId && lastServiceEndedIndex.value < 0) scrollToTop()
+    else scrollToBottom()
+  })
+})
+
+// 滚动到顶部：引导卡片位于消息流顶部，打开会话时需让用户看到
+function scrollToTop() {
+  nextTick(() => {
+    const el = msgScroll.value
+    if (el) el.scrollTop = 0
+  })
+}
 </script>
 
 <style scoped>

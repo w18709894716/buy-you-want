@@ -25,9 +25,10 @@
           </template>
         </el-table-column>
         <el-table-column prop="createdAt" label="创建时间" min-width="160" />
-        <el-table-column label="操作" width="240" fixed="right">
+        <el-table-column label="操作" width="320" fixed="right">
           <template #default="{ row }">
             <el-button size="small" text type="warning" @click="openRoles(row)">分配角色</el-button>
+            <el-button size="small" text type="primary" @click="openSkillGroups(row)">技能组</el-button>
             <el-button size="small" text @click="resetPassword(row)">重置密码</el-button>
             <el-button
               :type="row.status === 1 ? 'danger' : 'success'"
@@ -101,6 +102,17 @@
         <el-button type="primary" :loading="submitting" @click="submitRoles">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 分配技能组弹窗 -->
+    <el-dialog v-model="skillGroupDialogVisible" title="分配技能组" width="420px">
+      <el-select v-model="skillGroupForm.groupIds" multiple filterable :teleported="false" placeholder="选择技能组（可搜索）" style="width: 100%">
+        <el-option v-for="g in skillGroupOptions" :key="g.id" :label="g.groupName" :value="g.id" />
+      </el-select>
+      <template #footer>
+        <el-button @click="skillGroupDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="submitSkillGroups">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -136,12 +148,53 @@ const rules: FormRules = {
 const roleDialogVisible = ref(false)
 const roleForm = reactive<any>({ staffId: undefined, roleIds: [] as number[] })
 
+const skillGroupDialogVisible = ref(false)
+const skillGroupOptions = ref<any[]>([])
+const skillGroupForm = reactive<any>({ staffId: undefined, groupIds: [] as number[] })
+
 const fetchRoles = async () => {
   try {
     const data: any = await request.get('/merchant/staff/roles')
     roleOptions.value = data || []
   } catch (error: any) {
     if (!error._handled) ElMessage.error(error?.message || '获取角色列表失败')
+  }
+}
+
+const fetchSkillGroups = async () => {
+  try {
+    const data: any = await request.get('/im/skill-group/list')
+    skillGroupOptions.value = data || []
+  } catch (error: any) {
+    if (!error._handled) ElMessage.error(error?.message || '获取技能组列表失败')
+  }
+}
+
+const openSkillGroups = async (row: any) => {
+  skillGroupForm.staffId = row.id
+  skillGroupForm.groupIds = []
+  try {
+    const data: any = await request.get(`/im/skill-group/staff/${row.id}`)
+    skillGroupForm.groupIds = data || []
+  } catch (error: any) {
+    if (!error._handled) ElMessage.error(error?.message || '获取员工技能组失败')
+  }
+  skillGroupDialogVisible.value = true
+}
+
+const submitSkillGroups = async () => {
+  submitting.value = true
+  try {
+    await request.post('/im/skill-group/staff', {
+      staffId: skillGroupForm.staffId,
+      groupIds: skillGroupForm.groupIds
+    })
+    ElMessage.success('分配成功')
+    skillGroupDialogVisible.value = false
+  } catch (error: any) {
+    if (!error._handled) ElMessage.error(error?.message || '分配失败')
+  } finally {
+    submitting.value = false
   }
 }
 
@@ -228,6 +281,7 @@ const toggleStatus = async (row: any) => {
 
 onMounted(() => {
   fetchRoles()
+  fetchSkillGroups()
   fetchData()
 })
 </script>

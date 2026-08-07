@@ -59,4 +59,7 @@ public interface ImService {
 
     /** 客服彻底下线时释放其名下接待中的会话（assignee 置空，下次用户发消息自动重新分配） */
     void releaseStaffConversations(Long shopId, Long staffId);
+
+    /** 满意度提交成功后的系统提示：向会话插入一条“感谢评价”系统消息并广播（失败不阻断评价提交） */
+    void notifySatisfactionSubmitted(Long conversationId, Integer rating);
 }

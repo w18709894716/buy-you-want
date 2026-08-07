@@ -222,7 +222,12 @@ INSERT INTO t_sys_menu (id, parent_id, menu_name, menu_type, scope, path, perm_c
 (221, 220, '订单列表',   2, 'merchant', '/order/list',       'm:order:list',       NULL,          21),
 (222, 220, '售后管理',   2, 'merchant', '/order/after-sale', 'm:aftersale:manage', NULL,          22),
 (223, 220, '订单发货',   3, 'merchant', NULL,                'm:order:ship',       NULL,          23),
+(224, 220, '订单详情',   3, 'merchant', NULL,                'm:order:detail',     NULL,          24),
 (230, 0,   '客服工作台', 2, 'merchant', '/im',               'm:im:workbench',     'Service',     30),
+(231, 0,   '客服管理',   1, 'merchant', NULL,                NULL,                 'Headset',     35),
+(232, 231, 'FAQ知识库',  2, 'merchant', '/im/faq',           'm:im:faq',           NULL,          36),
+(233, 231, '技能组管理',  2, 'merchant', '/im/skill-group',   'm:im:skill-group',   NULL,          37),
+(234, 231, '服务评价',    2, 'merchant', '/im/satisfaction',  'm:im:satisfaction',  NULL,          38),
 (240, 0,   '营销管理',   1, 'merchant', NULL,                NULL,                 'Present',     40),
 (241, 240, '店铺优惠券', 2, 'merchant', '/promotion/coupon', 'm:coupon:manage',    NULL,          41),
 (250, 0,   '评价管理',   1, 'merchant', NULL,                NULL,                 'ChatDotRound',50),
@@ -245,11 +250,11 @@ INSERT INTO t_sys_role_menu (role_id, menu_id) VALUES
 -- 运营专员
 (6,151),(6,152),(6,153),(6,121),(6,122),
 -- 商家客服
-(11,230),(11,251),(11,222),
+(11,230),(11,251),(11,222),(11,224),
 -- 商家运营
 (12,211),(12,212),(12,241),
 -- 商家仓管发货
-(13,221),(13,223),(13,222),
+(13,221),(13,223),(13,222),(13,224),
 -- 商家财务
 (14,270);
 

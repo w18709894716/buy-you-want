@@ -212,8 +212,8 @@ watch(() => userStore.isLoggedIn, (logged) => {
   }
 })
 
-// 空闲超时会断开 IM 长连接，届时无法靠 WS 推送刷新角标。
-// 改为：切回标签页(focus) + 路由切换时各拉一次未读，再加 60s 低频兜底定时器。
+// WS 断线（网络异常）期间无法靠推送刷新角标。
+// 切回标签页(focus) + 路由切换时各拉一次未读，再加 60s 低频兜底定时器。
 let unreadBackupTimer: any = null
 function refreshUnread() {
   if (userStore.isLoggedIn) imStore.loadUnreadTotal()

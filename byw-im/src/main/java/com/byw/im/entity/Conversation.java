@@ -46,6 +46,9 @@ public class Conversation {
     /** 介入客服ID集合（JSON数组，如 "[3,5]"；介入不影响原接待客服，可共同服务用户） */
     private String joiners;
 
+    /** 路由到的技能组ID */
+    private Long skillGroupId;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 

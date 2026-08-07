@@ -30,6 +30,7 @@ public class MerchantOrderController {
     }
 
     @GetMapping("/{orderNo}")
+    @RequirePerm("m:order:detail")
     public R<OrderDetailDTO> getOrderDetail(@PathVariable String orderNo) {
         return orderFeignClient.getOrderDetail(orderNo);
     }

@@ -67,6 +67,24 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '客服工作台', perm: 'm:im:workbench' }
       },
       {
+        path: 'im/satisfaction',
+        name: 'Satisfaction',
+        component: () => import('../views/satisfaction/index.vue'),
+        meta: { title: '服务评价', perm: 'm:im:satisfaction' }
+      },
+      {
+        path: 'im/skill-group',
+        name: 'SkillGroup',
+        component: () => import('../views/skill-group/index.vue'),
+        meta: { title: '技能组管理', perm: 'm:im:skill-group' }
+      },
+      {
+        path: 'im/faq',
+        name: 'FaqManage',
+        component: () => import('../views/faq/index.vue'),
+        meta: { title: 'FAQ知识库', perm: 'm:im:faq' }
+      },
+      {
         path: 'promotion/coupon',
         name: 'CouponManage',
         component: () => import('../views/promotion/coupon.vue'),

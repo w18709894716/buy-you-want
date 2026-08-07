@@ -31,4 +31,10 @@ public class ConversationView {
 
     /** 介入客服ID集合（介入不影响原接待客服，可共同服务用户） */
     private List<Long> joiners;
+
+    /** 所属技能组ID */
+    private Long skillGroupId;
+
+    /** 是否有进行中的服务（false=服务已结束，会话不可接入，等用户再次发消息自动分配；商家侧有效） */
+    private Boolean serviceActive;
 }
