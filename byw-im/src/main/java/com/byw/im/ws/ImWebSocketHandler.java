@@ -2,8 +2,10 @@ package com.byw.im.ws;
 
 import com.byw.common.core.constant.CommonConstants;
 import com.byw.im.dto.SendMessageCommand;
+import com.byw.im.service.DispatchService;
 import com.byw.im.service.ImService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -42,15 +44,37 @@ public class ImWebSocketHandler extends TextWebSocketHandler {
 
     private final ImService imService;
     private final SessionManager sessionManager;
+    private final DispatchService dispatchService;
     private final ObjectMapper objectMapper;
 
     /** 下线释放复查定时器：连接断开后延迟复查，宽限期内重连则不释放 */
     private static final ScheduledExecutorService RELEASE_CHECKER = Executors.newSingleThreadScheduledExecutor();
     private static final long RELEASE_DELAY_SECONDS = 10L;
 
+    @PreDestroy
+    public void destroy() {
+        log.info("IM WebSocket Handler 销毁，关闭释放检查线程池");
+        RELEASE_CHECKER.shutdownNow();
+    }
+
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         sessionManager.register(session);
+        // 客服上线：异步消费本店排队队列/离线消息池（新上线客服可能使等待会话得到分配）
+        Boolean merchant = (Boolean) session.getAttributes().get(SessionManager.ATTR_IS_MERCHANT);
+        if (Boolean.TRUE.equals(merchant)) {
+            Long shopId = (Long) session.getAttributes().get(SessionManager.ATTR_SHOP_ID);
+            if (shopId != null) {
+                RELEASE_CHECKER.submit(() -> {
+                    try {
+                        dispatchService.consumeQueue(shopId);
+                        dispatchService.consumeOfflinePool(shopId);
+                    } catch (Exception e) {
+                        log.warn("IM 客服上线消费队列失败：shopId={}, err={}", shopId, e.getMessage());
+                    }
+                });
+            }
+        }
     }
 
     @Override
@@ -75,18 +99,22 @@ public class ImWebSocketHandler extends TextWebSocketHandler {
      * 期间页面刷新/断线重连恢复连接则取消释放。
      */
     private void scheduleReleaseCheck(Long shopId, Long staffId) {
-        RELEASE_CHECKER.schedule(() -> {
-            try {
-                if (sessionManager.hasActiveConnection(staffId)) {
-                    log.info("IM 客服宽限期内恢复连接，取消释放：staffId={}", staffId);
-                    return;
+        try {
+            RELEASE_CHECKER.schedule(() -> {
+                try {
+                    if (sessionManager.hasActiveConnection(staffId)) {
+                        log.info("IM 客服宽限期内恢复连接，取消释放：staffId={}", staffId);
+                        return;
+                    }
+                    log.info("IM 客服下线确认（宽限期后仍无连接），释放名下会话：staffId={}, shopId={}", staffId, shopId);
+                    imService.releaseStaffConversations(shopId, staffId);
+                } catch (Exception e) {
+                    log.warn("IM 延迟释放客服会话失败：staffId={}, err={}", staffId, e.getMessage());
                 }
-                log.info("IM 客服下线确认（宽限期后仍无连接），释放名下会话：staffId={}, shopId={}", staffId, shopId);
-                imService.releaseStaffConversations(shopId, staffId);
-            } catch (Exception e) {
-                log.warn("IM 延迟释放客服会话失败：staffId={}, err={}", staffId, e.getMessage());
-            }
-        }, RELEASE_DELAY_SECONDS, TimeUnit.SECONDS);
+            }, RELEASE_DELAY_SECONDS, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.warn("IM 提交释放检查任务失败（可能容器正在关闭）：staffId={}, err={}", staffId, e.getMessage());
+        }
     }
 
     @Override
@@ -147,7 +175,8 @@ public class ImWebSocketHandler extends TextWebSocketHandler {
                 case "read" -> {
                     Long conversationId = toLong(frame.get("conversationId"));
                     if (conversationId != null) {
-                        imService.markRead(conversationId, senderRole);
+                        // 传操作者ID：商家侧仅接待者/介入者产生已读回执（后端校验）
+                        imService.markRead(conversationId, senderRole, userId);
                     }
                 }
                 case "take" -> {

@@ -61,6 +61,22 @@ let typingTimer: any = null
 // 消息加载请求序号：快速切换会话/重复加载时用于丢弃过期响应，防止旧快照覆盖新会话消息
 let msgLoadSeq = 0
 
+/**
+ * 消息排序：秒级时间主键 + 消息 id 次键。
+ * 后端 createdAt 为秒精度字符串（FAQ 问题与机器人回复常在同一秒，单时间键无法定序），
+ * id 为 MongoDB ObjectId 随时间单调递增，同秒内问题 id 必小于回复 id；
+ * 本地乐观消息无 id，同秒恒排在服务端消息之前（机器人回复必在其对应问题之后），
+ * 即使回复 echo 先于问题 echo 乱序到达也能排出正确顺序。
+ */
+function sortMessages(arr: ImMessage[]) {
+  const sec = (m: ImMessage) => Math.floor((new Date(m.createdAt || '').getTime() || 0) / 1000)
+  arr.sort((a, b) => {
+    const d = sec(a) - sec(b)
+    if (d !== 0) return d
+    return (a.id || '').localeCompare(b.id || '')
+  })
+}
+
 export const useImStore = defineStore('im', {
   state: (): ImState => ({
     open: false,
@@ -155,9 +171,8 @@ export const useImStore = defineStore('im', {
             && (snapshotStart == null || (m.createdAt && m.createdAt > snapshotStart))
             && !(m._local && fetchedContents.has(m.type + '|' + m.content)),
         )
-        this.messages = [...fetched, ...extras].sort(
-          (a, b) => (a.createdAt || '\uffff').localeCompare(b.createdAt || '\uffff'),
-        )
+        this.messages = [...fetched, ...extras]
+        sortMessages(this.messages)
       } catch {
         // 加载失败不清空已有消息（可能含 echo 到达的实时消息）；本会话无任何消息时清空残留
         if (conversationId === this.activeId && seq === msgLoadSeq
@@ -248,7 +263,7 @@ export const useImStore = defineStore('im', {
           _local: true,
           _sentAt: Date.now(),
         })
-        this.messages.sort((a, b) => (a.createdAt || '\uffff').localeCompare(b.createdAt || '\uffff'))
+        sortMessages(this.messages)
       }
       // 若已因空闲超时断开，sendOrReconnect 会排队暂存并触发重连，连上后自动补发
       sendOrReconnect({
@@ -313,8 +328,9 @@ export const useImStore = defineStore('im', {
           typingTimer = setTimeout(() => { this.peerTyping = false }, 3000)
         }
       } else if (action === 'read') {
-        // 对端(商家)已读我方消息 -> 更新回执
-        if (data?.conversationId === this.activeId && data?.readerRole === 'merchant') {
+        // 对端(商家)已读我方消息 -> 更新回执（仅接待者/介入者阅读才推 receipt；
+        // receipt=false 是其他商家成员打开会话的角标同步信号，不更新已读）
+        if (data?.conversationId === this.activeId && data?.readerRole === 'merchant' && data?.receipt !== false) {
           this.messages.forEach(m => { if (m.senderRole === 'user') m.read = true })
         }
       } else if (action === 'recall') {
@@ -361,16 +377,17 @@ export const useImStore = defineStore('im', {
       // 合并到当前会话消息流（按 id 去重）
       if (msg.conversationId === this.activeId) {
         if (msg.id) {
-          // echo 到达：先移除对应的本地乐观消息（同会话+同类型+同内容，且发送时间差 3 秒内；只删一条，避免连发相同内容误删）
+          // echo 到达：移除对应本地乐观消息（同会话+同类型+同内容，多条同内容按先进先出逐条匹配；
+          // 不用时间窗条件，避免客户端与服务端时钟偏差时乐观消息无法移除导致重复/乱序）
           const localIdx = this.messages.findIndex(m =>
-            m._local && m.conversationId === msg.conversationId && m.type === msg.type && m.content === msg.content
-            && Math.abs((m._sentAt || 0) - new Date(msg.createdAt || '').getTime()) < 3000)
+            m._local && m.conversationId === msg.conversationId && m.type === msg.type && m.content === msg.content)
           if (localIdx >= 0) this.messages.splice(localIdx, 1)
         }
         if (!msg.id || !this.messages.some(m => m.id && m.id === msg.id)) {
           this.messages.push(msg)
-          // 实时消息可能乱序到达（如 FAQ 机器人回复先于用户消息 echo），按时间排序恢复正确顺序
-          this.messages.sort((a, b) => (a.createdAt || '\uffff').localeCompare(b.createdAt || '\uffff'))
+          // 实时消息可能乱序到达（如 FAQ 机器人回复先于用户消息 echo）：
+          // 秒级时间 + ObjectId 次键排序恢复正确顺序
+          sortMessages(this.messages)
         }
       }
 

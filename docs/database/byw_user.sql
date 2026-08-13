@@ -226,7 +226,7 @@ INSERT INTO t_sys_menu (id, parent_id, menu_name, menu_type, scope, path, perm_c
 (230, 0,   '客服工作台', 2, 'merchant', '/im',               'm:im:workbench',     'Service',     30),
 (231, 0,   '客服管理',   1, 'merchant', NULL,                NULL,                 'Headset',     35),
 (232, 231, 'FAQ知识库',  2, 'merchant', '/im/faq',           'm:im:faq',           NULL,          36),
-(233, 231, '技能组管理',  2, 'merchant', '/im/skill-group',   'm:im:skill-group',   NULL,          37),
+(233, 231, '客服分流',  2, 'merchant', '/im/dispatch',        'm:im:dispatch',      NULL,          37),
 (234, 231, '服务评价',    2, 'merchant', '/im/satisfaction',  'm:im:satisfaction',  NULL,          38),
 (240, 0,   '营销管理',   1, 'merchant', NULL,                NULL,                 'Present',     40),
 (241, 240, '店铺优惠券', 2, 'merchant', '/promotion/coupon', 'm:coupon:manage',    NULL,          41),

@@ -18,11 +18,14 @@ CREATE TABLE t_conversation (
     assignee_id BIGINT NULL COMMENT '当前接待客服ID（merchant_account.id）',
     assignee_name VARCHAR(50) NULL COMMENT '接待客服姓名',
     joiners VARCHAR(255) NULL COMMENT '介入客服ID集合（JSON数组）',
-    skill_group_id BIGINT NULL COMMENT '路由到的技能组ID',
+    dispatch_group_id BIGINT NULL COMMENT '路由到的分流分组ID',
+    dispatch_status VARCHAR(20) NULL COMMENT '分流状态 QUEUEING-排队中 OFFLINE_POOL-离线消息池 NULL-正常',
+    dispatch_at DATETIME NULL COMMENT '进入排队队列/离线消息池的时间',
     UNIQUE KEY uk_user_shop (user_id, shop_id, deleted),
     INDEX idx_user_id (user_id),
     INDEX idx_shop_id (shop_id),
-    INDEX idx_last_message_time (last_message_time)
+    INDEX idx_last_message_time (last_message_time),
+    INDEX idx_shop_dispatch (shop_id, dispatch_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='客服会话表';
 
 -- ========== 说明 ==========
@@ -87,36 +90,62 @@ CREATE TABLE t_im_service_record (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='IM 服务记录（一次服务=一次评价单元）';
 
 -- ============================================================
--- IM 技能组表
+-- IM 客服分流分组表（替代原技能组；不建分组时全店在线客服均衡分配）
 -- ============================================================
-DROP TABLE IF EXISTS t_im_skill_group;
-CREATE TABLE t_im_skill_group (
+DROP TABLE IF EXISTS t_im_dispatch_group;
+CREATE TABLE t_im_dispatch_group (
   id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
   shop_id BIGINT NOT NULL COMMENT '店铺ID',
-  group_name VARCHAR(50) NOT NULL COMMENT '技能组名称（售前/售后/物流…）',
-  keywords VARCHAR(500) NULL COMMENT '路由关键词（逗号分隔，匹配用户消息首句）',
-  sort INT NOT NULL DEFAULT 0 COMMENT '优先级（数字越小越优先匹配）',
+  group_name VARCHAR(50) NOT NULL COMMENT '分流分组名称（售前/售后…）',
+  max_concurrent INT NOT NULL DEFAULT 5 COMMENT '组内客服同时接待最大人数（按未结束服务数计）',
   status TINYINT NOT NULL DEFAULT 1 COMMENT '状态 0禁用 1启用',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   deleted TINYINT NOT NULL DEFAULT 0,
   PRIMARY KEY (id),
   KEY idx_shop_id (shop_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='IM 技能组';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='IM 客服分流分组（职能组：只表达处理哪块问题）';
 
 -- ============================================================
--- IM 技能组-客服关联表
+-- IM 分流分组-客服关联表
 -- ============================================================
-DROP TABLE IF EXISTS t_im_skill_group_staff;
-CREATE TABLE t_im_skill_group_staff (
+DROP TABLE IF EXISTS t_im_dispatch_group_staff;
+CREATE TABLE t_im_dispatch_group_staff (
   id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
-  group_id BIGINT NOT NULL COMMENT '技能组ID',
+  group_id BIGINT NOT NULL COMMENT '分流分组ID',
   staff_id BIGINT NOT NULL COMMENT '客服ID（merchant_account.id）',
+  weight INT NOT NULL DEFAULT 1 COMMENT '接待权重（组内加权均衡分配，默认1）',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uk_group_staff (group_id, staff_id),
   KEY idx_staff_id (staff_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='IM 技能组-客服关联';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='IM 分流分组-客服关联';
+
+-- ============================================================
+-- IM 分流规则表
+-- ============================================================
+DROP TABLE IF EXISTS t_im_dispatch_rule;
+CREATE TABLE t_im_dispatch_rule (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  shop_id BIGINT NOT NULL COMMENT '店铺ID',
+  rule_name VARCHAR(50) NOT NULL COMMENT '规则名称',
+  robot_first TINYINT NOT NULL DEFAULT 0 COMMENT '优先智能机器人 0否 1是（服务时间内有效）',
+  service_start VARCHAR(5) NULL COMMENT '服务开始 HH:mm（空=全天）',
+  service_end VARCHAR(5) NULL COMMENT '服务结束 HH:mm（小于开始表示跨天）',
+  off_hours_tip VARCHAR(500) NULL COMMENT '非服务时间提示语',
+  repeat_customer TINYINT NOT NULL DEFAULT 0 COMMENT '回头客 0否 1是（窗口内最近接待过该用户的客服优先）',
+  repeat_window_hours INT NULL COMMENT '回头客时间窗口(小时)：24/48/72/自定义整数；空=24',
+  intents VARCHAR(100) NULL COMMENT '匹配条件-入口意图（逗号分隔：product-商品咨询 order-订单售后 default-普通咨询；NULL=不按意图）',
+  order_statuses VARCHAR(50) NULL COMMENT '匹配条件-订单状态（逗号分隔状态码 0待付款1待发货2待收货3交易完成4交易关闭5退款中7部分发货；NULL=不按订单状态）',
+  group_id BIGINT NOT NULL COMMENT '匹配分组ID（命中后进入该分组按客服权重分配）',
+  priority INT NOT NULL DEFAULT 0 COMMENT '优先级（数字越小越优先匹配）',
+  enabled TINYINT NOT NULL DEFAULT 1 COMMENT '是否启用 0禁用 1启用',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted TINYINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  KEY idx_shop_id (shop_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='IM 客服分流规则';
 
 -- ============================================================
 -- IM FAQ 知识库表

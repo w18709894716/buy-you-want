@@ -52,6 +52,12 @@ public class ShopFeignImpl implements ShopFeignClient {
     }
 
     @Override
+    @GetMapping("/merchant/owner")
+    public R<MerchantAccountDTO> getShopOwner(@RequestParam("shopId") Long shopId) {
+        return R.ok(shopService.getShopOwner(shopId));
+    }
+
+    @Override
     @PutMapping("/update")
     public R<Void> updateShop(@RequestBody ShopDTO shopDTO) {
         // 强制作用于当前登录商家的 shopId（由 BFF 透传身份头重建上下文）
@@ -66,6 +72,13 @@ public class ShopFeignImpl implements ShopFeignClient {
                                                        @RequestParam(value = "pageNum", defaultValue = "1") Integer pageNum,
                                                        @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize) {
         return R.ok(shopService.listStaff(parentId, pageNum, pageSize));
+    }
+
+    @Override
+    @GetMapping("/staff/by-shop")
+    public R<List<MerchantAccountDTO>> listActiveStaffByShop(@RequestParam("shopId") Long shopId,
+                                                             @RequestParam(value = "limit", defaultValue = "200") Integer limit) {
+        return R.ok(shopService.listActiveStaffByShop(shopId, limit));
     }
 
     @Override

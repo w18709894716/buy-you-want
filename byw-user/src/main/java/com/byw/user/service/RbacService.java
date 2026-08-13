@@ -64,6 +64,9 @@ public interface RbacService {
     // ===== 权限 / 菜单 =====
     List<String> listPermCodes(Integer userType, Long userId);
 
+    /** 查询持有指定权限标识的用户ID列表（含通配符权限持有者）。userType：1平台员工 2商家账号 */
+    List<Long> listUserIdsByPerm(String permCode, Integer userType);
+
     List<SysMenuDTO> getMenuTree(String scope, Integer userType, Long userId);
 
     List<SysMenuDTO> getAllMenuTree(String scope);

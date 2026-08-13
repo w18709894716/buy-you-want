@@ -2,6 +2,8 @@ package com.byw.im.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.byw.api.order.OrderFeignClient;
+import com.byw.api.order.dto.OrderDetailDTO;
 import com.byw.api.shop.ShopFeignClient;
 import com.byw.api.shop.dto.MerchantAccountDTO;
 import com.byw.api.shop.dto.ShopDTO;
@@ -10,6 +12,7 @@ import com.byw.api.user.dto.UserDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
 import com.byw.im.dto.ConversationView;
+import com.byw.im.dto.DispatchResolveResult;
 import com.byw.im.dto.ImBroadcast;
 import com.byw.im.dto.MessageView;
 import com.byw.im.dto.SendMessageCommand;
@@ -21,9 +24,9 @@ import com.byw.im.mapper.ConversationMapper;
 import com.byw.im.mapper.ServiceRecordMapper;
 import com.byw.im.producer.ImEventProducer;
 import com.byw.im.service.ImService;
+import com.byw.im.service.DispatchService;
 import com.byw.im.service.FaqService;
 import com.byw.im.service.ServiceRecordService;
-import com.byw.im.service.SkillGroupService;
 import com.byw.im.ws.SessionManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +42,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
 /**
@@ -62,7 +66,8 @@ public class ImServiceImpl implements ImService {
     private final ShopFeignClient shopFeignClient;
     private final UserFeignClient userFeignClient;
     private final SessionManager sessionManager;
-    private final SkillGroupService skillGroupService;
+    private final DispatchService dispatchService;
+    private final OrderFeignClient orderFeignClient;
     private final FaqService faqService;
     private final ServiceRecordService serviceRecordService;
     private final ServiceRecordMapper serviceRecordMapper;
@@ -219,38 +224,140 @@ public class ImServiceImpl implements ImService {
                 MessageView robotView = toView(robotMsg);
                 imEventProducer.broadcast(new ImBroadcast("message", conversation.getUserId(), conversation.getShopId(), robotView));
 
+                // 机器人已回复 = 商家侧已响应：用户提问视为已读（向买家端推已读回执）
+                markUserMessagesReadByRobot(conversation);
+
                 log.info("FAQ 机器人已回复：conversationId={}, answer={}", conversation.getId(), answer);
                 return robotView;
             }
-        }
-
-        // 用户手动消息 / 商家消息：服务开始或刷新超时计时（FAQ 点击消息已提前返回）
-        serviceRecordService.touchActive(conversation.getId(), null, null);
-
-        // 用户首次发送消息且会话无接待客服时自动分配
-        if (fromUser) {
-            log.info("IM 用户发消息：conversationId={}, shopId={}, assigneeId={}, senderId={}",
-                    conversation.getId(), conversation.getShopId(), conversation.getAssigneeId(), command.getSenderId());
-        }
-        if (fromUser && conversation.getAssigneeId() == null) {
-            // 技能组路由：根据用户首条消息类型/内容匹配技能组
-            String intent = switch (conversation.getLastMessageType()) {
-                case "product_card" -> "product";
-                case "order_card" -> "order";
-                default -> "default";
-            };
-            String content = "text".equals(command.getType()) ? command.getContent() : null;
-            Long groupId = skillGroupService.resolveGroup(content, intent, conversation.getShopId());
-            if (groupId != null && !groupId.equals(conversation.getSkillGroupId())) {
-                conversation.setSkillGroupId(groupId);
-                conversationMapper.updateById(conversation);
+            // FAQ 点击未命中：机器人问答不进人工分流（不创建服务/不排队/不进离线池）——
+            // 避免仅点引导问题的会话进离线池后在客服上线时被误分配；
+            // 机器人兜底回复引导用户输入问题（输入的问题才走正常分流）。
+            // 人工接待中同步保活服务计时，未命中问题客服可见可补充
+            if (conversation.getAssigneeId() != null) {
+                serviceRecordService.touchActive(conversation.getId(), null, null);
             }
-            autoAssignConversation(conversation.getId(), conversation.getShopId());
+            MessageView userView = toView(doc);
+            imEventProducer.broadcast(new ImBroadcast("message", conversation.getUserId(), conversation.getShopId(), userView));
+            robotReply(conversation, "抱歉，这个问题我还不会，请直接输入您的问题，为您转接人工解答");
+            log.info("IM FAQ 点击未命中，机器人兜底回复：conversationId={}", conversation.getId());
+            return userView;
+        }
+
+        // 用户消息且会话无接待客服 → 分流决策（非服务时间/机器人优先/规则匹配/排队/离线池）；
+        // 其余（已有接待客服/商家消息）仅保活服务（FAQ 点击消息已提前返回）
+        if (fromUser && conversation.getAssigneeId() == null) {
+            dispatchPendingConversation(conversation, command, doc);
+        } else {
+            serviceRecordService.touchActive(conversation.getId(), null, null);
         }
 
         MessageView view = toView(doc);
         imEventProducer.broadcast(new ImBroadcast("message", conversation.getUserId(), conversation.getShopId(), view));
         return view;
+    }
+
+    /**
+     * 分流决策树（用户发消息且会话无接待客服时）：
+     * <ol>
+     *   <li>非服务时间模式：FAQ 命中回复答案、未命中回复提示语；不创建服务、不分配、不进队列不进池</li>
+     *   <li>服务时间内 robot_first=true：用户文本消息先走 FAQ 匹配，命中即机器人回复（不创建服务）</li>
+     *   <li>人工分流：回头客直分 / 命中规则进绑定分组 / 基础分流；失败 → 排队队列或离线消息池</li>
+     * </ol>
+     */
+    private void dispatchPendingConversation(Conversation conversation, SendMessageCommand command, ImMessage doc) {
+        Long shopId = conversation.getShopId();
+        // 判定入口意图（沿用卡片类型语义）+ 订单真实状态（Feign 反查，保留）
+        String intent = switch (conversation.getLastMessageType()) {
+            case "product_card" -> "product";
+            case "order_card" -> "order";
+            default -> "default";
+        };
+        Integer orderStatus = resolveOrderStatus(conversation, command);
+        DispatchResolveResult resolve = dispatchService.resolveDispatchRule(intent, orderStatus,
+                conversation.getUserId(), shopId);
+
+        // 非服务时间模式：机器人默认打开（忽略机器人开关）
+        if (!resolve.isInServiceTime()) {
+            String reply = faqService.matchFaq(shopId, doc.getContent());
+            boolean faqHit = reply != null && !reply.isBlank();
+            if (!faqHit) {
+                reply = resolve.getOffHoursTip();
+            }
+            if (reply != null && !reply.isBlank()) {
+                robotReply(conversation, reply);
+            }
+            log.info("IM 非服务时间消息：conversationId={}, shopId={}, 命中FAQ={}, 回复={}",
+                    conversation.getId(), shopId, faqHit, reply);
+            return;
+        }
+
+        // 服务时间内 robot_first：用户文本消息先走 FAQ 匹配，命中即机器人回复（不创建服务）
+        if (resolve.isRobotFirst() && "text".equals(doc.getType())) {
+            String answer = faqService.matchFaq(shopId, doc.getContent());
+            if (answer != null) {
+                robotReply(conversation, answer);
+                log.info("IM 机器人优先命中 FAQ：conversationId={}, shopId={}", conversation.getId(), shopId);
+                return;
+            }
+        }
+
+        // 进入人工服务：命中规则 → 更新会话所属分组（未命中基础分流保留原分组）
+        // 注意：此处不创建服务记录——只有真正分配成功（有客服接待）才由 assign() 内部创建；
+        // 排队/离线池阶段没有客服接待，不算服务开始，不应启动超时倒计时
+        if (resolve.getGroupId() != null && !resolve.getGroupId().equals(conversation.getDispatchGroupId())) {
+            conversation.setDispatchGroupId(resolve.getGroupId());
+            conversationMapper.updateById(conversation);
+        }
+        // 分流落地：回头客直分 / 组内权重 / 基础分流；失败 → 排队或离线池（用户发消息路径，无客服可用时提示用户）
+        dispatchService.assignOrQueue(conversation, resolve.getGroupId(), resolve.getRepeatStaffId(), true);
+    }
+
+    /**
+     * 机器人回复：落库 + 广播（不创建服务、不分配；非服务时间提示语与 robot_first FAQ 回复共用）
+     */
+    private void robotReply(Conversation conversation, String content) {
+        ImMessage robotMsg = new ImMessage();
+        robotMsg.setConversationId(conversation.getId());
+        robotMsg.setSenderId(0L);
+        robotMsg.setSenderRole("robot");
+        robotMsg.setShopId(conversation.getShopId());
+        robotMsg.setUserId(conversation.getUserId());
+        robotMsg.setType("text");
+        robotMsg.setContent(content);
+        robotMsg.setSenderName("智能客服");
+        robotMsg.setRead(false);
+        robotMsg.setCreatedAt(LocalDateTime.now());
+        robotMsg = mongoTemplate.save(robotMsg);
+        // 更新会话摘要为机器人回复
+        conversation.setLastMessage(content);
+        conversation.setLastMessageType("text");
+        conversation.setLastMessageTime(robotMsg.getCreatedAt());
+        conversationMapper.updateById(conversation);
+        MessageView robotView = toView(robotMsg);
+        imEventProducer.broadcast(new ImBroadcast("message", conversation.getUserId(), conversation.getShopId(), robotView));
+        // 机器人已回复 = 商家侧已响应：用户提问视为已读（向买家端推已读回执）
+        markUserMessagesReadByRobot(conversation);
+    }
+
+    /**
+     * 机器人回复视为商家侧已自动响应：将会话内用户未读消息全部标记已读并向买家端推已读回执。
+     * 不清店铺未读角标：机器人回复不代表人工已处理，角标保留提醒客服跟进；
+     * 广播携带 reader=robot 标记，商家端工作台据此跳过角标清零。
+     */
+    private void markUserMessagesReadByRobot(Conversation conversation) {
+        mongoTemplate.updateMulti(
+                new Query(Criteria.where("conversationId").is(conversation.getId())
+                        .and("senderRole").is(ROLE_USER)
+                        .and("read").is(false)),
+                new Update().set("read", true),
+                ImMessage.class);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("conversationId", conversation.getId());
+        data.put("readerRole", ROLE_MERCHANT);
+        data.put("receipt", true);
+        data.put("reader", "robot");
+        imEventProducer.broadcast(new ImBroadcast("read", conversation.getUserId(), conversation.getShopId(), data));
     }
 
     /**
@@ -324,11 +431,12 @@ public class ImServiceImpl implements ImService {
             v.setLastMessage(c.getLastMessage());
             v.setLastMessageType(c.getLastMessageType());
             v.setLastMessageTime(c.getLastMessageTime());
-            v.setUnread(merchant ? nz(c.getShopUnread()) : nz(c.getUserUnread()));
+            v.setUnread(merchant ? (isMine(c, userId) ? nz(c.getShopUnread()) : 0) : nz(c.getUserUnread()));
             v.setAssigneeId(c.getAssigneeId());
             v.setAssigneeName(c.getAssigneeName());
             v.setJoiners(parseJoiners(c.getJoiners()));
-            v.setSkillGroupId(c.getSkillGroupId());
+            v.setDispatchGroupId(c.getDispatchGroupId());
+            v.setDispatchStatus(c.getDispatchStatus());
             // 服务活跃标记仅商家侧有效（买家侧无接入概念，置 null）
             v.setServiceActive(merchant ? activeServiceConversationIds.contains(c.getId()) : null);
             result.add(v);
@@ -464,12 +572,22 @@ public class ImServiceImpl implements ImService {
     }
 
     @Override
-    public void markRead(Long conversationId, String readerRole) {
+    public void markRead(Long conversationId, String readerRole, Long operatorId) {
         Conversation conversation = conversationMapper.selectById(conversationId);
         if (conversation == null) {
             return;
         }
         boolean readerIsUser = ROLE_USER.equals(readerRole);
+        // 商家侧仅接待者/介入者的已读生效：标记消息已读 + 清店铺共享未读 + 广播回执；
+        // 其他成员（主账号/非接待客服）旁观打开会话不影响未读，避免清掉接待客服的未读角标
+        if (!readerIsUser) {
+            Long assignee = conversation.getAssigneeId();
+            boolean isAssignee = assignee != null && assignee.equals(operatorId);
+            boolean isJoiner = parseJoiners(conversation.getJoiners()).contains(operatorId);
+            if (!isAssignee && !isJoiner) {
+                return;
+            }
+        }
         // 读取方读掉对端发来的未读消息
         String peerRole = readerIsUser ? ROLE_MERCHANT : ROLE_USER;
         mongoTemplate.updateMulti(
@@ -489,6 +607,9 @@ public class ImServiceImpl implements ImService {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("conversationId", conversationId);
         data.put("readerRole", readerRole);
+        if (!readerIsUser) {
+            data.put("receipt", true);
+        }
         imEventProducer.broadcast(new ImBroadcast("read", conversation.getUserId(), conversation.getShopId(), data));
     }
 
@@ -503,9 +624,19 @@ public class ImServiceImpl implements ImService {
         }
         long total = 0L;
         for (Conversation c : conversationMapper.selectList(qw)) {
+            // 商家角标只统计分配给自己/自己介入的会话（未读是"待我处理"的提醒，他人会话不计入）
+            if (merchant && !isMine(c, userId)) {
+                continue;
+            }
             total += merchant ? nz(c.getShopUnread()) : nz(c.getUserUnread());
         }
         return total;
+    }
+
+    /** 会话是否由该客服负责（接待者或介入者） */
+    private boolean isMine(Conversation c, Long staffId) {
+        return (c.getAssigneeId() != null && c.getAssigneeId().equals(staffId))
+                || parseJoiners(c.getJoiners()).contains(staffId);
     }
 
     @Override
@@ -521,80 +652,49 @@ public class ImServiceImpl implements ImService {
     }
 
     @Override
-    @Transactional
-    public void autoAssignConversation(Long conversationId, Long shopId) {
-        // 0. 查会话，获取技能组ID
-        Conversation conv = conversationMapper.selectById(conversationId);
-        if (conv == null || conv.getAssigneeId() != null) {
-            log.info("IM 自动分配放弃（会话不存在或已被分配）：conversationId={}", conversationId);
-            return;
-        }
-        Long skillGroupId = conv.getSkillGroupId();
+    public boolean autoAssignConversation(Long conversationId, Long shopId) {
+        return dispatchService.tryAssignConversation(conversationId, shopId, null);
+    }
 
-        // 1. 查本店在线客服
-        Set<Long> onlineStaffIds = sessionManager.getOnlineStaffIds(shopId);
-        log.info("IM 自动分配尝试：conversationId={}, shopId={}, skillGroupId={}, 在线客服={}",
-                conversationId, shopId, skillGroupId, onlineStaffIds);
-        if (onlineStaffIds.isEmpty()) {
-            log.info("IM 无可分配客服：shopId={}, conversationId={}", shopId, conversationId);
-            return;
-        }
-
-        // 2. 技能组过滤：有技能组则只从组内分配
-        Set<Long> candidateStaffIds;
-        if (skillGroupId != null) {
-            Set<Long> groupStaffIds = skillGroupService.getGroupStaffIds(skillGroupId);
-            candidateStaffIds = onlineStaffIds.stream()
-                    .filter(groupStaffIds::contains)
-                    .collect(Collectors.toSet());
-            // 组内无人在线，溢出全店兜底
-            if (candidateStaffIds.isEmpty()) {
-                log.info("IM 技能组 {} 无人在线，溢出全店分配：shopId={}", skillGroupId, shopId);
-                candidateStaffIds = onlineStaffIds;
-            }
-        } else {
-            candidateStaffIds = onlineStaffIds;
-        }
-
-        // 3. 统计每个候选客服当前接待中的会话数
-        List<Conversation> allAssigned = conversationMapper.selectList(
-                new LambdaQueryWrapper<Conversation>()
-                        .in(Conversation::getAssigneeId, new ArrayList<>(candidateStaffIds)));
-        Map<Long, Long> countMap = allAssigned.stream()
-                .filter(c -> c.getAssigneeId() != null)
-                .collect(Collectors.groupingBy(Conversation::getAssigneeId, Collectors.counting()));
-
-        // 4. 选最少接待的客服（跳过已断开但可能残留在线标记的客服）
-        Long assigneeId = null;
-        long minCount = Long.MAX_VALUE;
-        for (Long sid : candidateStaffIds) {
-            if (!sessionManager.isStaffOnline(sid)) {
-                continue;
-            }
-            long count = countMap.getOrDefault(sid, 0L);
-            if (count < minCount) {
-                minCount = count;
-                assigneeId = sid;
+    /**
+     * 分流条件之订单真实状态反查：当前消息为订单卡片则直接取 orderNo，
+     * 否则取会话内最近一条订单卡片；再经 Feign 反查订单真实状态，
+     * 失败降级 null（订单入口将无法命中配置了订单状态条件的规则，落到无状态条件规则或基础分流）。
+     */
+    private Integer resolveOrderStatus(Conversation conversation, SendMessageCommand command) {
+        String orderNo = null;
+        if ("order_card".equals(command.getType()) && command.getExtra() != null) {
+            Object no = command.getExtra().get("orderNo");
+            if (no != null) {
+                orderNo = String.valueOf(no);
             }
         }
-        if (assigneeId == null) {
-            return;
+        if (orderNo == null || orderNo.isBlank()) {
+            ImMessage lastCard = mongoTemplate.findOne(
+                    Query.query(Criteria.where("conversationId").is(conversation.getId())
+                                    .and("type").is("order_card"))
+                            .with(Sort.by(Sort.Direction.DESC, "createdAt"))
+                            .limit(1),
+                    ImMessage.class);
+            if (lastCard != null && lastCard.getExtra() != null) {
+                Object no = lastCard.getExtra().get("orderNo");
+                if (no != null) {
+                    orderNo = String.valueOf(no);
+                }
+            }
         }
-
-        // 5. 获取客服姓名
-        String assigneeName = resolveAssigneeName(assigneeId, String.valueOf(assigneeId));
-
-        // 6. 更新会话
-        conv.setAssigneeId(assigneeId);
-        conv.setAssigneeName(assigneeName);
-        conversationMapper.updateById(conv);
-        log.info("IM 自动分配完成：conversationId={}, shopId={}, skillGroupId={}, assigneeId={}, assigneeName={}",
-                conversationId, shopId, skillGroupId, assigneeId, assigneeName);
-
-        // 7. 插入系统消息并广播
-        insertSystemMessage(conv, assigneeId, assigneeName, "assign", "客服 " + assigneeName + " 已接入聊天");
-        // 8. 服务记录：确保进行中服务存在并指定最终处理人（服务开始）
-        serviceRecordService.touchActive(conversationId, assigneeId, assigneeName);
+        if (orderNo == null || orderNo.isBlank()) {
+            return null;
+        }
+        try {
+            R<OrderDetailDTO> resp = orderFeignClient.getOrderDetail(orderNo);
+            if (resp != null && resp.isSuccess() && resp.getData() != null) {
+                return resp.getData().getStatus();
+            }
+        } catch (Exception e) {
+            log.warn("IM 分流：订单状态反查失败，降级不参与订单状态匹配：orderNo={}", orderNo);
+        }
+        return null;
     }
 
     @Override
@@ -621,6 +721,9 @@ public class ImServiceImpl implements ImService {
         String assigneeName = resolveAssigneeName(staffId, staffName);
         conversation.setAssigneeId(staffId);
         conversation.setAssigneeName(assigneeName);
+        // 主动接入排队/待接入会话：出队（清空分流状态）
+        conversation.setDispatchStatus(null);
+        conversation.setDispatchAt(null);
         conversationMapper.updateById(conversation);
         log.info("IM 客服主动接入会话：conversationId={}, shopId={}, assigneeId={}, assigneeName={}",
                 conversationId, conversation.getShopId(), staffId, assigneeName);
@@ -654,6 +757,9 @@ public class ImServiceImpl implements ImService {
         boolean wasAssigned = current != null;
         conversation.setAssigneeId(staffId);
         conversation.setAssigneeName(assigneeName);
+        // 接管排队/待接入会话：出队（清空分流状态）
+        conversation.setDispatchStatus(null);
+        conversation.setDispatchAt(null);
         // 接管后把自己从介入者集合移除，避免同时是接待者和介入者的重复身份
         List<Long> joiners = parseJoiners(conversation.getJoiners());
         if (joiners.remove(staffId)) {
@@ -853,34 +959,23 @@ public class ImServiceImpl implements ImService {
         if (removed > 0) {
             log.info("IM 客服下线移除介入身份：staffId={}, shopId={}, 会话数={}", staffId, shopId, removed);
         }
-        // 掉线重分配：服务未结束的会话进入待接入状态，立即分配给其他在线客服
+        // 掉线重分配：服务未结束的会话立即尝试分配给其他在线客服；失败则进队列/离线池等待消费
         for (Conversation c : released) {
             if (!serviceRecordService.hasActive(c.getId())) {
                 continue; // 无进行中服务（如从未开始服务），无需处理
             }
-            autoAssignConversation(c.getId(), c.getShopId());
-            Conversation after = conversationMapper.selectById(c.getId());
-            if (after == null || after.getAssigneeId() != null) {
+            if (autoAssignConversation(c.getId(), c.getShopId())) {
                 continue; // 已重新分配成功，服务由新客服继续
             }
-            // 无在线客服可分配：立即提示用户耐心等待
-            notifyStaffOffline(after);
+            // 无在线客服可分配：静默进排队队列或离线消息池（用户未发新消息，不主动打扰；等用户再发消息时才提示）
+            Conversation after = conversationMapper.selectById(c.getId());
+            if (after != null && after.getAssigneeId() == null) {
+                dispatchService.assignOrQueue(after, after.getDispatchGroupId(), null, false);
+            }
         }
-    }
-
-    /** 客服掉线且无可分配客服时提示用户（同一会话 10 分钟内不重复提示） */
-    private void notifyStaffOffline(Conversation conversation) {
-        Query lastQuery = new Query(Criteria.where("conversationId").is(conversation.getId())
-                .and("systemType").is("staff-offline"))
-                .with(Sort.by(Sort.Direction.DESC, "createdAt"))
-                .limit(1);
-        ImMessage last = mongoTemplate.findOne(lastQuery, ImMessage.class);
-        if (last != null && last.getCreatedAt() != null
-                && last.getCreatedAt().isAfter(LocalDateTime.now().minusMinutes(10))) {
-            return;
-        }
-        insertSystemMessage(conversation, 0L, "系统", "staff-offline",
-                "客服暂时离线，请耐心等待客服上线处理");
+        // 腾出接待能力后：消费本店排队队列/离线消息池
+        dispatchService.consumeQueue(shopId);
+        dispatchService.consumeOfflinePool(shopId);
     }
 
     @Override

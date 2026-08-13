@@ -104,6 +104,11 @@ public interface RbacFeignClient {
     R<List<String>> listPermCodes(@RequestParam("userType") Integer userType,
                                   @RequestParam("userId") Long userId);
 
+    /** 查询持有指定权限标识的用户ID列表（含通配符权限持有者）。userType：1平台员工 2商家账号 */
+    @GetMapping("/feign/rbac/user-ids-by-perm")
+    R<List<Long>> listUserIdsByPerm(@RequestParam("permCode") String permCode,
+                                    @RequestParam("userType") Integer userType);
+
     /** 按用户权限过滤后的菜单树（用于前端动态菜单渲染） */
     @GetMapping("/feign/rbac/menu/tree")
     R<List<SysMenuDTO>> getMenuTree(@RequestParam("scope") String scope,

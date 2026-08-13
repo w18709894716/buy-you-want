@@ -46,8 +46,14 @@ public class Conversation {
     /** 介入客服ID集合（JSON数组，如 "[3,5]"；介入不影响原接待客服，可共同服务用户） */
     private String joiners;
 
-    /** 路由到的技能组ID */
-    private Long skillGroupId;
+    /** 路由到的分流分组ID */
+    private Long dispatchGroupId;
+
+    /** 分流状态 QUEUEING-排队中 OFFLINE_POOL-离线消息池 NULL-正常 */
+    private String dispatchStatus;
+
+    /** 进入排队队列/离线消息池的时间 */
+    private LocalDateTime dispatchAt;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;

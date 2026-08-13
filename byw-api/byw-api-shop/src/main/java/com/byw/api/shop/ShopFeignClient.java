@@ -32,6 +32,9 @@ public interface ShopFeignClient {
     @GetMapping("/feign/shop/merchant/batch")
     R<List<MerchantAccountDTO>> getMerchantsByIds(@RequestParam("ids") List<Long> ids);
 
+    @GetMapping("/feign/shop/merchant/owner")
+    R<MerchantAccountDTO> getShopOwner(@RequestParam("shopId") Long shopId);
+
     @PutMapping("/feign/shop/update")
     R<Void> updateShop(@RequestBody ShopDTO shopDTO);
 
@@ -41,6 +44,11 @@ public interface ShopFeignClient {
     R<PageResult<MerchantAccountDTO>> listStaff(@RequestParam("parentId") Long parentId,
                                                 @RequestParam(value = "pageNum", defaultValue = "1") Integer pageNum,
                                                 @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize);
+
+    /** 按店铺查启用子账号（供下拉选项等不依赖调用者是否主账号的场景） */
+    @GetMapping("/feign/shop/staff/by-shop")
+    R<List<MerchantAccountDTO>> listActiveStaffByShop(@RequestParam("shopId") Long shopId,
+                                                      @RequestParam(value = "limit", defaultValue = "200") Integer limit);
 
     @PostMapping("/feign/shop/staff")
     R<Long> createStaff(@RequestParam("parentId") Long parentId,

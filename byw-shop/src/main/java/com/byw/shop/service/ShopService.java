@@ -35,6 +35,11 @@ public interface ShopService {
     List<MerchantAccountDTO> getMerchantsByIds(List<Long> ids);
 
     /**
+     * 根据店铺ID查询主账号（parent_id IS NULL 且 shop_id 匹配；IM 客服兜底候选用，脱敏不含密码）
+     */
+    MerchantAccountDTO getShopOwner(Long shopId);
+
+    /**
      * 商家入驻申请（创建待审核商家账号；以申请账号为键防重复，驳回后凭原密码重新提交复用原记录）
      */
     Long applyMerchant(MerchantAccount account);
@@ -80,6 +85,11 @@ public interface ShopService {
      * 分页查询本店子账号（parentId=当前主账号ID）
      */
     PageResult<MerchantAccountDTO> listStaff(Long parentId, Integer pageNum, Integer pageSize);
+
+    /**
+     * 按店铺查询启用中的子账号（不依赖调用者身份，供下拉选项等场景）
+     */
+    List<MerchantAccountDTO> listActiveStaffByShop(Long shopId, Integer limit);
 
     /**
      * 新建子账号（parent_id=主账号、shop_id 继承、audit_status=1、role=merchant_staff、入驻资料留空）

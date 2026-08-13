@@ -29,8 +29,12 @@ public interface ImService {
     /** 会话历史消息分页（按时间倒序） */
     PageResult<MessageView> listMessages(Long conversationId, int page, int size);
 
-    /** 标记会话已读：清对应未读 + 标记消息 read + 广播 read 信令 */
-    void markRead(Long conversationId, String readerRole);
+    /**
+     * 标记会话已读：清对应未读 + 广播 read 信令。
+     * 商家侧仅接待者/介入者的已读生效（标记用户消息 read、清店铺共享未读并广播 receipt=true）；
+     * 其他商家成员旁观打开会话不做任何处理（不清未读不广播，避免清掉接待客服的角标）。
+     */
+    void markRead(Long conversationId, String readerRole, Long operatorId);
 
     /** 未读总数（角标）：买家汇总 userUnread，商家汇总本店 shopUnread */
     long unreadTotal(Long userId, Long shopId, String role);
@@ -38,8 +42,11 @@ public interface ImService {
     /** 广播"正在输入"信令（不落库） */
     void broadcastTyping(Long conversationId, String senderRole);
 
-    /** 自动分配会话给最空闲的在线客服（用户发送消息且会话无接待客服时触发） */
-    void autoAssignConversation(Long conversationId, Long shopId);
+    /**
+     * 自动分配会话给客服（用户发送消息且会话无接待客服时触发；核心选人见 DispatchService）。
+     * @return 是否分配成功（失败可由调用方决定进队列/离线池或提示用户）
+     */
+    boolean autoAssignConversation(Long conversationId, Long shopId);
 
     /** 客服主动接入待接入会话（assignee 为空时生效，不抢占已分配会话） */
     void takeConversation(Long conversationId, Long staffId, String staffName, Long shopId);

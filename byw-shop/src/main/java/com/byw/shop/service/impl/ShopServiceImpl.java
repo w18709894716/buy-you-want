@@ -70,6 +70,20 @@ public class ShopServiceImpl implements ShopService {
     }
 
     @Override
+    public MerchantAccountDTO getShopOwner(Long shopId) {
+        MerchantAccount account = merchantAccountMapper.selectOne(new LambdaQueryWrapper<MerchantAccount>()
+                .isNull(MerchantAccount::getParentId)
+                .eq(MerchantAccount::getShopId, shopId)
+                .last("limit 1"));
+        if (account == null) {
+            return null;
+        }
+        MerchantAccountDTO dto = toMerchantDTO(account);
+        dto.setPassword(null);
+        return dto;
+    }
+
+    @Override
     public Long applyMerchant(MerchantAccount account) {
         validateApply(account);
         // 以申请账号为键的重复申请控制：审核中/已通过拒绝；被驳回凭原密码复用原记录重新提交
@@ -272,6 +286,23 @@ public class ShopServiceImpl implements ShopService {
             return dto;
         }).toList();
         return PageResult.of(list, result.getTotal(), pageNum, pageSize);
+    }
+
+    @Override
+    public List<MerchantAccountDTO> listActiveStaffByShop(Long shopId, Integer limit) {
+        int max = limit == null || limit < 1 ? 200 : Math.min(limit, 500);
+        List<MerchantAccount> accounts = merchantAccountMapper.selectList(
+                new LambdaQueryWrapper<MerchantAccount>()
+                        .eq(MerchantAccount::getShopId, shopId)
+                        .isNotNull(MerchantAccount::getParentId)
+                        .eq(MerchantAccount::getStatus, 1)
+                        .orderByDesc(MerchantAccount::getId)
+                        .last("limit " + max));
+        return accounts.stream().map(account -> {
+            MerchantAccountDTO dto = toMerchantDTO(account);
+            dto.setPassword(null);
+            return dto;
+        }).toList();
     }
 
     @Override

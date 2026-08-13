@@ -443,6 +443,27 @@ public class RbacServiceImpl implements RbacService {
     }
 
     @Override
+    public List<Long> listUserIdsByPerm(String permCode, Integer userType) {
+        // 命中目标权限或通配符（*）的菜单 → 绑定该菜单的角色 → 绑定该角色的用户
+        List<Long> menuIds = sysMenuMapper.selectList(new LambdaQueryWrapper<SysMenu>()
+                        .in(SysMenu::getPermCode, permCode, CommonConstants.PERM_ALL))
+                .stream().map(SysMenu::getId).collect(Collectors.toList());
+        if (menuIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Long> roleIds = sysRoleMenuMapper.selectList(new LambdaQueryWrapper<SysRoleMenu>()
+                        .in(SysRoleMenu::getMenuId, menuIds))
+                .stream().map(SysRoleMenu::getRoleId).distinct().collect(Collectors.toList());
+        if (roleIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return sysUserRoleMapper.selectList(new LambdaQueryWrapper<SysUserRole>()
+                        .eq(SysUserRole::getUserType, userType)
+                        .in(SysUserRole::getRoleId, roleIds))
+                .stream().map(SysUserRole::getUserId).distinct().collect(Collectors.toList());
+    }
+
+    @Override
     public List<SysMenuDTO> getMenuTree(String scope, Integer userType, Long userId) {
         List<String> perms = listPermCodes(userType, userId);
         boolean all = perms.contains(CommonConstants.PERM_ALL);

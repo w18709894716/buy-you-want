@@ -5,20 +5,24 @@
       <div class="conv-header">
         <span class="title">客服会话</span>
         <span class="online-dot" :class="connected ? 'on' : 'off'" :title="connected ? '在线' : '连接中'" />
+        <el-badge :value="offlinePoolTotal || 0" :hidden="!offlinePoolTotal" :max="99">
+          <el-button link size="small" @click="openOfflinePool">离线池</el-button>
+        </el-badge>
+        <el-button v-if="!suspended" link size="small" type="warning" @click="toggleSuspend(true)">挂起</el-button>
+        <el-button v-else link size="small" type="success" @click="toggleSuspend(false)">恢复</el-button>
         <el-button link size="small" @click="loadConversations">刷新</el-button>
       </div>
-      <!-- 会话筛选：全部 / 待接入 / 我的 / 介入 / 已结束（服务结束的会话不属待接入，单独分组只读查看） -->
+      <!-- 会话筛选：全部 / 我的 / 介入 / 已结束（服务结束的会话只读查看，等用户再次发消息自动分配） -->
       <div class="conv-tabs">
         <span class="tab" :class="{ on: filterState === 'all' }" @click="filterState = 'all'">全部</span>
-        <span class="tab" :class="{ on: filterState === 'pending' }" @click="filterState = 'pending'">待接入</span>
         <span class="tab" :class="{ on: filterState === 'mine' }" @click="filterState = 'mine'">我的</span>
         <span class="tab" :class="{ on: filterState === 'joined' }" @click="filterState = 'joined'">介入</span>
         <span class="tab" :class="{ on: filterState === 'ended' }" @click="filterState = 'ended'">服务结束</span>
       </div>
       <div class="conv-filter">
-        <el-select v-model="selectedSkillGroupId" placeholder="全部技能组" clearable size="small" style="width: 100%" @change="onSkillGroupFilterChange">
-          <el-option label="全部技能组" :value="null" />
-          <el-option v-for="g in skillGroupOptions" :key="g.id" :label="g.groupName" :value="g.id" />
+        <el-select v-model="selectedDispatchGroupId" placeholder="全部分流分组" clearable size="small" style="width: 100%" @change="onDispatchGroupFilterChange">
+          <el-option label="全部分流分组" :value="null" />
+          <el-option v-for="g in dispatchGroupOptions" :key="g.id" :label="g.groupName" :value="g.id" />
         </el-select>
       </div>
       <div class="conv-list">
@@ -39,7 +43,8 @@
             </div>
             <div class="conv-line">
               <span class="last">{{ c.lastMessage || '暂无消息' }}</span>
-              <el-badge v-if="c.unread" :value="c.unread > 99 ? '99+' : c.unread" class="unread" />
+              <!-- 未读角标只展示自己负责的会话（分配给我/我介入）：他人会话可见可介入，但不计入我的待办 -->
+              <el-badge v-if="isAssignedToMe(c) && c.unread" :value="c.unread > 99 ? '99+' : c.unread" class="unread" />
             </div>
           </div>
         </div>
@@ -256,6 +261,26 @@
       </template>
     </el-dialog>
 
+    <!-- 离线消息池弹窗：无人值班时用户消息入池，客服在此认领后直接进入会话接待 -->
+    <el-dialog v-model="offlineVisible" title="离线消息池" width="580px" append-to-body>
+      <div v-loading="offlineLoading" class="offline-list">
+        <div v-for="r in offlineRecords" :key="r.conversationId" class="offline-item">
+          <div class="o-main">
+            <div class="o-line">
+              <span class="o-name">{{ r.userNickname || ('用户' + r.userId) }}</span>
+              <span class="o-time">{{ formatFullTime(r.dispatchAt) }}</span>
+            </div>
+            <div class="o-msg">{{ r.lastMessage || '暂无消息' }}</div>
+          </div>
+          <el-button type="primary" size="small" @click="doClaimOffline(r)">认领并接待</el-button>
+        </div>
+        <el-empty v-if="!offlineLoading && offlineRecords.length === 0" description="离线池暂无消息" />
+      </div>
+      <div v-if="offlineTotal > offlinePageSize" class="offline-pager">
+        <el-pagination layout="prev, pager, next" :total="offlineTotal" :page-size="offlinePageSize" :current-page="offlinePageNum" @current-change="onOfflinePageChange" small />
+      </div>
+    </el-dialog>
+
     <!-- 右键菜单：撤回/引用 -->
     <Teleport to="body">
       <div
@@ -275,7 +300,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { ChatDotRound, Close, Picture } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import EmojiPicker from 'vue3-emoji-picker'
 import 'vue3-emoji-picker/css'
 import request from '../../utils/request'
@@ -322,15 +347,27 @@ interface ImConversation {
   lastMessageType?: string
   lastMessageTime?: any
   unread?: number
-  /** 接待客服ID（merchant_account.id），null=待接入 */
+  /** 接待客服ID（merchant_account.id），null=未分配（排队中/服务结束均为空） */
   assigneeId?: number | null
   assigneeName?: string
   /** 介入客服ID集合（介入不影响原接待客服，可共同服务用户） */
   joiners?: number[]
-  /** 所属技能组ID */
-  skillGroupId?: number | null
+  /** 所属分流分组ID */
+  dispatchGroupId?: number | null
+  /** 分流状态：QUEUEING-排队中 OFFLINE_POOL-离线消息池 NULL-正常 */
+  dispatchStatus?: string | null
   /** 是否有进行中的服务（false=服务已结束，不可接入，等用户再次发消息自动分配） */
   serviceActive?: boolean
+}
+
+interface OfflinePoolItem {
+  conversationId: number
+  userId: number
+  userNickname?: string
+  intent: string
+  lastMessage?: string
+  lastMessageType?: string
+  dispatchAt?: any
 }
 
 const conversations = ref<ImConversation[]>([])
@@ -344,18 +381,18 @@ let typingTimer: ReturnType<typeof setTimeout> | null = null
 // 消息加载请求序号：快速切换会话/重复加载时用于丢弃过期响应，防止旧快照覆盖新会话消息
 let msgLoadSeq = 0
 
-// 会话筛选：全部 / 待接入 / 我的 / 介入 / 服务结束（纯前端过滤）
-const filterState = ref<'all' | 'pending' | 'mine' | 'joined' | 'ended'>('all')
-const skillGroupOptions = ref<any[]>([])
-const selectedSkillGroupId = ref<number | null>(null)
+// 会话筛选：全部 / 我的 / 介入 / 服务结束（纯前端过滤；离线池会话单独在头部角标弹窗认领）
+const filterState = ref<'all' | 'mine' | 'joined' | 'ended'>('all')
+const dispatchGroupOptions = ref<any[]>([])
+const selectedDispatchGroupId = ref<number | null>(null)
 
 const filteredConversations = computed(() => {
-  let list = conversations.value
-  // 技能组筛选
-  if (selectedSkillGroupId.value != null) {
-    list = list.filter(c => c.skillGroupId != null && Number(c.skillGroupId) === Number(selectedSkillGroupId.value))
+  // 离线消息池会话不展示在工作台（统一在分流页认领）
+  let list = conversations.value.filter(c => c.dispatchStatus !== 'OFFLINE_POOL')
+  // 分流分组筛选
+  if (selectedDispatchGroupId.value != null) {
+    list = list.filter(c => c.dispatchGroupId != null && Number(c.dispatchGroupId) === Number(selectedDispatchGroupId.value))
   }
-  if (filterState.value === 'pending') return list.filter(c => c.assigneeId == null && c.serviceActive !== false)
   if (filterState.value === 'mine') return list.filter(
     c => c.assigneeId != null && Number(c.assigneeId) === myStaffId.value,
   )
@@ -370,7 +407,7 @@ const filteredConversations = computed(() => {
 
 const activeConversation = computed(() => conversations.value.find(c => c.id === activeId.value))
 
-// 是否可回复：待接入会话点开后自动接入即可回复；已分配会话仅接待者/介入者可回复（其余只读）；
+// 是否可回复：未分配会话点开后自动接入即可回复；已分配会话仅接待者/介入者可回复（其余只读）；
 // 已结束服务的会话不可回复（接入无意义，等用户再次发消息自动分配）
 const canReply = computed(() => {
   const c = activeConversation.value
@@ -385,14 +422,16 @@ const isMyConversation = computed(() => {
   return !!c && c.assigneeId != null && Number(c.assigneeId) === myStaffId.value
 })
 
-// 会话归属标签：待接入（橙）/ 服务结束（灰）/ 我（蓝）/ 介入中（紫）/ 客服名（灰）
+// 会话归属标签：排队中（橙）/ 未分配（橙）/ 服务结束（灰）/ 我（蓝）/ 介入中（紫）/ 客服名（灰）
 function assignTagText(c: ImConversation): string {
-  if (c.assigneeId == null) return c.serviceActive === false ? '服务结束' : '待接入'
+  if (c.dispatchStatus === 'QUEUEING') return '排队中'
+  if (c.assigneeId == null) return c.serviceActive === false ? '服务结束' : '未分配'
   if (Number(c.assigneeId) === myStaffId.value) return '我'
   if ((c.joiners || []).some(j => Number(j) === myStaffId.value)) return '介入中'
   return c.assigneeName || '其他客服'
 }
 function assignTagClass(c: ImConversation): string {
+  if (c.dispatchStatus === 'QUEUEING') return 'queue'
   if (c.assigneeId == null) return c.serviceActive === false ? 'ended' : 'pending'
   if (Number(c.assigneeId) === myStaffId.value) return 'mine'
   if ((c.joiners || []).some(j => Number(j) === myStaffId.value)) return 'join'
@@ -575,14 +614,14 @@ async function loadConversations() {
   } catch { /* handled */ }
 }
 
-const fetchSkillGroups = async () => {
+const fetchDispatchGroups = async () => {
   try {
-    const data: any = await request.get('/im/skill-group/list')
-    skillGroupOptions.value = data || []
+    const data: any = await request.get('/im/dispatch/group/list')
+    dispatchGroupOptions.value = data || []
   } catch { /* handled */ }
 }
 
-function onSkillGroupFilterChange() {
+function onDispatchGroupFilterChange() {
   loadConversations()
 }
 
@@ -627,7 +666,7 @@ async function selectConversation(conversationId: number) {
   peerTyping.value = false
   await loadMessages(conversationId)
   markRead(conversationId)
-  // 待接入会话：客服点开对话框即主动接入（仅 assigneeId 为空且服务未结束时生效，不抢占已分配会话）
+  // 未分配会话：客服点开对话框即主动接入（仅 assigneeId 为空且服务未结束时生效，不抢占已分配会话）
   const conv = conversations.value.find(c => c.id === conversationId)
   if (conv && conv.assigneeId == null && conv.serviceActive !== false) {
     sendFrame({ action: 'take', conversationId })
@@ -682,6 +721,12 @@ function markRead(conversationId: number) {
   request.post('/im/read', { conversationId }).catch(() => { /* ignore */ })
 }
 
+/** 会话是否由当前客服负责（接待者或介入者）：未读角标仅对这类会话展示 */
+function isAssignedToMe(c: ImConversation): boolean {
+  const me = myStaffId.value
+  return me != null && (Number(c.assigneeId) === me || (c.joiners || []).some(j => Number(j) === me))
+}
+
 // 介入当前会话：不影响原接待客服，可共同服务用户（广播后 onMessage 同步 joiners 并自动解锁输入）
 function joinActive() {
   if (!activeId.value) return
@@ -689,11 +734,102 @@ function joinActive() {
   if (!ok) { connectIm(); ElMessage.warning('连接已断开，正在重连…'); return }
 }
 
-// 接管当前会话：待接入直接接入，已分配则替换接待者（广播后 onMessage 同步归属并自动解锁输入）
+// 接管当前会话：未分配直接接入，已分配则替换接待者（广播后 onMessage 同步归属并自动解锁输入）
 function takeOverActive() {
   if (!activeId.value) return
   const ok = sendFrame({ action: 'takeover', conversationId: activeId.value })
   if (!ok) { connectIm(); ElMessage.warning('连接已断开，正在重连…'); return }
+}
+
+// ---- 挂起/恢复：挂起后不再接新消息，存量会话可继续回复 ----
+const suspended = ref(false)
+
+async function loadStaffState() {
+  try {
+    const data: any = await request.get('/im/staff/state')
+    suspended.value = data?.suspended === true
+  } catch { /* ignore */ }
+}
+
+async function toggleSuspend(target: boolean) {
+  try {
+    if (target) {
+      await request.post('/im/staff/suspend')
+      ElMessage.success('已挂起，不再接收新消息')
+    } else {
+      await request.post('/im/staff/resume')
+      ElMessage.success('已恢复接单')
+    }
+    suspended.value = target
+  } catch { /* ignore */ }
+}
+
+// ---- 离线消息池：无人值班时用户消息入池，认领后进入会话接待 ----
+const offlineVisible = ref(false)
+const offlineRecords = ref<OfflinePoolItem[]>([])
+const offlineLoading = ref(false)
+const offlineTotal = ref(0)
+const offlinePageNum = ref(1)
+const offlinePageSize = 10
+// 头部角标数量（30s 轮询刷新，离线池会话不展示在会话列表）
+const offlinePoolTotal = ref(0)
+let offlineStatsTimer: ReturnType<typeof setInterval> | null = null
+
+function openOfflinePool() {
+  offlineVisible.value = true
+  offlinePageNum.value = 1
+  loadOfflinePool()
+}
+
+async function loadOfflinePool() {
+  offlineLoading.value = true
+  try {
+    const data: any = await request.get('/im/dispatch/offline-pool', {
+      params: { pageNum: offlinePageNum.value, pageSize: offlinePageSize },
+    })
+    offlineRecords.value = data?.list || []
+    offlineTotal.value = data?.total || 0
+  } catch { /* ignore */ } finally {
+    offlineLoading.value = false
+  }
+}
+
+function onOfflinePageChange(page: number) {
+  offlinePageNum.value = page
+  loadOfflinePool()
+}
+
+async function loadOfflineStats() {
+  try {
+    const data: any = await request.get('/im/dispatch/stats')
+    offlinePoolTotal.value = data?.offlinePoolTotal || 0
+  } catch { /* ignore */ }
+}
+
+async function doClaimOffline(row: OfflinePoolItem) {
+  // 挂起状态下认领：提示会自动恢复上线（后端认领接口同样兜底解除挂起）
+  if (suspended.value) {
+    try {
+      await ElMessageBox.confirm('您当前处于挂起状态，认领后会自动恢复上线并开始接待，是否继续？', '认领离线消息', {
+        confirmButtonText: '认领并上线',
+        cancelButtonText: '取消',
+        type: 'warning',
+      })
+    } catch { return }
+  }
+  try {
+    await request.post(`/im/dispatch/offline-pool/${row.conversationId}/claim`)
+    if (suspended.value) {
+      suspended.value = false
+      ElMessage.success('已自动恢复上线并认领，正在打开会话')
+    } else {
+      ElMessage.success('已认领，正在打开会话')
+    }
+    offlineVisible.value = false
+    loadOfflineStats()
+    loadConversations()
+    selectConversation(row.conversationId)
+  } catch { /* ignore */ }
 }
 
 // ---- 转接：拉取在线客服列表，选择目标后发送 transfer 帧 ----
@@ -745,7 +881,8 @@ function onFrame(frame: Record<string, any>) {
       messages.value.forEach(m => { if (m.senderRole === 'merchant') m.read = true })
     }
     // 其他客服已读该会话 -> 清零本店会话未读角标（本店客服共享未读状态，实时同步无需刷新）
-    if (data?.readerRole === 'merchant') {
+    // 机器人自动已读（reader=robot）跳过角标清零：机器人回复不代表人工已处理，角标保留提醒客服跟进
+    if (data?.readerRole === 'merchant' && data?.reader !== 'robot') {
       const conv = conversations.value.find(c => c.id === data.conversationId)
       if (conv) conv.unread = 0
     }
@@ -784,6 +921,8 @@ function onMessage(msg: ImMessage) {
   if (msg.systemType === 'assign' || msg.systemType === 'takeover' || msg.systemType === 'transfer') {
     conv.assigneeId = msg.senderId
     conv.assigneeName = msg.senderName
+    // 已分配/已接入：清分流状态（出队/出池）
+    conv.dispatchStatus = null
     // 服务已结束的会话收到接入广播 = 用户已再次发消息触发新服务，刷新列表同步服务状态标记
     if (conv.serviceActive === false) loadConversations()
   }
@@ -793,7 +932,7 @@ function onMessage(msg: ImMessage) {
       conv.joiners = [...(conv.joiners || []), msg.senderId]
     }
   }
-  // 服务超时结束：会话回到待接入状态，刷新会话列表（下次用户发消息自动重新分配）
+  // 服务超时结束：会话回到未分配状态，刷新会话列表（下次用户发消息自动重新分配）
   if (msg.systemType === 'service-ended') {
     conv.assigneeId = null
     conv.assigneeName = null
@@ -815,7 +954,8 @@ function onMessage(msg: ImMessage) {
       scrollToBottom()
     }
     if (fromPeer) markRead(msg.conversationId)
-  } else if (fromPeer) {
+  } else if (fromPeer && isAssignedToMe(conv)) {
+    // 他人会话不累计未读（角标只提醒"待我处理"，与菜单角标口径一致）
     conv.unread = (conv.unread || 0) + 1
   }
 }
@@ -894,16 +1034,20 @@ function shortTime(t: any): string {
 
 onMounted(() => {
   addFrameHandler(onFrame)
-  // 连接由布局层全局接管；此处 connectIm 幂等，仅处理直接深入 /im 页面的场景
+  // 连接由布局层全局接管；此处 connectIm 幂等，仅处理深入 /im 页面的场景
   connectIm()
   loadConversations()
-  fetchSkillGroups()
+  fetchDispatchGroups()
+  loadStaffState()
+  loadOfflineStats()
+  offlineStatsTimer = setInterval(loadOfflineStats, 30000)
 })
 
 onUnmounted(() => {
   // 仅移除本页面的帧监听；不断开全局连接，以保证离开客服页后菜单未读角标仍能实时更新
   removeFrameHandler(onFrame)
   if (typingTimer) clearTimeout(typingTimer)
+  if (offlineStatsTimer) clearInterval(offlineStatsTimer)
   // 清理右键菜单全局点击监听
   document.removeEventListener('click', onDocClick)
 })
@@ -926,6 +1070,33 @@ onUnmounted(() => {
     .t-name { font-size: 14px; color: #303133; }
     .t-id { font-size: 12px; color: #c0c4cc; }
   }
+}
+
+/* 离线消息池弹窗 */
+.offline-list {
+  max-height: 420px;
+  overflow-y: auto;
+
+  .offline-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 6px;
+
+    &:hover { background: #f5f7fa; }
+    .o-main { flex: 1; min-width: 0; }
+    .o-line { display: flex; align-items: center; justify-content: space-between; }
+    .o-name { font-size: 14px; color: #303133; font-weight: 500; }
+    .o-time { font-size: 12px; color: #c0c4cc; }
+    .o-msg { font-size: 12px; color: #909399; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  }
+}
+
+.offline-pager {
+  display: flex;
+  justify-content: center;
+  padding-top: 10px;
 }
 
 .im-workbench {
@@ -1012,6 +1183,7 @@ onUnmounted(() => {
         margin-left: 6px;
       }
       .assign-tag.pending { color: #e6a23c; background: #fdf6ec; }
+      .assign-tag.queue { color: #e6a23c; background: #fdf6ec; }
       .assign-tag.ended { color: #909399; background: #f4f4f5; }
       .assign-tag.mine { color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
       .assign-tag.join { color: #9254de; background: #f9f0ff; }

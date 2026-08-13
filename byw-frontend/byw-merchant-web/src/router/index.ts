@@ -73,10 +73,10 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '服务评价', perm: 'm:im:satisfaction' }
       },
       {
-        path: 'im/skill-group',
-        name: 'SkillGroup',
-        component: () => import('../views/skill-group/index.vue'),
-        meta: { title: '技能组管理', perm: 'm:im:skill-group' }
+        path: 'im/dispatch',
+        name: 'Dispatch',
+        component: () => import('../views/dispatch/index.vue'),
+        meta: { title: '客服分流', perm: 'm:im:dispatch' }
       },
       {
         path: 'im/faq',

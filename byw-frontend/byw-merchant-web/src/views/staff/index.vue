@@ -28,7 +28,7 @@
         <el-table-column label="操作" width="320" fixed="right">
           <template #default="{ row }">
             <el-button size="small" text type="warning" @click="openRoles(row)">分配角色</el-button>
-            <el-button size="small" text type="primary" @click="openSkillGroups(row)">技能组</el-button>
+            <el-button size="small" text type="primary" @click="openDispatchGroups(row)">分流分组</el-button>
             <el-button size="small" text @click="resetPassword(row)">重置密码</el-button>
             <el-button
               :type="row.status === 1 ? 'danger' : 'success'"
@@ -103,14 +103,21 @@
       </template>
     </el-dialog>
 
-    <!-- 分配技能组弹窗 -->
-    <el-dialog v-model="skillGroupDialogVisible" title="分配技能组" width="420px">
-      <el-select v-model="skillGroupForm.groupIds" multiple filterable :teleported="false" placeholder="选择技能组（可搜索）" style="width: 100%">
-        <el-option v-for="g in skillGroupOptions" :key="g.id" :label="g.groupName" :value="g.id" />
+    <!-- 分配分流分组弹窗（同一客服只能属于一个分组，故单选） -->
+    <el-dialog v-model="dispatchDialogVisible" title="分配分流分组" width="460px">
+      <el-select v-model="dispatchGroupId" clearable filterable :teleported="false" placeholder="选择分流分组（可搜索）" style="width: 100%">
+        <el-option v-for="g in dispatchOptions" :key="g.id" :label="g.groupName" :value="g.id" />
       </el-select>
+      <div v-if="dispatchGroupId != null" class="dispatch-weight-list">
+        <div class="dispatch-weight-row">
+          <span class="dispatch-weight-name">{{ groupName(dispatchGroupId) }}</span>
+          <el-input-number v-model="dispatchWeight" :min="1" :max="10" size="small" />
+        </div>
+        <div class="dispatch-weight-tip">权重越高分到越多会话，默认 1；同一客服只能属于一个分组</div>
+      </div>
       <template #footer>
-        <el-button @click="skillGroupDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitSkillGroups">确定</el-button>
+        <el-button @click="dispatchDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="submitDispatchGroups">确定</el-button>
       </template>
     </el-dialog>
   </div>
@@ -148,9 +155,11 @@ const rules: FormRules = {
 const roleDialogVisible = ref(false)
 const roleForm = reactive<any>({ staffId: undefined, roleIds: [] as number[] })
 
-const skillGroupDialogVisible = ref(false)
-const skillGroupOptions = ref<any[]>([])
-const skillGroupForm = reactive<any>({ staffId: undefined, groupIds: [] as number[] })
+const dispatchDialogVisible = ref(false)
+const dispatchOptions = ref<any[]>([])
+const dispatchGroupId = ref<number | null>(null)
+const dispatchWeight = ref(1)
+const dispatchStaffId = ref<number | undefined>(undefined)
 
 const fetchRoles = async () => {
   try {
@@ -161,36 +170,45 @@ const fetchRoles = async () => {
   }
 }
 
-const fetchSkillGroups = async () => {
+const fetchDispatchGroups = async () => {
   try {
-    const data: any = await request.get('/im/skill-group/list')
-    skillGroupOptions.value = data || []
+    const data: any = await request.get('/im/dispatch/group/list')
+    dispatchOptions.value = data || []
   } catch (error: any) {
-    if (!error._handled) ElMessage.error(error?.message || '获取技能组列表失败')
+    if (!error._handled) ElMessage.error(error?.message || '获取分流分组列表失败')
   }
 }
 
-const openSkillGroups = async (row: any) => {
-  skillGroupForm.staffId = row.id
-  skillGroupForm.groupIds = []
+const groupName = (gid: number) =>
+  dispatchOptions.value.find(g => g.id === gid)?.groupName || String(gid)
+
+const openDispatchGroups = async (row: any) => {
+  dispatchStaffId.value = row.id
+  dispatchGroupId.value = null
+  dispatchWeight.value = 1
   try {
-    const data: any = await request.get(`/im/skill-group/staff/${row.id}`)
-    skillGroupForm.groupIds = data || []
+    const data: any = await request.get(`/im/dispatch/staff/${row.id}`)
+    if (data && data.length > 0) {
+      dispatchGroupId.value = data[0].groupId
+      dispatchWeight.value = data[0].weight ?? 1
+    }
   } catch (error: any) {
-    if (!error._handled) ElMessage.error(error?.message || '获取员工技能组失败')
+    if (!error._handled) ElMessage.error(error?.message || '获取员工分流分组失败')
   }
-  skillGroupDialogVisible.value = true
+  dispatchDialogVisible.value = true
 }
 
-const submitSkillGroups = async () => {
+const submitDispatchGroups = async () => {
   submitting.value = true
   try {
-    await request.post('/im/skill-group/staff', {
-      staffId: skillGroupForm.staffId,
-      groupIds: skillGroupForm.groupIds
+    await request.post('/im/dispatch/staff', {
+      staffId: dispatchStaffId.value,
+      items: dispatchGroupId.value != null
+        ? [{ groupId: dispatchGroupId.value, weight: dispatchWeight.value || 1 }]
+        : []
     })
     ElMessage.success('分配成功')
-    skillGroupDialogVisible.value = false
+    dispatchDialogVisible.value = false
   } catch (error: any) {
     if (!error._handled) ElMessage.error(error?.message || '分配失败')
   } finally {
@@ -281,7 +299,7 @@ const toggleStatus = async (row: any) => {
 
 onMounted(() => {
   fetchRoles()
-  fetchSkillGroups()
+  fetchDispatchGroups()
   fetchData()
 })
 </script>
@@ -310,6 +328,22 @@ onMounted(() => {
     margin-top: 16px;
     display: flex;
     justify-content: flex-end;
+  }
+  .dispatch-weight-list {
+    margin-top: 12px;
+    .dispatch-weight-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 6px;
+      .dispatch-weight-name {
+        width: 100px;
+      }
+    }
+    .dispatch-weight-tip {
+      color: #909399;
+      font-size: 12px;
+    }
   }
 }
 </style>

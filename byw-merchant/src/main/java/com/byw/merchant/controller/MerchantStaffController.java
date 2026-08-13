@@ -11,7 +11,10 @@ import com.byw.common.security.context.UserContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.stream.Collectors;
 
 /**
@@ -26,6 +29,9 @@ public class MerchantStaffController {
 
     /** 商家账号用户类型（RBAC user_role.user_type） */
     private static final Integer USER_TYPE_MERCHANT = 2;
+
+    /** 选项接口扫描子账号上限（单店子账号量级内一次拉全） */
+    private static final int MAX_OPTIONS_SCAN = 200;
 
     private final ShopFeignClient shopFeignClient;
     private final RbacFeignClient rbacFeignClient;
@@ -80,5 +86,33 @@ public class MerchantStaffController {
     @GetMapping("/roles")
     public R<List<SysRoleDTO>> roles() {
         return rbacFeignClient.listMerchantRoles(UserContext.getShopId());
+    }
+
+    /**
+     * 本店持有指定权限的启用子账号列表（供下拉选项，如客服分流选参与客服仅列 m:im:workbench 持有者）。
+     * 方法级权限覆盖类级 m:staff:manage：客服分流页面（m:im:dispatch）也调用本接口拉取参与客服选项。
+     * 按当前登录者店铺查子账号（不依赖调用者是否主账号，子账号登录也能拿到选项）。
+     */
+    @RequirePerm("m:im:dispatch")
+    @GetMapping("/options")
+    public R<List<MerchantAccountDTO>> options(@RequestParam("permCode") String permCode) {
+        Long shopId = UserContext.getShopId();
+        if (shopId == null) {
+            return R.fail("仅商家端可用");
+        }
+        List<Long> holderIds = rbacFeignClient.listUserIdsByPerm(permCode, USER_TYPE_MERCHANT).getData();
+        if (holderIds == null || holderIds.isEmpty()) {
+            return R.ok(Collections.emptyList());
+        }
+        Set<Long> holderSet = new HashSet<>(holderIds);
+        List<MerchantAccountDTO> staff = shopFeignClient
+                .listActiveStaffByShop(shopId, MAX_OPTIONS_SCAN).getData();
+        if (staff == null || staff.isEmpty()) {
+            return R.ok(Collections.emptyList());
+        }
+        List<MerchantAccountDTO> options = staff.stream()
+                .filter(dto -> holderSet.contains(dto.getId()))
+                .collect(Collectors.toList());
+        return R.ok(options);
     }
 }

@@ -52,6 +52,13 @@ public class SessionManager {
      */
     private final ConcurrentHashMap<Long, Set<WebSocketSession>> staffSessions = new ConcurrentHashMap<>();
 
+    /**
+     * 客服挂起状态：key=staffId（merchant_account.id），true=已挂起（不再接新消息）。
+     * 存内存+Redis（重启后需客服重新挂起，可接受）。
+     */
+    private final ConcurrentHashMap<Long, Boolean> suspendedStaff = new ConcurrentHashMap<>();
+    private static final String SUSPEND_KEY_PREFIX = "im:staff:suspend:";
+
     public static String userPrincipal(Long userId) {
         return "u:" + userId;
     }
@@ -238,5 +245,38 @@ public class SessionManager {
             }
         }
         return sent;
+    }
+
+    // ========== 客服挂起状态 ==========
+
+    /** 判断客服是否处于挂起状态（不接新消息；存量会话可继续回复） */
+    public boolean isStaffSuspended(Long staffId) {
+        Boolean local = suspendedStaff.get(staffId);
+        if (local != null) {
+            return local;
+        }
+        return Boolean.TRUE.equals(redisUtil.hasKey(SUSPEND_KEY_PREFIX + staffId));
+    }
+
+    /** 设置客服挂起状态 */
+    public void setSuspended(Long staffId, boolean suspended) {
+        suspendedStaff.put(staffId, suspended);
+        if (suspended) {
+            redisUtil.set(SUSPEND_KEY_PREFIX + staffId, "1", 24 * 60 * 60, TimeUnit.SECONDS);
+        } else {
+            redisUtil.delete(SUSPEND_KEY_PREFIX + staffId);
+        }
+    }
+
+    /** 获取本店所有挂起中的客服 staffId 集合 */
+    public Set<Long> getSuspendedStaffIds(Long shopId) {
+        Set<Long> result = new java.util.HashSet<>();
+        Set<Long> online = getOnlineStaffIds(shopId);
+        for (Long staffId : online) {
+            if (isStaffSuspended(staffId)) {
+                result.add(staffId);
+            }
+        }
+        return result;
     }
 }

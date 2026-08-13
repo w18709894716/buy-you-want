@@ -62,7 +62,10 @@
             <div class="max-w-[75%]">
               <div class="text-[11px] text-gray-400 mb-1">智能客服</div>
               <div class="bg-white rounded-2xl rounded-bl-sm shadow-sm px-3 py-2">
-                <div class="text-sm text-gray-800 mb-2">智能客服为您服务，请选择您要咨询的问题：</div>
+                <div class="text-sm text-gray-800 mb-2">
+                  <template v-if="inServiceTime">智能客服为您服务，请选择您要咨询的问题：</template>
+                  <template v-else>{{ offHoursTip || '智能客服为您服务，请选择您要咨询的问题：' }}</template>
+                </div>
                 <div class="flex flex-col gap-1.5">
                   <button
                     v-for="faq in faqList"
@@ -90,7 +93,10 @@
               <div class="max-w-[75%]">
                 <div class="text-[11px] text-gray-400 mb-1">智能客服</div>
                 <div class="bg-white rounded-2xl rounded-bl-sm shadow-sm px-3 py-2">
-                  <div class="text-sm text-gray-800 mb-2">智能客服为您服务，请选择您要咨询的问题：</div>
+                  <div class="text-sm text-gray-800 mb-2">
+                    <template v-if="inServiceTime">智能客服为您服务，请选择您要咨询的问题：</template>
+                    <template v-else>{{ offHoursTip || '智能客服为您服务，请选择您要咨询的问题：' }}</template>
+                  </div>
                   <div class="flex flex-col gap-1.5">
                     <button
                       v-for="faq in faqList"
@@ -465,8 +471,14 @@ onUnmounted(() => {
 
 /** 当前会话可选的 FAQ 快捷问题（打开会话时拉取，仅启用状态） */
 const faqList = ref<{ id: number; question: string }[]>([])
-/** 是否展示智能客服引导：店铺配置了 FAQ 即常驻展示（客服接待后仍可点击，问题将直接发送给接待客服） */
-const showFaqGuide = computed(() => faqList.value.length > 0)
+/** 服务时间内是否优先智能机器人（robotFirst=true 时展示 FAQ 引导） */
+const robotFirst = ref(false)
+/** 当前是否在服务时间内（false=非服务时间模式，机器人默认打开） */
+const inServiceTime = ref(true)
+/** 非服务时间提示语（非服务时间模式时由机器人回复下发，未配置为默认文案） */
+const offHoursTip = ref('')
+/** 是否展示智能客服引导：店铺有 FAQ 且（非服务时间 或 服务时间内机器人优先）；机器人关闭且服务时间内不展示 */
+const showFaqGuide = computed(() => faqList.value.length > 0 && (!inServiceTime.value || robotFirst.value))
 /** “重新引导”锚点消息 id：间隔超过阈值再次进线时，引导重新锚定到该消息之后（最新位置，避免翻聊天记录） */
 const guideAnchorId = ref<string | null>(null)
 /** 重新引导间隔阈值：距最后一条消息超过该时长视为新一轮咨询，引导重新出现在最新位置 */
@@ -489,12 +501,19 @@ function refreshGuideAnchor() {
 // 切换会话时拉取该店铺的 FAQ 引导选项（immediate：面板重新打开时 activeId 可能不变，仍需重新拉取）
 watch(() => im.activeId, async (id) => {
   faqList.value = []
+  robotFirst.value = false
+  inServiceTime.value = true
+  offHoursTip.value = ''
   guideAnchorId.value = null
   if (!id) return
   const conv = im.conversations.find(c => c.id === id)
   if (!conv?.shopId) return
   try {
-    faqList.value = (await get<{ id: number; question: string }[]>('/im/faq/options', { shopId: conv.shopId })) || []
+    const data = await get<any>('/im/faq/options', { shopId: conv.shopId })
+    faqList.value = data?.faqs || []
+    robotFirst.value = data?.robotFirst === true
+    inServiceTime.value = data?.inServiceTime !== false
+    offHoursTip.value = data?.offHoursTip || ''
   } catch {
     faqList.value = []
   }

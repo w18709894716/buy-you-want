@@ -153,6 +153,13 @@ public class RbacFeignImpl implements RbacFeignClient {
     }
 
     @Override
+    @GetMapping("/user-ids-by-perm")
+    public R<List<Long>> listUserIdsByPerm(@RequestParam("permCode") String permCode,
+                                           @RequestParam("userType") Integer userType) {
+        return R.ok(rbacService.listUserIdsByPerm(permCode, userType));
+    }
+
+    @Override
     @GetMapping("/menu/tree")
     public R<List<SysMenuDTO>> getMenuTree(@RequestParam("scope") String scope,
                                            @RequestParam("userType") Integer userType,

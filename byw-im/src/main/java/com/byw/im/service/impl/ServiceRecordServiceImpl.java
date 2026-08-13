@@ -13,10 +13,11 @@ import com.byw.im.entity.ServiceRecord;
 import com.byw.im.mapper.ConversationMapper;
 import com.byw.im.mapper.ServiceRecordMapper;
 import com.byw.im.producer.ImEventProducer;
+import com.byw.im.service.DispatchService;
 import com.byw.im.service.SatisfactionService;
 import com.byw.im.service.ServiceRecordService;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,7 +33,6 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class ServiceRecordServiceImpl extends ServiceImpl<ServiceRecordMapper, ServiceRecord>
         implements ServiceRecordService {
 
@@ -40,6 +40,19 @@ public class ServiceRecordServiceImpl extends ServiceImpl<ServiceRecordMapper, S
     private final ConversationMapper conversationMapper;
     private final MongoTemplate mongoTemplate;
     private final ImEventProducer imEventProducer;
+    private final DispatchService dispatchService;
+
+    public ServiceRecordServiceImpl(ServiceRecordMapper serviceRecordMapper,
+                                    ConversationMapper conversationMapper,
+                                    MongoTemplate mongoTemplate,
+                                    ImEventProducer imEventProducer,
+                                    @Lazy DispatchService dispatchService) {
+        this.serviceRecordMapper = serviceRecordMapper;
+        this.conversationMapper = conversationMapper;
+        this.mongoTemplate = mongoTemplate;
+        this.imEventProducer = imEventProducer;
+        this.dispatchService = dispatchService;
+    }
 
     @Override
     @Transactional
@@ -148,6 +161,13 @@ public class ServiceRecordServiceImpl extends ServiceImpl<ServiceRecordMapper, S
                             .set(Conversation::getAssigneeName, null));
                     insertSystemMessage(conv, "service-ended", "本次服务已结束");
                     log.info("IM 服务超时结束，会话回到待接入：conversationId={}, recordId={}", conv.getId(), r.getId());
+                    // 客服腾出接待能力 → 消费本店排队队列/离线消息池（该客服可能再次被分配）
+                    try {
+                        dispatchService.consumeQueue(conv.getShopId());
+                        dispatchService.consumeOfflinePool(conv.getShopId());
+                    } catch (Exception e) {
+                        log.warn("IM 服务结束后消费队列失败：shopId={}, err={}", conv.getShopId(), e.getMessage());
+                    }
                 }
             }
         }
