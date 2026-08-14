@@ -271,12 +271,13 @@
           <div>
             <div class="text-xs text-gray-400 mb-1">入口意图（买家从哪个页面发起咨询）</div>
             <el-checkbox-group v-model="ruleForm.intents" @change="onIntentChange">
-              <el-checkbox value="product">商品咨询</el-checkbox>
-              <el-checkbox value="order">订单售后</el-checkbox>
+              <el-checkbox value="product">商品详情页</el-checkbox>
+              <el-checkbox value="order">订单页</el-checkbox>
+              <el-checkbox value="shop">店铺首页</el-checkbox>
               <el-checkbox value="default">普通咨询</el-checkbox>
             </el-checkbox-group>
           </div>
-          <!-- 订单状态仅对订单售后进线生效（只有订单页进线才有订单真实状态），故勾选订单售后才展示 -->
+          <!-- 订单状态仅对订单页进线生效（只有订单页进线才有订单真实状态），故勾选订单页才展示 -->
           <div v-if="ruleForm.intents.includes('order')" class="mt-2 w-full">
             <div class="text-xs text-gray-400 mb-1">订单状态（可选，按订单真实状态匹配；不选则匹配全部状态）</div>
             <el-select v-model="ruleForm.orderStatuses" multiple :teleported="false" placeholder="选择订单状态" style="width: 100%">
@@ -357,8 +358,9 @@ interface OfflinePoolItem {
 }
 
 const INTENT_LABELS: Record<string, string> = {
-  product: '商品咨询',
-  order: '订单售后',
+  product: '商品详情页',
+  order: '订单页',
+  shop: '店铺首页',
   default: '普通咨询',
 }
 
@@ -549,7 +551,7 @@ function openRuleEdit(row: DispatchRule) {
   editRuleId.value = row.id
   const intents = splitList(row.intents)
   const orderStatuses = splitList(row.orderStatuses).map(Number)
-  // 历史数据归一：配置了订单状态则必须含订单售后意图（否则状态选择块不展示）
+  // 历史数据归一：配置了订单状态则必须含订单页意图（否则状态选择块不展示）
   if (orderStatuses.length > 0 && !intents.includes('order')) {
     intents.push('order')
   }
@@ -571,7 +573,7 @@ function openRuleEdit(row: DispatchRule) {
   ruleDialogVisible.value = true
 }
 
-// 入口意图变更：取消勾选订单售后时清空订单状态（无订单意图时状态匹配无意义）
+// 入口意图变更：取消勾选订单页时清空订单状态（无订单意图时状态匹配无意义）
 function onIntentChange(vals: (string | number | boolean)[]) {
   if (!vals.includes('order')) {
     ruleForm.value.orderStatuses = []

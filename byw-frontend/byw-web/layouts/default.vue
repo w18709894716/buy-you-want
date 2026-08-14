@@ -73,23 +73,6 @@
           </span>
         </NuxtLink>
       </div>
-
-      <!-- 分类导航 -->
-      <nav class="border-t border-gray-100">
-        <div class="max-w-7xl mx-auto px-4">
-          <ul class="flex items-center gap-4 md:gap-6 h-10 text-sm overflow-x-auto whitespace-nowrap scrollbar-hide">
-            <li class="flex-shrink-0">
-              <NuxtLink to="/" :class="isHome ? 'text-primary font-medium' : 'text-gray-600 hover:text-primary'">首页</NuxtLink>
-            </li>
-            <li v-for="cat in categories" :key="cat.id" class="flex-shrink-0">
-              <NuxtLink
-                :to="`/search?category=${cat.name}`"
-                :class="activeCategory === cat.name ? 'text-primary font-medium' : 'text-gray-600 hover:text-primary'"
-              >{{ cat.name }}</NuxtLink>
-            </li>
-          </ul>
-        </div>
-      </nav>
     </header>
 
     <!-- 主内容区 -->
@@ -164,7 +147,6 @@
 import { useUserStore } from '~/stores/user'
 import { useCartStore } from '~/stores/cart'
 import { useImStore } from '~/stores/im'
-import { get } from '~/utils/request'
 
 const userStore = useUserStore()
 const cartStore = useCartStore()
@@ -173,32 +155,10 @@ const route = useRoute()
 // 商家入驻已迁至商家中心（byw-merchant-web），导航外链跳转
 const merchantApplyUrl = `${useRuntimeConfig().public.merchantWebUrl}/apply`
 
-// 导航高亮状态：首页仅在根路径高亮，分类仅在搜索页且 category 参数匹配时高亮
-const isHome = computed(() => route.path === '/')
-const activeCategory = computed(() =>
-  route.path === '/search' ? ((route.query.category as string) || '') : ''
-)
-
-const categories = ref<{ id: number; name: string }[]>([])
-
 // 退出登录：清空登录态并跳转登录页（store 内部处理）
 function handleLogout() {
   userStore.logout()
 }
-
-async function fetchNavCategories() {
-  try {
-    const data = await get<any[]>('/product/category/tree')
-    // 只取一级分类（parentId 为 0 或 null 的根节点）
-    categories.value = (data || [])
-      .filter(c => !c.parentId || c.parentId === 0)
-      .map(c => ({ id: c.id, name: c.name }))
-  } catch (e) {
-    console.error('获取导航分类失败:', e)
-  }
-}
-
-onMounted(fetchNavCategories)
 
 // 登录态就绪后初始化 IM（建立 WS、拉取未读）；退出登录时断开
 onMounted(() => {

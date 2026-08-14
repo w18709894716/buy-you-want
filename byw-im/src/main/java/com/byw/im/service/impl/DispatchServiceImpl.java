@@ -692,12 +692,8 @@ public class DispatchServiceImpl implements DispatchService {
                 exitDispatchState(c, STATUS_OFFLINE_POOL);
                 continue;
             }
-            // 按规则重新分流：以会话内最近消息类型推断入口意图（订单状态无法离线反查，仅按意图）
-            String intent = switch (c.getLastMessageType() == null ? "" : c.getLastMessageType()) {
-                case "product_card" -> "product";
-                case "order_card" -> "order";
-                default -> "default";
-            };
+            // 按规则重新分流：以会话入口意图重新匹配（订单状态无法离线反查，仅按意图）
+            String intent = c.deriveIntent();
             DispatchResolveResult resolve = resolveDispatchRule(intent, null, c.getUserId(), shopId);
             if (!resolve.isInServiceTime()) {
                 continue;

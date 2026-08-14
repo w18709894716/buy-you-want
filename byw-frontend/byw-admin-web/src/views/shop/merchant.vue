@@ -30,7 +30,9 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="shopName" label="意向店铺名" min-width="130" show-overflow-tooltip />
+        <el-table-column prop="shopName" label="意向店铺名" min-width="130" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.shopName || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="companyName" label="企业名称" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">{{ row.companyName || '-' }}</template>
         </el-table-column>

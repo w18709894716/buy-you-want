@@ -40,7 +40,7 @@ public class DispatchRule {
     /** 回头客时间窗口(小时)：24/48/72/自定义整数；空=24 */
     private Integer repeatWindowHours;
 
-    /** 匹配条件-入口意图（逗号分隔：product-商品咨询 order-订单售后 default-普通咨询；NULL=不按意图） */
+    /** 匹配条件-入口意图（逗号分隔：product-商品详情页 order-订单页 shop-店铺首页 default-普通咨询；NULL=不按意图） */
     private String intents;
 
     /** 匹配条件-订单状态（逗号分隔状态码；NULL=不按订单状态） */

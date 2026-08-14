@@ -67,6 +67,19 @@ CREATE TABLE t_user_favorite (
                                  INDEX idx_user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 用户店铺关注（店铺主页关注/粉丝数）
+DROP TABLE IF EXISTS t_user_shop_follow;
+CREATE TABLE t_user_shop_follow (
+                                 id              BIGINT PRIMARY KEY AUTO_INCREMENT,
+                                 user_id         BIGINT NOT NULL,
+                                 shop_id         BIGINT NOT NULL,
+                                 created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                 updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                                 deleted         TINYINT DEFAULT 0,
+                                 UNIQUE KEY uk_user_shop (user_id, shop_id),
+                                 INDEX idx_shop_id (shop_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- ========== RBAC 用户角色菜单权限 ==========
 -- 平台员工表（平台管理端登录主体，与 C 端会员彻底分离）
 DROP TABLE IF EXISTS t_sys_user;

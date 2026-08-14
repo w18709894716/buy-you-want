@@ -28,6 +28,9 @@ public class Conversation {
     /** 最后一条消息类型 text/image/product_card/order_card */
     private String lastMessageType;
 
+    /** 入口意图（买家点击客服按钮的页面：product-商品详情页 order-订单页 shop-店铺首页；NULL-未记录，按消息类型推导） */
+    private String entry;
+
     /** 最后一条消息时间 */
     private LocalDateTime lastMessageTime;
 
@@ -63,4 +66,19 @@ public class Conversation {
 
     @TableLogic
     private Integer deleted;
+
+    /**
+     * 推导入口意图：入口来源优先（经对应页面客服按钮打开会话即命中该页意图，不论是否发卡片/说什么），
+     * 无入口记录（老数据）回退卡片语义（product_card→商品详情页 order_card→订单页），再无→普通咨询。
+     */
+    public String deriveIntent() {
+        if (entry != null && !entry.isBlank()) {
+            return entry;
+        }
+        return switch (lastMessageType == null ? "" : lastMessageType) {
+            case "product_card" -> "product";
+            case "order_card" -> "order";
+            default -> "default";
+        };
+    }
 }

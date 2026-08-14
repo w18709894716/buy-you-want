@@ -23,6 +23,15 @@ public class ShopController {
     private final ShopService shopService;
 
     /**
+     * C端店铺主页：店铺公开详情（不存在返回 null，前端提示关店/不存在）
+     */
+    @Public
+    @GetMapping("/detail/{shopId}")
+    public R<ShopDTO> getShopDetail(@PathVariable Long shopId) {
+        return R.ok(shopService.getShopById(shopId));
+    }
+
+    /**
      * 商家入驻申请（免登录；商家身份独立于C端账号，归属与防重复以申请账号 username 为键）
      */
     @Public
@@ -49,6 +58,18 @@ public class ShopController {
     @Public
     public R<ShopDTO> getShop(@PathVariable("shopId") Long shopId) {
         return R.ok(shopService.getShopById(shopId));
+    }
+
+    /**
+     * C端：店铺模糊搜索（仅营业中店铺）
+     */
+    @Public
+    @GetMapping("/search")
+    public R<PageResult<ShopDTO>> searchShops(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "1") Integer pageNum,
+            @RequestParam(defaultValue = "10") Integer pageSize) {
+        return R.ok(shopService.searchShops(keyword, pageNum, pageSize));
     }
 
     /**

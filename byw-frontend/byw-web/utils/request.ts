@@ -22,7 +22,7 @@ const PUBLIC_PATHS = ['/', '/login', '/register', '/search', '/seckill', '/coupo
 
 /** 当前路径是否为公开页面 */
 export function isPublicPath(path: string): boolean {
-  return PUBLIC_PATHS.includes(path) || path.startsWith('/product/')
+  return PUBLIC_PATHS.includes(path) || path.startsWith('/product/') || path.startsWith('/shop/')
 }
 
 /** 获取 token */

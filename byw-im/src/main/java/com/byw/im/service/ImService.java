@@ -14,8 +14,8 @@ import java.util.List;
  */
 public interface ImService {
 
-    /** 按 (userId, shopId) 获取或创建唯一会话 */
-    Conversation getOrCreateConversation(Long userId, Long shopId);
+    /** 按 (userId, shopId) 获取或创建唯一会话；entry 记录入口意图（shop-店铺首页等，可空） */
+    Conversation getOrCreateConversation(Long userId, Long shopId, String entry);
 
     /** 发送消息：会话落库 + 消息入 Mongo + 更新未读 + RocketMQ 广播下推 */
     MessageView sendMessage(SendMessageCommand command);

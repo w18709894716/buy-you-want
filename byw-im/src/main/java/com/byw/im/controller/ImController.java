@@ -43,7 +43,7 @@ public class ImController {
         if (request == null || request.getShopId() == null) {
             return R.fail("shopId 不能为空");
         }
-        return R.ok(imService.getOrCreateConversation(UserContext.getUserId(), request.getShopId()));
+        return R.ok(imService.getOrCreateConversation(UserContext.getUserId(), request.getShopId(), request.getEntry()));
     }
 
     @Operation(summary = "会话列表（买家看自己/商家看本店）")
@@ -137,6 +137,8 @@ public class ImController {
     @Data
     public static class ConversationRequest {
         private Long shopId;
+        /** 入口意图（product-商品详情 order-订单页 shop-店铺首页；可空） */
+        private String entry;
     }
 
     @Data

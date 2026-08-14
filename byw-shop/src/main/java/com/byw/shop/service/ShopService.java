@@ -70,6 +70,11 @@ public interface ShopService {
     PageResult<ShopDTO> listShops(Integer pageNum, Integer pageSize, Integer status);
 
     /**
+     * C端：店铺模糊搜索（仅营业中店铺，按店名 LIKE）
+     */
+    PageResult<ShopDTO> searchShops(String keyword, Integer pageNum, Integer pageSize);
+
+    /**
      * 平台端：更新店铺状态（0关店 1营业 2封禁）
      */
     void updateShopStatus(Long shopId, Integer status);

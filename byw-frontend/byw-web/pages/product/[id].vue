@@ -162,7 +162,7 @@
           <div class="flex flex-wrap gap-x-6 gap-y-2 mt-4 text-sm text-gray-500">
             <span>累计销量：<span class="text-gray-800">{{ product.salesCount }}</span></span>
             <span>累计评价：<span class="text-gray-800">{{ product.reviewCount }}</span></span>
-            <span>店铺：<span class="text-primary">{{ product.shopName }}</span></span>
+            <span>店铺：<NuxtLink :to="`/shop/${product.shopId}`" class="text-primary hover:underline">{{ product.shopName }}</NuxtLink></span>
           </div>
 
           <!-- SKU 选择器 -->
@@ -545,6 +545,7 @@ function handleContact() {
   imStore.startWithContext({
     shopId: product.shopId,
     shopName: product.shopName,
+    entry: 'product',
     card: {
       type: 'product_card',
       extra: {

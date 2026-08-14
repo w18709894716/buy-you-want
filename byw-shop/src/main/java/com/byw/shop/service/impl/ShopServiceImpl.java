@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byw.api.shop.dto.MerchantAccountDTO;
 import com.byw.api.shop.dto.ShopDTO;
+import com.byw.common.core.constant.CommonConstants;
 import com.byw.common.core.exception.BusinessException;
 import com.byw.common.core.result.PageResult;
 import com.byw.shop.entity.MerchantAccount;
@@ -181,6 +182,8 @@ public class ShopServiceImpl implements ShopService {
     public PageResult<MerchantAccountDTO> listMerchants(Integer pageNum, Integer pageSize, Integer auditStatus) {
         Page<MerchantAccount> page = new Page<>(pageNum, pageSize);
         LambdaQueryWrapper<MerchantAccount> wrapper = new LambdaQueryWrapper<MerchantAccount>()
+                // 入驻审核只针对主账号（子账号由商家自建、不走入驻审核，不进入该列表）
+                .eq(MerchantAccount::getRole, CommonConstants.ROLE_MERCHANT_OWNER)
                 .eq(auditStatus != null, MerchantAccount::getAuditStatus, auditStatus)
                 .orderByDesc(MerchantAccount::getId);
         Page<MerchantAccount> result = merchantAccountMapper.selectPage(page, wrapper);
@@ -241,6 +244,18 @@ public class ShopServiceImpl implements ShopService {
         Page<Shop> result = shopMapper.selectPage(page, wrapper);
         List<ShopDTO> list = result.getRecords().stream().map(this::toShopDTO).toList();
         return PageResult.of(list, result.getTotal(), pageNum, pageSize);
+    }
+
+    @Override
+    public PageResult<ShopDTO> searchShops(String keyword, Integer pageNum, Integer pageSize) {
+        Page<Shop> page = new Page<>(pageNum, pageSize);
+        String kw = keyword == null ? null : keyword.trim();
+        LambdaQueryWrapper<Shop> wrapper = new LambdaQueryWrapper<Shop>()
+                .eq(Shop::getStatus, 1)
+                .like(kw != null && !kw.isEmpty(), Shop::getName, kw)
+                .orderByDesc(Shop::getId);
+        Page<Shop> result = shopMapper.selectPage(page, wrapper);
+        return PageResult.of(result.getRecords().stream().map(this::toShopDTO).toList(), result.getTotal(), pageNum, pageSize);
     }
 
     @Override

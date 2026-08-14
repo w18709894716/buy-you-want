@@ -267,7 +267,12 @@
         <div v-for="r in offlineRecords" :key="r.conversationId" class="offline-item">
           <div class="o-main">
             <div class="o-line">
-              <span class="o-name">{{ r.userNickname || ('用户' + r.userId) }}</span>
+              <span class="o-left">
+                <span class="o-name">{{ r.userNickname || ('用户' + r.userId) }}</span>
+                <!-- 与分流页离线池一致：展示规则命中的分组，便于客服认领自己组的消息 -->
+                <el-tag v-if="r.groupName" size="small" type="success">{{ r.groupName }}</el-tag>
+                <el-tag v-else size="small" type="info">基础分流</el-tag>
+              </span>
               <span class="o-time">{{ formatFullTime(r.dispatchAt) }}</span>
             </div>
             <div class="o-msg">{{ r.lastMessage || '暂无消息' }}</div>
@@ -368,6 +373,8 @@ interface OfflinePoolItem {
   lastMessage?: string
   lastMessageType?: string
   dispatchAt?: any
+  /** 规则命中的分流分组名（基础分流入池时为 null） */
+  groupName?: string | null
 }
 
 const conversations = ref<ImConversation[]>([])
@@ -1087,6 +1094,7 @@ onUnmounted(() => {
     &:hover { background: #f5f7fa; }
     .o-main { flex: 1; min-width: 0; }
     .o-line { display: flex; align-items: center; justify-content: space-between; }
+        .o-left { display: flex; align-items: center; gap: 6px; min-width: 0; }
     .o-name { font-size: 14px; color: #303133; font-weight: 500; }
     .o-time { font-size: 12px; color: #c0c4cc; }
     .o-msg { font-size: 12px; color: #909399; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

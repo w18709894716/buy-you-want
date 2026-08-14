@@ -16,6 +16,7 @@ import com.byw.product.entity.Sku;
 import com.byw.product.service.CategoryService;
 import com.byw.product.service.ProductService;
 import com.byw.product.service.SkuService;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
@@ -89,6 +90,7 @@ public class ProductController {
             @RequestParam(required = false) String sort,
             @RequestParam(required = false) String category,
             @RequestParam(required = false) Long brandId,
+            @RequestParam(required = false) Long shopId,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) BigDecimal minPrice,
             @RequestParam(required = false) BigDecimal maxPrice) {
@@ -96,6 +98,7 @@ public class ProductController {
         LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Product::getStatus, 1); // 只查上架商品
         wrapper.eq(Product::getAuditStatus, 1); // 且已审核通过
+        if (shopId != null) wrapper.eq(Product::getShopId, shopId); // 店铺主页店内筛选
 
         // 按分类名称查询，包含子分类
         if (category != null && !category.isBlank()) {
@@ -224,6 +227,40 @@ public class ProductController {
         return R.ok(dto);
     }
 
+    /** 店内分类：该店铺上架且审核通过商品的分类分布（平铺，按商品数降序） */
+    @GetMapping("/shop/{shopId}/categories")
+    public R<List<ShopCategoryVO>> listShopCategories(@PathVariable Long shopId) {
+        List<Product> products = productService.list(new LambdaQueryWrapper<Product>()
+                .eq(Product::getStatus, 1)
+                .eq(Product::getAuditStatus, 1)
+                .eq(Product::getShopId, shopId));
+        java.util.Map<Long, Long> countByCat = products.stream()
+                .filter(p -> p.getCategoryId() != null)
+                .collect(Collectors.groupingBy(Product::getCategoryId, Collectors.counting()));
+        if (countByCat.isEmpty()) return R.ok(java.util.Collections.emptyList());
+        java.util.Map<Long, String> nameMap = categoryService.list().stream()
+                .collect(Collectors.toMap(Category::getId, Category::getName, (a, b) -> a));
+        List<ShopCategoryVO> result = countByCat.entrySet().stream()
+                .map(e -> {
+                    ShopCategoryVO vo = new ShopCategoryVO();
+                    vo.setCategoryId(e.getKey());
+                    vo.setCategoryName(nameMap.getOrDefault(e.getKey(), "其他"));
+                    vo.setCount(e.getValue().intValue());
+                    return vo;
+                })
+                .sorted((a, b) -> Integer.compare(b.getCount(), a.getCount()))
+                .collect(Collectors.toList());
+        return R.ok(result);
+    }
+
+    /** 店内分类统计项 */
+    @Data
+    public static class ShopCategoryVO {
+        private Long categoryId;
+        private String categoryName;
+        private Integer count;
+    }
+
     /** 递归收集子分类 ID */
     private void collectChildIds(Long parentId, List<Category> allCats, List<Long> result) {
         for (Category c : allCats) {
@@ -238,7 +275,7 @@ public class ProductController {
     private R<List<CategoryDTO>> categoryTreeFallback(Throwable ex) {
         return R.fail("系统繁忙，请稍后再试");
     }
-    private R<PageResult<ProductDTO>> productListFallback(Integer pageNum, Integer pageSize, String sort, String category, Long brandId, String keyword, BigDecimal minPrice, BigDecimal maxPrice, Throwable ex) {
+    private R<PageResult<ProductDTO>> productListFallback(Integer pageNum, Integer pageSize, String sort, String category, Long brandId, Long shopId, String keyword, BigDecimal minPrice, BigDecimal maxPrice, Throwable ex) {
         return R.fail("系统繁忙，请稍后再试");
     }
     private R<ProductDTO> productDetailFallback(Long productId, Throwable ex) {

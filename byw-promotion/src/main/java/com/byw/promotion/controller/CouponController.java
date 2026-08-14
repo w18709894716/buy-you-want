@@ -31,8 +31,9 @@ public class CouponController {
 
     @Operation(summary = "获取指定店铺可领取的店铺券")
     @GetMapping("/shop/{shopId}")
-    @RequireLogin
+    @Public
     public R<List<Coupon>> shopClaimable(@PathVariable Long shopId) {
+        // 匿名可浏览（userId=null 时服务层返回全部有效券）；领取接口仍要求登录
         return R.ok(couponService.listShopClaimable(shopId, UserContext.getUserId()));
     }
 

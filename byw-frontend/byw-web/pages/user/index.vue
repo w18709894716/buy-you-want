@@ -101,6 +101,7 @@ const sidebarMenu = [
   { icon: '🎟️', label: '我的优惠券', path: '/user/coupons' },
   { icon: '⭐', label: '我的评价', path: '/user/reviews' },
   { icon: '❤️', label: '我的收藏', path: '/user/favorites' },
+  { icon: '🏬', label: '我的关注', path: '/user/follows' },
 ]
 
 // 概览卡片数据（从接口获取）

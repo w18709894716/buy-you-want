@@ -192,8 +192,8 @@ export const useImStore = defineStore('im', {
       this.markRead(conversationId)
     },
 
-    /** 从商品/订单页发起会话，可携带卡片上下文（不自动发送，暂存为待确认卡片） */
-    async startWithContext(ctx: { shopId: number; shopName?: string; card?: { type: string; extra: Record<string, any> } }) {
+    /** 从商品/订单/店铺页发起会话，可携带卡片上下文（不自动发送，暂存为待确认卡片）；entry 记录入口意图供分流规则匹配 */
+    async startWithContext(ctx: { shopId: number; shopName?: string; entry?: string; card?: { type: string; extra: Record<string, any> } }) {
       const userStore = useUserStore()
       if (!userStore.isLoggedIn) {
         useLoginModal().openLoginModal()
@@ -202,7 +202,7 @@ export const useImStore = defineStore('im', {
       this.init()
       this.open = true
       try {
-        const conv = await post<ImConversation>('/im/conversation', { shopId: ctx.shopId })
+        const conv = await post<ImConversation>('/im/conversation', { shopId: ctx.shopId, entry: ctx.entry })
         if (ctx.shopName) conv.shopName = ctx.shopName
         this.upsertConversation(conv)
         await this.selectConversation(conv.id)

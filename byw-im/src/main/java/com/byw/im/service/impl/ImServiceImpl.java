@@ -73,9 +73,14 @@ public class ImServiceImpl implements ImService {
     private final ServiceRecordMapper serviceRecordMapper;
 
     @Override
-    public Conversation getOrCreateConversation(Long userId, Long shopId) {
+    public Conversation getOrCreateConversation(Long userId, Long shopId, String entry) {
         Conversation existing = findConversation(userId, shopId);
         if (existing != null) {
+            // 已有会话：记录最新入口来源（分流规则可按入口意图匹配）
+            if (entry != null && !entry.isBlank() && !entry.equals(existing.getEntry())) {
+                existing.setEntry(entry);
+                conversationMapper.updateById(existing);
+            }
             return existing;
         }
         Conversation c = new Conversation();
@@ -83,6 +88,7 @@ public class ImServiceImpl implements ImService {
         c.setShopId(shopId);
         c.setUserUnread(0);
         c.setShopUnread(0);
+        c.setEntry(entry != null && !entry.isBlank() ? entry : null);
         try {
             conversationMapper.insert(c);
             return c;
@@ -110,7 +116,7 @@ public class ImServiceImpl implements ImService {
                 throw new IllegalArgumentException("会话不存在: " + command.getConversationId());
             }
         } else if (fromUser) {
-            conversation = getOrCreateConversation(command.getSenderId(), command.getShopId());
+            conversation = getOrCreateConversation(command.getSenderId(), command.getShopId(), null);
         } else {
             throw new IllegalArgumentException("商家发送消息必须指定 conversationId");
         }
@@ -267,12 +273,8 @@ public class ImServiceImpl implements ImService {
      */
     private void dispatchPendingConversation(Conversation conversation, SendMessageCommand command, ImMessage doc) {
         Long shopId = conversation.getShopId();
-        // 判定入口意图（沿用卡片类型语义）+ 订单真实状态（Feign 反查，保留）
-        String intent = switch (conversation.getLastMessageType()) {
-            case "product_card" -> "product";
-            case "order_card" -> "order";
-            default -> "default";
-        };
+        // 判定入口意图（入口来源优先，无记录回退卡片语义）+ 订单真实状态（Feign 反查，保留）
+        String intent = conversation.deriveIntent();
         Integer orderStatus = resolveOrderStatus(conversation, command);
         DispatchResolveResult resolve = dispatchService.resolveDispatchRule(intent, orderStatus,
                 conversation.getUserId(), shopId);

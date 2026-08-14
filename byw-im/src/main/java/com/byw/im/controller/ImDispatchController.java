@@ -176,11 +176,7 @@ public class ImDispatchController {
             item.setUserNickname(nicknameMap.get(c.getUserId()));
             item.setGroupId(c.getDispatchGroupId());
             item.setGroupName(c.getDispatchGroupId() == null ? null : groupNameMap.get(c.getDispatchGroupId()));
-            item.setIntent(switch (c.getLastMessageType() == null ? "" : c.getLastMessageType()) {
-                case "product_card" -> "product";
-                case "order_card" -> "order";
-                default -> "default";
-            });
+            item.setIntent(c.deriveIntent());
             item.setLastMessage(c.getLastMessage());
             item.setLastMessageType(c.getLastMessageType());
             item.setDispatchAt(c.getDispatchAt());
