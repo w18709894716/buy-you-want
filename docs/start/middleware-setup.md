@@ -254,6 +254,12 @@ curl http://localhost:9200
 # 应返回 ES 集群信息 JSON
 ```
 
+### IK 中文分词插件（可选）
+
+- 商品索引（`byw-product`）创建时优先使用 `ik_max_word` 分词；未安装插件时自动回退 `standard` 分词，不装也能跑（中文按单字切分，检索精度较低）。
+- 安装：下载与 ES 同版本（8.13.4）的 [analysis-ik](https://github.com/infinilabs/analysis-ik) 插件，解压到 `plugins\ik` 目录后重启 ES。
+- 若索引已以 standard 分词创建、后装 IK：需先删除 `byw-product` 索引（`DELETE /byw-product`），再调用 `POST /product/es/reindex` 全量重建（或重启 byw-product 自动建索引）。
+
 ---
 
 ## MongoDB 7.0.9（文档数据库）

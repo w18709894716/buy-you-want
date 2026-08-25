@@ -27,6 +27,7 @@ import com.byw.order.mapper.OrderItemMapper;
 import com.byw.order.mapper.OrderMapper;
 import com.byw.order.mapper.OrderStatusLogMapper;
 import com.byw.order.mapper.AfterSaleMapper;
+import com.byw.common.core.util.SnowflakeIdGenerator;
 import com.byw.order.producer.OrderEventProducer;
 import com.byw.order.service.OrderService;
 import lombok.RequiredArgsConstructor;
@@ -37,10 +38,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -59,9 +58,6 @@ public class OrderServiceImpl implements OrderService {
     private final LogisticsFeignClient logisticsFeignClient;
     private final OrderEventProducer orderEventProducer;
     private final ShopFeignClient shopFeignClient;
-
-    /** 雪花ID计数器，用于生成唯一订单号 */
-    private static final AtomicLong SEQUENCE = new AtomicLong(0);
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -750,9 +746,8 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public String generateOrderNo() {
-        String datePart = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
-        long seq = SEQUENCE.incrementAndGet() % 100000;
-        return datePart + String.format("%05d", seq);
+        // 雪花算法订单号：全局唯一、趋势递增，避免多实例/重启撞号
+        return SnowflakeIdGenerator.nextIdStr();
     }
 
     private void saveStatusLog(Long orderId, Integer fromStatus, Integer toStatus, String operator, String remark) {

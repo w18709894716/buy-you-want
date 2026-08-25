@@ -1,6 +1,7 @@
 package com.byw.product.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byw.api.product.dto.CategoryDTO;
 import com.byw.api.product.dto.ProductDTO;
 import com.byw.api.product.dto.SkuDTO;
@@ -12,6 +13,7 @@ import com.byw.common.security.annotation.Public;
 import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.byw.product.entity.Category;
 import com.byw.product.entity.Product;
+import com.byw.product.entity.ProductWithPrice;
 import com.byw.product.entity.Sku;
 import com.byw.product.service.CategoryService;
 import com.byw.product.service.ProductService;
@@ -81,7 +83,7 @@ public class ProductController {
         return R.ok(dtoList);
     }
 
-    /** 商品列表（分页 + 排序） */
+    /** 商品列表（分页 + 排序，DB 层分页，不全量加载） */
     @SentinelResource(value = "product:list", fallback = "productListFallback")
     @GetMapping("/list")
     public R<PageResult<ProductDTO>> getProductList(
@@ -95,96 +97,104 @@ public class ProductController {
             @RequestParam(required = false) BigDecimal minPrice,
             @RequestParam(required = false) BigDecimal maxPrice) {
 
-        LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(Product::getStatus, 1); // 只查上架商品
-        wrapper.eq(Product::getAuditStatus, 1); // 且已审核通过
-        if (shopId != null) wrapper.eq(Product::getShopId, shopId); // 店铺主页店内筛选
-
-        // 按分类名称查询，包含子分类
+        // 解析分类（含子分类）ID
+        List<Long> catIds = null;
         if (category != null && !category.isBlank()) {
             Category cat = categoryService.getOne(new LambdaQueryWrapper<Category>()
                     .eq(Category::getName, category));
             if (cat != null) {
-                // 收集该分类及其所有子分类 ID
-                List<Long> catIds = new java.util.ArrayList<>();
+                catIds = new java.util.ArrayList<>();
                 catIds.add(cat.getId());
-                List<Category> allCats = categoryService.list();
-                collectChildIds(cat.getId(), allCats, catIds);
-                wrapper.in(Product::getCategoryId, catIds);
+                collectChildIds(cat.getId(), categoryService.list(), catIds);
             }
         }
-        if (brandId != null) wrapper.eq(Product::getBrandId, brandId);
+
+        // 关键词：优先 ES 全文匹配（中文分词）；ES 不可用时 service 返回 null 回退 LIKE
+        List<Long> esIds = null;
+        String likeKeyword = null;
         if (keyword != null && !keyword.isBlank()) {
-            wrapper.and(w -> w.like(Product::getName, keyword)
-                    .or().like(Product::getSubtitle, keyword));
-        }
-
-        // 价格来自 SKU，无法用 DB 层 orderBy/where 完成，取全量匹配商品后在内存中筛选/排序/分页
-        List<Product> allProducts = productService.list(wrapper);
-
-        // 批量查询 SKU 计算最低价
-        java.util.Map<Long, BigDecimal> minPriceMap = new java.util.HashMap<>();
-        if (!allProducts.isEmpty()) {
-            List<Long> productIds = allProducts.stream().map(Product::getId).collect(Collectors.toList());
-            List<Sku> allSkus = skuService.list(new LambdaQueryWrapper<Sku>()
-                    .in(Sku::getProductId, productIds));
-            for (Sku sku : allSkus) {
-                minPriceMap.merge(sku.getProductId(), sku.getPrice(),
-                        (old, val) -> old.compareTo(val) > 0 ? val : old);
+            esIds = productService.matchProductIdsByEs(keyword);
+            if (esIds != null) {
+                if (esIds.isEmpty()) {
+                    return R.ok(PageResult.of(java.util.Collections.emptyList(), 0L, pageNum, pageSize));
+                }
+            } else {
+                likeKeyword = keyword;
             }
         }
 
-        // 价格区间筛选（基于 SKU 最低价）
-        boolean priceFilter = minPrice != null || maxPrice != null;
-        List<Product> filtered = allProducts.stream().filter(p -> {
-            if (!priceFilter) return true;
-            BigDecimal mp = minPriceMap.get(p.getId());
-            if (mp == null) return false; // 无 SKU 价，价格过滤时排除
-            if (minPrice != null && mp.compareTo(minPrice) < 0) return false;
-            if (maxPrice != null && mp.compareTo(maxPrice) > 0) return false;
-            return true;
-        }).collect(Collectors.toList());
+        // 价格筛选/价格排序：SKU 最低价聚合 JOIN + DB 分页，避免全量商品进内存
+        boolean priceQuery = minPrice != null || maxPrice != null
+                || "price_asc".equals(sort) || "price_desc".equals(sort);
+        if (priceQuery) {
+            // 排序字段白名单拼接，无注入风险；无 SKU 价商品排末尾（与旧行为一致）
+            String orderBy;
+            if ("price_asc".equals(sort)) {
+                orderBy = "m.min_price IS NULL, m.min_price ASC";
+            } else if ("price_desc".equals(sort)) {
+                orderBy = "m.min_price IS NULL, m.min_price DESC";
+            } else if ("sales".equals(sort)) {
+                orderBy = "p.sales_count DESC";
+            } else if ("new".equals(sort)) {
+                orderBy = "p.created_at DESC";
+            } else {
+                orderBy = "p.sales_count DESC, p.created_at DESC";
+            }
+            com.baomidou.mybatisplus.core.metadata.IPage<ProductWithPrice> pricePage =
+                    productService.pageWithMinPrice(new Page<>(pageNum, pageSize),
+                            shopId, brandId, catIds, esIds, likeKeyword, minPrice, maxPrice, orderBy);
+            List<ProductDTO> dtoList = pricePage.getRecords().stream().map(p -> {
+                ProductDTO dto = new ProductDTO();
+                BeanUtils.copyProperties(p, dto);
+                dto.setMinPrice(p.getMinPrice());
+                return dto;
+            }).collect(Collectors.toList());
+            return R.ok(PageResult.of(dtoList, pricePage.getTotal(), pageNum, pageSize));
+        }
 
-        // 排序（价格排序 null 值排末尾）
-        java.util.Comparator<Product> comparator;
+        // 常规场景：DB 分页（内存占用 O(pageSize)），SKU 最低价只查当页商品
+        LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Product::getStatus, 1); // 只查上架商品
+        wrapper.eq(Product::getAuditStatus, 1); // 且已审核通过
+        if (shopId != null) wrapper.eq(Product::getShopId, shopId); // 店铺主页店内筛选
+        if (catIds != null) wrapper.in(Product::getCategoryId, catIds);
+        if (brandId != null) wrapper.eq(Product::getBrandId, brandId);
+        if (esIds != null) {
+            wrapper.in(Product::getId, esIds);
+        } else if (likeKeyword != null) {
+            final String kw = likeKeyword;
+            wrapper.and(w -> w.like(Product::getName, kw)
+                    .or().like(Product::getSubtitle, kw));
+        }
         if ("sales".equals(sort)) {
-            comparator = java.util.Comparator.comparing(
-                    Product::getSalesCount, java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())).reversed();
+            wrapper.orderByDesc(Product::getSalesCount);
         } else if ("new".equals(sort)) {
-            comparator = java.util.Comparator.comparing(
-                    Product::getCreatedAt, java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())).reversed();
-        } else if ("price_asc".equals(sort)) {
-            comparator = java.util.Comparator.comparing(
-                    p -> minPriceMap.get(p.getId()), java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder()));
-        } else if ("price_desc".equals(sort)) {
-            comparator = java.util.Comparator.comparing(
-                    (Product p) -> minPriceMap.get(p.getId()), java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())).reversed();
+            wrapper.orderByDesc(Product::getCreatedAt);
         } else {
             // default（综合）：销量优先，再按创建时间
-            comparator = java.util.Comparator.comparing(
-                            Product::getSalesCount, java.util.Comparator.nullsLast(java.util.Comparator.<Integer>naturalOrder())).reversed()
-                    .thenComparing(java.util.Comparator.comparing(
-                            Product::getCreatedAt, java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())).reversed());
+            wrapper.orderByDesc(Product::getSalesCount).orderByDesc(Product::getCreatedAt);
         }
-        filtered.sort(comparator);
 
-        long total = filtered.size();
+        Page<Product> result = productService.page(new Page<>(pageNum, pageSize), wrapper);
+        List<Product> records = result.getRecords();
 
-        // 手动分页
-        int fromIndex = Math.max(0, (pageNum - 1) * pageSize);
-        int toIndex = Math.min(filtered.size(), fromIndex + pageSize);
-        List<Product> pageProducts = fromIndex >= filtered.size()
-                ? java.util.Collections.emptyList()
-                : filtered.subList(fromIndex, toIndex);
+        // 只查当页商品的 SKU 最低价（展示用）
+        java.util.Map<Long, BigDecimal> minPriceMap = new java.util.HashMap<>();
+        if (!records.isEmpty()) {
+            List<Long> pageIds = records.stream().map(Product::getId).collect(Collectors.toList());
+            skuService.list(new LambdaQueryWrapper<Sku>().in(Sku::getProductId, pageIds))
+                    .forEach(sku -> minPriceMap.merge(sku.getProductId(), sku.getPrice(),
+                            (old, val) -> old.compareTo(val) > 0 ? val : old));
+        }
 
-        List<ProductDTO> dtoList = pageProducts.stream().map(p -> {
+        List<ProductDTO> dtoList = records.stream().map(p -> {
             ProductDTO dto = new ProductDTO();
             BeanUtils.copyProperties(p, dto);
             dto.setMinPrice(minPriceMap.get(p.getId()));
             return dto;
         }).collect(Collectors.toList());
 
-        return R.ok(PageResult.of(dtoList, total, pageNum, pageSize));
+        return R.ok(PageResult.of(dtoList, result.getTotal(), pageNum, pageSize));
     }
 
     /** 商品详情 */

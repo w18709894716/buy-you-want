@@ -14,10 +14,13 @@ import com.byw.promotion.service.SeckillService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -33,12 +36,23 @@ public class SeckillServiceImpl implements SeckillService {
     private final SeckillActivityItemMapper seckillActivityItemMapper;
     private final SeckillOrderMapper seckillOrderMapper;
     private final RedisUtil redisUtil;
+    private final StringRedisTemplate stringRedisTemplate;
     private final RocketMQTemplate rocketMQTemplate;
 
     /** item 维度的秒杀库存 key */
     private static final String SECKILL_STOCK_KEY = "seckill:stock:item:";
     /** item 维度的用户限购 key */
     private static final String SECKILL_USER_KEY = "seckill:user:item:";
+
+    /** Lua 原子预扣：限购校验 + 库存校验 + 扣库存 + 标记已购一个原子操作完成，返回 0=成功 1=已抢购过 2=库存不足 */
+    private static final DefaultRedisScript<Long> SECKILL_DEDUCT_SCRIPT = new DefaultRedisScript<>("""
+            if redis.call('exists', KEYS[2]) == 1 then return 1 end
+            local stock = tonumber(redis.call('get', KEYS[1]) or '0')
+            if stock <= 0 then return 2 end
+            redis.call('decr', KEYS[1])
+            redis.call('set', KEYS[2], '1')
+            return 0
+            """, Long.class);
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -130,25 +144,18 @@ public class SeckillServiceImpl implements SeckillService {
             throw new BusinessException("秒杀商品不存在");
         }
 
-        // 4. Redis检查用户是否已抢购过该商品（每人每商品限购一件）
+        // 4. Lua 原子预扣（限购 + 库存校验 + 扣库存 + 标记已购，原子完成）
+        String stockKey = SECKILL_STOCK_KEY + itemId;
         String userKey = SECKILL_USER_KEY + itemId + ":" + userId;
-        if (Boolean.TRUE.equals(redisUtil.hasKey(userKey))) {
+        Long deductResult = stringRedisTemplate.execute(SECKILL_DEDUCT_SCRIPT, Arrays.asList(stockKey, userKey));
+        if (deductResult != null && deductResult == 1L) {
             throw new BusinessException("您已抢购过该商品");
         }
-
-        // 5. Redis扣减item库存
-        String stockKey = SECKILL_STOCK_KEY + itemId;
-        Long stock = redisUtil.increment(stockKey, -1);
-        if (stock < 0) {
-            // 库存不足，回退
-            redisUtil.increment(stockKey, 1);
+        if (deductResult == null || deductResult == 2L) {
             throw new BusinessException("库存不足");
         }
 
-        // 6. 标记用户已抢购
-        redisUtil.set(userKey, "1");
-
-        // 7. 创建秒杀订单记录
+        // 5. 创建秒杀订单记录
         SeckillOrder seckillOrder = new SeckillOrder();
         seckillOrder.setActivityId(activityId);
         seckillOrder.setItemId(itemId);
@@ -156,11 +163,11 @@ public class SeckillServiceImpl implements SeckillService {
         seckillOrder.setStatus(0); // 待支付
         seckillOrderMapper.insert(seckillOrder);
 
-        // 8. 更新数据库item库存
+        // 6. 更新数据库item库存
         item.setAvailableStock(item.getAvailableStock() - 1);
         seckillActivityItemMapper.updateById(item);
 
-        // 9. 发送RocketMQ消息异步创建订单
+        // 7. 发送RocketMQ消息异步创建订单
         Map<String, Object> event = new HashMap<>();
         event.put("activityId", activityId);
         event.put("itemId", itemId);

@@ -20,6 +20,7 @@ import com.byw.product.entity.Banner;
 import com.byw.product.entity.Category;
 import com.byw.product.entity.Product;
 import com.byw.product.entity.Sku;
+import com.byw.product.es.ProductEsService;
 import com.byw.product.mapper.SkuMapper;
 import com.byw.product.service.BrandService;
 import com.byw.product.service.BannerService;
@@ -53,6 +54,7 @@ public class ProductFeignImpl implements ProductFeignClient {
     private final BrandService brandService;
     private final BannerService bannerService;
     private final ShopFeignClient shopFeignClient;
+    private final ProductEsService productEsService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
@@ -132,6 +134,11 @@ public class ProductFeignImpl implements ProductFeignClient {
                 new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Product>()
                         .eq(Product::getId, productId)
                         .setSql("sales_count = IFNULL(sales_count, 0) + " + qty)));
+        // 销量变化同步 ES（sales 排序维度）
+        for (Long productId : productQty.keySet()) {
+            Product p = productService.getById(productId);
+            if (p != null) productEsService.upsert(p);
+        }
         return R.ok(true);
     }
 
@@ -215,6 +222,7 @@ public class ProductFeignImpl implements ProductFeignClient {
         productService.save(product);
         // 保存 SKU（携带归属店铺，保证多租户维度一致）
         saveSkus(product.getId(), product.getShopId(), productDTO.getSkus());
+        productEsService.upsert(product);
         return R.ok(product.getId());
     }
 
@@ -241,6 +249,7 @@ public class ProductFeignImpl implements ProductFeignClient {
         productService.updateById(product);
         // 更新 SKU：按 specData 匹配，已有则更新，没有则新增
         updateSkus(productId, product.getShopId(), productDTO.getSkus());
+        productEsService.upsert(product);
         return R.ok(true);
     }
 
@@ -376,7 +385,9 @@ public class ProductFeignImpl implements ProductFeignClient {
                 return R.fail("无权操作其他店铺的商品");
             }
         }
-        return R.ok(productService.removeById(productId));
+        boolean removed = productService.removeById(productId);
+        if (removed) productEsService.remove(productId);
+        return R.ok(removed);
     }
 
     @Override
@@ -396,6 +407,7 @@ public class ProductFeignImpl implements ProductFeignClient {
         }
         product.setStatus(willOnShelf ? 1 : 2);
         productService.updateById(product);
+        productEsService.upsert(product);
         return R.ok();
     }
 
@@ -444,6 +456,7 @@ public class ProductFeignImpl implements ProductFeignClient {
             product.setRejectReason(null);
         }
         productService.updateById(product);
+        productEsService.upsert(product);
         return R.ok(true);
     }
 
@@ -461,6 +474,7 @@ public class ProductFeignImpl implements ProductFeignClient {
         product.setRejectReason(null);
         product.setStatus(2);
         productService.updateById(product);
+        productEsService.upsert(product);
         return R.ok(true);
     }
 
