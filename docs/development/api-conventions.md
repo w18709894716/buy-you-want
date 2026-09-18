@@ -77,8 +77,9 @@ R.fail(ResultCode)        // 失败，使用枚举
 - **9xxx**: 系统级
 
 ## 认证与权限（RBAC）
-- 登录成功后返回 JWT Token，请求时携带：`Authorization: Bearer {token}`
-- Gateway 的 AuthGlobalFilter 统一软认证：解析 Token 后将用户身份（用户ID / 角色 / shop_id / **用户类型 X-User-Type**）通过请求头透传给下游服务；剥离外部伪造的身份头
+- 登录成功后返回 Sa-Token 会话 Token，请求时携带：`Authorization: Bearer {token}`
+- 会话统一存 Redis（sa-token-redis-jackson），登出即删、旧 token 立即失效
+- Gateway 的 AuthGlobalFilter 统一软认证：通过 Sa-Token 解析 Token 后将用户身份（用户ID / 角色 / shop_id / **用户类型 X-User-Type**）通过请求头透传给下游服务；剥离外部伪造的身份头
 - 白名单路径（如 `/auth/login`、`/auth/register`）无需 Token
 
 ### 用户类型 X-User-Type

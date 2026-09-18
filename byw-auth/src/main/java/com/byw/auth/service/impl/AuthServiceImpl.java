@@ -1,5 +1,7 @@
 package com.byw.auth.service.impl;
 
+import cn.dev33.satoken.session.SaSession;
+import cn.dev33.satoken.stp.StpUtil;
 import com.byw.api.user.UserFeignClient;
 import com.byw.api.user.RbacFeignClient;
 import com.byw.api.user.dto.SysUserDTO;
@@ -15,7 +17,6 @@ import com.byw.common.core.exception.BusinessException;
 import com.byw.common.core.exception.ResultCode;
 import com.byw.common.core.result.R;
 import com.byw.common.redis.util.RedisUtil;
-import com.byw.common.security.util.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -34,7 +35,6 @@ public class AuthServiceImpl implements AuthService {
     private final UserFeignClient userFeignClient;
     private final RbacFeignClient rbacFeignClient;
     private final ShopFeignClient shopFeignClient;
-    private final JwtUtil jwtUtil;
     private final RedisUtil redisUtil;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
@@ -62,11 +62,10 @@ public class AuthServiceImpl implements AuthService {
         }
 
         // t_user 已回归纯 C 端会员（无 role 字段），固定角色 user、userType=c，不写权限集
-        String role = "user";
-        String token = jwtUtil.generateToken(user.getId(), user.getUsername(), role, null, CommonConstants.USER_TYPE_C);
-
-        // Store token in Redis for validation
-        redisUtil.set("auth:token:" + token, user.getId(), 24, TimeUnit.HOURS);
+        String role = CommonConstants.ROLE_USER;
+        StpUtil.login(user.getId());
+        writeAuthSession(user.getUsername(), role, null, CommonConstants.USER_TYPE_C);
+        String token = StpUtil.getTokenValue();
 
         LoginResponse resp = new LoginResponse(token, user.getId(), user.getUsername(),
                 user.getNickname(), user.getAvatar(), role, null);
@@ -91,9 +90,9 @@ public class AuthServiceImpl implements AuthService {
         }
 
         // role 统一为平台管理员（标识平台员工身份），细粒度权限由 @RequirePerm + userType 驱动
-        String token = jwtUtil.generateToken(user.getId(), user.getUsername(),
-                CommonConstants.ROLE_PLATFORM_ADMIN, null, CommonConstants.USER_TYPE_SYS);
-        redisUtil.set("auth:token:" + token, user.getId(), 24, TimeUnit.HOURS);
+        StpUtil.login(user.getId());
+        writeAuthSession(user.getUsername(), CommonConstants.ROLE_PLATFORM_ADMIN, null, CommonConstants.USER_TYPE_SYS);
+        String token = StpUtil.getTokenValue();
 
         // 聚合权限标识写入 Redis（与 token 同 24h TTL）
         List<String> perms = rbacFeignClient.listPermCodes(USER_TYPE_SYS, user.getId()).getData();
@@ -129,11 +128,10 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException("商家账号未绑定店铺");
         }
 
-        String role = merchant.getRole() != null ? merchant.getRole() : "merchant_owner";
-        String token = jwtUtil.generateToken(merchant.getId(), merchant.getUsername(), role,
-                merchant.getShopId(), CommonConstants.USER_TYPE_MERCHANT);
-
-        redisUtil.set("auth:token:" + token, merchant.getId(), 24, TimeUnit.HOURS);
+        String role = merchant.getRole() != null ? merchant.getRole() : CommonConstants.ROLE_MERCHANT_OWNER;
+        StpUtil.login(merchant.getId());
+        writeAuthSession(merchant.getUsername(), role, merchant.getShopId(), CommonConstants.USER_TYPE_MERCHANT);
+        String token = StpUtil.getTokenValue();
 
         // 主账号（parentId=NULL）拥有全部商家权限（通配 *）；子账号按角色聚合权限
         List<String> perms;
@@ -185,22 +183,25 @@ public class AuthServiceImpl implements AuthService {
     public LoginResponse refreshToken(String authHeader) {
         String token = authHeader.startsWith("Bearer ") ? authHeader.substring(7) : authHeader;
 
-        if (!jwtUtil.validateToken(token)) {
+        Object loginId = StpUtil.getLoginIdByToken(token);
+        if (loginId == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED);
         }
+        Long userId = Long.valueOf(loginId.toString());
+        SaSession session = StpUtil.getSessionByLoginId(userId);
+        if (session == null) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED);
+        }
+        String username = session.getString(CommonConstants.SESSION_USERNAME);
+        String role = session.getString(CommonConstants.SESSION_ROLE);
+        Long shopId = session.getLong(CommonConstants.SESSION_SHOP_ID);
+        String userType = session.getString(CommonConstants.SESSION_USER_TYPE);
 
-        Long userId = jwtUtil.getUserId(token);
-        String username = jwtUtil.getUsername(token);
-        String role = jwtUtil.getRole(token);
-        Long shopId = jwtUtil.getShopId(token);
-        String userType = jwtUtil.getUserType(token);
-
-        // Delete old token
-        redisUtil.delete("auth:token:" + token);
-
-        // Generate new token
-        String newToken = jwtUtil.generateToken(userId, username, role, shopId, userType);
-        redisUtil.set("auth:token:" + newToken, userId, 24, TimeUnit.HOURS);
+        // 旧 token 换新：注销旧 token 后重新登录并写回会话
+        StpUtil.logoutByTokenValue(token);
+        StpUtil.login(userId);
+        writeAuthSession(username, role, shopId, userType);
+        String newToken = StpUtil.getTokenValue();
 
         // 同步续期权限集 TTL（C 端会员无权限集）
         if (userType != null && !CommonConstants.USER_TYPE_C.equals(userType)) {
@@ -219,15 +220,33 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public void logout(String authHeader) {
         String token = authHeader.startsWith("Bearer ") ? authHeader.substring(7) : authHeader;
-        redisUtil.delete("auth:token:" + token);
-        // 同步删除权限集 key
-        if (jwtUtil.validateToken(token)) {
-            String userType = jwtUtil.getUserType(token);
-            Long userId = jwtUtil.getUserId(token);
-            if (userType != null && userId != null && !CommonConstants.USER_TYPE_C.equals(userType)) {
-                redisUtil.delete(CommonConstants.AUTH_PERMS_KEY_PREFIX + userType + ":" + userId);
-            }
+        Object loginId = StpUtil.getLoginIdByToken(token);
+        if (loginId == null) {
+            // token 已失效（已登出/过期），无需重复处理
+            return;
         }
+        Long userId = Long.valueOf(loginId.toString());
+        SaSession session = StpUtil.getSessionByLoginId(userId);
+        String userType = session == null ? null : session.getString(CommonConstants.SESSION_USER_TYPE);
+
+        // 登出：删除 Redis 会话，旧 token 立即失效
+        StpUtil.logoutByTokenValue(token);
+
+        // 同步删除权限集 key
+        if (userType != null && !CommonConstants.USER_TYPE_C.equals(userType)) {
+            redisUtil.delete(CommonConstants.AUTH_PERMS_KEY_PREFIX + userType + ":" + userId);
+        }
+    }
+
+    /** 将身份属性写入账号 Session，供网关 / IM 读取后注入身份头 */
+    private void writeAuthSession(String username, String role, Long shopId, String userType) {
+        SaSession session = StpUtil.getSession();
+        session.set(CommonConstants.SESSION_USERNAME, username);
+        session.set(CommonConstants.SESSION_ROLE, role);
+        if (shopId != null) {
+            session.set(CommonConstants.SESSION_SHOP_ID, shopId);
+        }
+        session.set(CommonConstants.SESSION_USER_TYPE, userType);
     }
 
     /** 将聚合后的权限标识写入 Redis Set（与 token 同 24h TTL） */

@@ -1,8 +1,8 @@
 package com.byw.gateway.filter;
 
+import cn.dev33.satoken.session.SaSession;
+import cn.dev33.satoken.stp.StpUtil;
 import com.byw.common.core.constant.CommonConstants;
-import com.byw.common.security.util.JwtUtil;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
@@ -21,10 +21,7 @@ import reactor.core.publisher.Mono;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class AuthGlobalFilter implements GlobalFilter, Ordered {
-
-    private final JwtUtil jwtUtil;
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
@@ -44,24 +41,30 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             String token = authHeader.substring(7);
-            if (jwtUtil.validateToken(token)) {
-                Long userId = jwtUtil.getUserId(token);
-                String username = jwtUtil.getUsername(token);
-                String role = jwtUtil.getRole(token);
-                Long shopId = jwtUtil.getShopId(token);
-                String userType = jwtUtil.getUserType(token);
+            try {
+                Object loginId = StpUtil.getLoginIdByToken(token);
+                SaSession session = loginId == null ? null : StpUtil.getSessionByLoginId(loginId);
+                if (session != null) {
+                    String username = session.getString(CommonConstants.SESSION_USERNAME);
+                    String role = session.getString(CommonConstants.SESSION_ROLE);
+                    Long shopId = session.getLong(CommonConstants.SESSION_SHOP_ID);
+                    String userType = session.getString(CommonConstants.SESSION_USER_TYPE);
 
-                builder.header(CommonConstants.HEADER_USER_ID, String.valueOf(userId))
-                        .header(CommonConstants.HEADER_USERNAME, username);
-                if (role != null) {
-                    builder.header(CommonConstants.HEADER_USER_ROLE, role);
+                    builder.header(CommonConstants.HEADER_USER_ID, loginId.toString())
+                            .header(CommonConstants.HEADER_USERNAME, username);
+                    if (role != null) {
+                        builder.header(CommonConstants.HEADER_USER_ROLE, role);
+                    }
+                    if (shopId != null) {
+                        builder.header(CommonConstants.HEADER_SHOP_ID, String.valueOf(shopId));
+                    }
+                    if (userType != null) {
+                        builder.header(CommonConstants.HEADER_USER_TYPE, userType);
+                    }
                 }
-                if (shopId != null) {
-                    builder.header(CommonConstants.HEADER_SHOP_ID, String.valueOf(shopId));
-                }
-                if (userType != null) {
-                    builder.header(CommonConstants.HEADER_USER_TYPE, userType);
-                }
+            } catch (Exception e) {
+                // token 被顶下线/踢下线/会话异常等，按游客放行（软认证语义）
+                log.warn("网关 token 校验失败，按游客放行：err={}", e.getMessage());
             }
         }
 

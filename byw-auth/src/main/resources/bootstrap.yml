@@ -36,10 +36,15 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
 
-byw:
-  jwt:
-    secret: buyyouwant-secret-key-must-be-at-least-256-bits-long-for-hs256
-    expiration: 86400000
+sa-token:
+  token-name: Authorization
+  token-prefix: Bearer
+  timeout: 86400
+  is-concurrent: true   # 保持现状：允许多设备同时在线
+  is-share: false       # 每次登录发新 token
+  is-read-cookie: false
+  is-read-header: true
+  token-style: uuid
 
 springdoc:
   api-docs:

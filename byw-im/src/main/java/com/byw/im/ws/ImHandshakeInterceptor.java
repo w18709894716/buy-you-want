@@ -1,8 +1,9 @@
 package com.byw.im.ws;
 
+import cn.dev33.satoken.session.SaSession;
+import cn.dev33.satoken.stp.StpUtil;
 import com.byw.common.core.constant.CommonConstants;
 import com.byw.common.redis.util.RedisUtil;
-import com.byw.common.security.util.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.server.ServerHttpRequest;
@@ -18,7 +19,7 @@ import java.util.Map;
 
 /**
  * WebSocket 握手鉴权：浏览器 WebSocket 无法自定义请求头，
- * 故前端以 {@code ws://gateway/ws/im?token=<JWT>} 方式传入 token，
+ * 故前端以 {@code ws://gateway/ws/im?token=<token>} 方式传入 token，
  * 此处解析并校验，将身份写入 session 属性供 Handler 使用。非法 token 拒绝握手。
  */
 @Slf4j
@@ -26,7 +27,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ImHandshakeInterceptor implements HandshakeInterceptor {
 
-    private final JwtUtil jwtUtil;
     private final RedisUtil redisUtil;
 
     /** 客服工作台权限码（与商家端菜单 perm_code / 前端路由 meta.perm 一致） */
@@ -36,17 +36,30 @@ public class ImHandshakeInterceptor implements HandshakeInterceptor {
     public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response,
                                    WebSocketHandler wsHandler, Map<String, Object> attributes) {
         String token = resolveToken(request.getURI());
-        if (token == null || !jwtUtil.validateToken(token)) {
-            log.warn("IM 握手被拒绝：token 缺失或非法");
+        if (token == null) {
+            log.warn("IM 握手被拒绝：token 缺失");
             return false;
         }
-        Long userId = jwtUtil.getUserId(token);
-        String role = jwtUtil.getRole(token);
-        Long shopId = jwtUtil.getShopId(token);
-        if (userId == null) {
-            log.warn("IM 握手被拒绝：token 无 userId");
+        Long userId;
+        SaSession session;
+        try {
+            Object loginId = StpUtil.getLoginIdByToken(token);
+            if (loginId == null) {
+                log.warn("IM 握手被拒绝：token 无效或已过期");
+                return false;
+            }
+            userId = Long.valueOf(loginId.toString());
+            session = StpUtil.getSessionByLoginId(userId);
+        } catch (Exception e) {
+            log.warn("IM 握手被拒绝：token 校验失败, err={}", e.getMessage());
             return false;
         }
+        if (session == null) {
+            log.warn("IM 握手被拒绝：账号会话缺失, userId={}", userId);
+            return false;
+        }
+        String role = session.getString(CommonConstants.SESSION_ROLE);
+        Long shopId = session.getLong(CommonConstants.SESSION_SHOP_ID);
         if (role == null) {
             role = CommonConstants.ROLE_USER;
         }
@@ -66,9 +79,9 @@ public class ImHandshakeInterceptor implements HandshakeInterceptor {
             attributes.put(SessionManager.ATTR_SHOP_ID, shopId);
         }
         attributes.put(SessionManager.ATTR_PRINCIPAL, principal);
-        // 商家角色记录客服姓名（JWT 中的 username），用于消息 senderName
+        // 商家角色记录客服姓名（会话中的 username），用于消息 senderName
         if (merchant) {
-            String staffName = jwtUtil.getUsername(token);
+            String staffName = session.getString(CommonConstants.SESSION_USERNAME);
             attributes.put(SessionManager.ATTR_STAFF_NAME, staffName);
             // 校验客服接待权限：无权限的商家账号仅维持连接，不参与自动分配
             attributes.put(SessionManager.ATTR_CAN_SERVE, canServeIm(userId));

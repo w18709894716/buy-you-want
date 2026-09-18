@@ -26,6 +26,20 @@
             <groupId>com.byw</groupId>
             <artifactId>byw-common-security</artifactId>
         </dependency>
+        <!-- Sa-Token：登录签发/登出，会话存 Redis 供网关与 IM 校验 -->
+        <dependency>
+            <groupId>cn.dev33</groupId>
+            <artifactId>sa-token-spring-boot3-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.dev33</groupId>
+            <artifactId>sa-token-redis-jackson</artifactId>
+        </dependency>
+        <!-- sa-token-redis-jackson 官方要求配套（Redis 连接池） -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-pool2</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.byw</groupId>
             <artifactId>byw-common-swagger</artifactId>

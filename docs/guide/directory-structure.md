@@ -190,9 +190,10 @@ byw-xxx/
 - `BaseMapperX` 扩展 Mapper 接口
 
 ### byw-common-security
-- `JwtUtil` JWT 签发/解析/验证工具
 - `UserContext` 用户上下文（ThreadLocal 存储当前登录用户信息）
-- `AuthInterceptor` 鉴权拦截器（从 Header 解析 Token 并注入 UserContext）
+- `AuthInterceptor` 鉴权拦截器（从网关透传的身份头重建 UserContext）
+- 鉴权注解（@Public / @RequirePerm / @RequireRole / @RequireAdmin）与 `PermissionChecker`；
+  Token 签发/校验由 Sa-Token 在 byw-auth / byw-gateway / byw-im 中完成
 
 ### byw-common-rocketmq
 - RocketMQ 生产者配置（RocketMQTemplate）

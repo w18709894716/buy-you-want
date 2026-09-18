@@ -24,13 +24,17 @@ public class CommonConstants {
     // 登录后聚合权限标识写入 Redis 的 key 前缀：auth:perms:{userType}:{userId}
     public static final String AUTH_PERMS_KEY_PREFIX = "auth:perms:";
 
+    // ========== Sa-Token 账号 Session 属性 key（byw-auth 写入，byw-gateway / byw-im 读取） ==========
+    public static final String SESSION_USERNAME = "username";
+    public static final String SESSION_ROLE = "role";
+    public static final String SESSION_SHOP_ID = "shopId";
+    public static final String SESSION_USER_TYPE = "userType";
+
     public static final int STATUS_NORMAL = 1;
     public static final int STATUS_DISABLED = 0;
     public static final int STATUS_DELETED = -1;
 
     public static final String DATE_FORMAT = "yyyy-MM-dd HH:mm:ss";
-
-    public static final long TOKEN_EXPIRE_MS = 24 * 60 * 60 * 1000L;
 
     private CommonConstants() {}
 }
