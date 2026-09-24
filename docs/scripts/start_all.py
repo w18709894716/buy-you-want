@@ -34,8 +34,20 @@ PORTS = {
     "byw-im": 8095,
 }
 
+# 前端服务：名称 -> (相对 ROOT 的工作目录, dev server 端口)
+FRONTEND_SERVICES = {
+    "byw-web": ("byw-frontend/byw-web", 3000),
+    "byw-admin-web": ("byw-frontend/byw-admin-web", 5174),
+    "byw-merchant-web": ("byw-frontend/byw-merchant-web", 5175),
+}
+
 # 全局变量：存储正在运行的服务进程
 running_services = {}  # {name: proc}
+
+
+def frontend_dir(name: str) -> str:
+    """返回前端服务的绝对工作目录"""
+    return os.path.join(ROOT, *FRONTEND_SERVICES[name][0].split("/"))
 
 
 def ok(msg):
@@ -109,9 +121,8 @@ def stop_service(name: str) -> bool:
             del running_services[name]
         return True
     # 前端备用：通过端口查找
-    frontend_ports = {"byw-web": 3000, "byw-admin-web": 5174, "byw-merchant-web": 5175}
-    if name in frontend_ports:
-        port_pids = find_pids_by_port(frontend_ports[name])
+    if name in FRONTEND_SERVICES:
+        port_pids = find_pids_by_port(FRONTEND_SERVICES[name][1])
         for pid in port_pids:
             os.system(f"taskkill /PID {pid} /F /T >nul 2>&1")
         if port_pids:
@@ -177,7 +188,13 @@ def build_service(name: str) -> bool:
 
 
 def restart_service(name: str, skip_build: bool = False):
-    """重启单个服务（默认先编译打包）"""
+    """重启单个服务（后端默认先编译打包；前端无需编译，直接重启 dev server）"""
+    if name in FRONTEND_SERVICES:
+        print(f"\n  --- 重启 {name} ---")
+        stop_service(name)
+        time.sleep(1)
+        start_frontend(name, frontend_dir(name))
+        return
     if name not in ALL_JAVA_SERVICES:
         warn(f"未知服务: {name}")
         return
@@ -204,8 +221,7 @@ def show_status():
             status = "\033[33m外部运行\033[0m" if pids else "\033[37m未启动\033[0m"
         print(f"    {name:18} :{str(port):5}  {status}")
     # 前端
-    frontend = [("byw-web", 3000), ("byw-admin-web", 5174), ("byw-merchant-web", 5175)]
-    for name, port in frontend:
+    for name, (_, port) in FRONTEND_SERVICES.items():
         if name in running_services:
             proc = running_services[name]
             status = "\033[32m运行中\033[0m" if proc.poll() is None else "\033[31m已退出\033[0m"
@@ -220,9 +236,9 @@ def print_help():
     """打印帮助信息"""
     print("""
   \033[36m可用命令:\033[0m
-    \033[1mrestart <服务名> [--skip-build]\033[0m   重启指定服务（默认先编译打包）
-    \033[1mstop <服务名>\033[0m                    停止指定服务
-    \033[1mstart <服务名> [--skip-build]\033[0m    启动指定服务（默认先编译打包）
+    \033[1mrestart <服务名> [--skip-build]\033[0m   重启指定服务（后端默认先编译打包；前端直接重启 dev server）
+    \033[1mstop <服务名>\033[0m                    停止指定服务（后端 + 前端）
+    \033[1mstart <服务名> [--skip-build]\033[0m    启动指定服务（后端默认先编译打包；前端直接启动 dev server）
     \033[1mstatus\033[0m                           显示所有服务状态
     \033[1mlist\033[0m                             列出所有服务名
     \033[1mhelp\033[0m                             显示此帮助信息
@@ -232,9 +248,14 @@ def print_help():
   \033[36m示例:\033[0m
     restart byw-order              编译并重启订单服务
     restart byw-order --skip-build 跳过编译直接重启
+    restart byw-web                重启用户端前端 dev server
+    start byw-admin-web            启动管理端前端 dev server
 
-  \033[36m服务名列表:\033[0m
-    """ + ", ".join(ALL_JAVA_SERVICES))
+  \033[36m后端服务名:\033[0m
+    """ + ", ".join(ALL_JAVA_SERVICES) + """
+
+  \033[36m前端服务名:\033[0m
+    """ + ", ".join(FRONTEND_SERVICES.keys()))
 
 
 def launch_batch(names: list, label: str) -> list:
@@ -282,12 +303,8 @@ def main():
     # ===== 阶段 3: 前端 =====
     if not args.skip_frontend:
         stage("阶段 3/3 - 启动前端")
-        web_dir = os.path.join(ROOT, "byw-frontend", "byw-web")
-        admin_dir = os.path.join(ROOT, "byw-frontend", "byw-admin-web")
-        merchant_dir = os.path.join(ROOT, "byw-frontend", "byw-merchant-web")
-        all_procs.append(start_frontend("byw-web", web_dir))
-        all_procs.append(start_frontend("byw-admin-web", admin_dir))
-        all_procs.append(start_frontend("byw-merchant-web", merchant_dir))
+        for name in FRONTEND_SERVICES:
+            all_procs.append(start_frontend(name, frontend_dir(name)))
     else:
         stage("阶段 3/3 - 前端 (已跳过)")
 
@@ -341,7 +358,7 @@ def interactive_mode(all_procs: list):
                 for name in list(running_services.keys()):
                     stop_service(name)
                 # 前端备用停止：通过端口查找（以防 npm 修改窗口标题导致未匹配）
-                for port, name in [(3000, "byw-web"), (5174, "byw-admin-web"), (5175, "byw-merchant-web")]:
+                for name, (_, port) in FRONTEND_SERVICES.items():
                     if name not in running_services:
                         pids = find_pids_by_port(port)
                         for pid in pids:
@@ -362,9 +379,8 @@ def interactive_mode(all_procs: list):
                 for name in ALL_JAVA_SERVICES:
                     print(f"    {name} (:{PORTS[name]})")
                 print("\n  \033[36m前端:\033[0m")
-                print("    byw-web (:3000)")
-                print("    byw-admin-web (:5174)")
-                print("    byw-merchant-web (:5175)")
+                for name, (_, port) in FRONTEND_SERVICES.items():
+                    print(f"    {name} (:{port})")
                 print()
 
             elif action == "restart" and len(parts) >= 2:
@@ -377,7 +393,9 @@ def interactive_mode(all_procs: list):
             elif action == "start" and len(parts) >= 2:
                 name = parts[1]
                 skip = "--skip-build" in parts
-                if name not in ALL_JAVA_SERVICES:
+                if name in FRONTEND_SERVICES:
+                    start_frontend(name, frontend_dir(name))
+                elif name not in ALL_JAVA_SERVICES:
                     warn(f"未知服务: {name}")
                 else:
                     if not skip:
