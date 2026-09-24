@@ -54,10 +54,11 @@ export const useUserStore = defineStore('user', {
     /** 获取用户信息 */
     async getUserInfo() {
       try {
-        const data = await get<{ userId: number; username: string; nickname: string; avatar: string }>(
+        // /user/me 返回的是后端 User 实体，主键字段名是 id（没有 userId）
+        const data = await get<{ id: number; username: string; nickname: string; avatar: string }>(
           '/user/me'
         )
-        this.userId = data.userId
+        this.userId = data.id
         this.username = data.username
         this.nickname = data.nickname
         this.avatar = data.avatar || ''

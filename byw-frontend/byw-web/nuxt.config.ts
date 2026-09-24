@@ -35,6 +35,12 @@ export default defineNuxtConfig({
       merchantWebUrl: process.env.NUXT_PUBLIC_MERCHANT_WEB_URL || 'http://localhost:5175',
       // 客服 IM WebSocket 网关地址（nitro devProxy 不支持 ws，需直连网关）
       wsBase: process.env.NUXT_PUBLIC_WS_BASE || 'ws://localhost:8080',
+      // AI Agent 中间件接入配置（systemId / apiKey 由中间件 register-system 脚本生成）
+      agent: {
+        endpoint: process.env.NUXT_PUBLIC_AGENT_ENDPOINT || 'ws://localhost:3100/ws',
+        systemId: process.env.NUXT_PUBLIC_AGENT_SYSTEM_ID || '',
+        apiKey: process.env.NUXT_PUBLIC_AGENT_API_KEY || '',
+      },
     },
   },
 
