@@ -61,7 +61,7 @@ docker build -f deploy/Dockerfile --build-arg MODULE=byw-gateway -t byw/byw-gate
 
 | 项 | 说明 |
 |---|---|
-| `BYW_SECURITY_INTERNAL_SECRET` | 网关与服务之间的身份头签名密钥，**必须**显式设置（默认值是开发用的） |
+| `BYW_SECURITY_INTERNAL_SECRET` | **必填**：网关与服务之间的身份头签名 / 服务间调用凭证密钥。缺失或仍等于源码里的开发默认值时，网关和业务服务**启动即失败**（fail-closed，无兜底默认值）。可由 Nacos `byw-common.yml` 的 `byw.security.internal-secret` 提供，二者有其一即可 |
 | `BYW_PAY_MOCK_ENABLED=false` | 关闭模拟支付回调；否则 `/pay/mock/**` 可被登录用户触发 |
 | `BYW_PAY_CALLBACK_SECRET` | 真实渠道回调验签密钥；**留空则所有渠道回调都会被拒绝**（fail-closed） |
 | `JASYPT_ENCRYPTOR_PASSWORD` | **必填**：配置里的 `ENC(...)`（数据库密码、内部签名密钥）靠它解密；缺失时服务启动直接失败。见 [jasypt/README.md](jasypt/README.md) |

@@ -25,7 +25,7 @@
 
 | 变量 | 作用 | 不设置的后果 |
 |---|---|---|
-| `BYW_SECURITY_INTERNAL_SECRET` | 身份头签名 / 服务间调用凭证的共享密钥 | Nacos `byw-common.yml` 已放轮换后的随机密钥（ENC 密文），正常发布配置即可；**只有连 Nacos 共享配置也没生效时**才会退回源码内置默认值，此时直连服务端口伪造身份头的防护形同虚设（启动会 warn） |
+| `BYW_SECURITY_INTERNAL_SECRET` | 身份头签名 / 服务间调用凭证的共享密钥 | **启动直接失败**（fail-closed）。`@Value` 已不留兜底默认值，且显式配成源码里的 `DEFAULT_SECRET` 也会被 `InternalSignature.requireUsableSecret` 拒掉——那个值公开在仓库里，用它等于没有密钥。正常由 Nacos `byw-common.yml` 提供（已放轮换后的随机密钥 ENC 密文），发布配置即可 |
 | `BYW_SNOWFLAKE_WORKER_ID` | 每实例唯一的雪花 workerId（0-31） | 多实例可能生成重复订单号/支付单号（启动会 warn） |
 | `BYW_CORS_ALLOWED_ORIGINS` | 允许的前端来源 | 默认只放行 localhost 三个端口，生产前端会被浏览器拦截 |
 | `BYW_API_DOCS_ENABLED=false` | 关闭 API 文档 | 全站接口结构对外可见 |

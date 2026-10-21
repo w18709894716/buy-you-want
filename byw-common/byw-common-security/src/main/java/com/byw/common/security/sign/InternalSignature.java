@@ -1,7 +1,5 @@
 package com.byw.common.security.sign;
 
-import org.slf4j.Logger;
-
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.net.URLDecoder;
@@ -27,7 +25,10 @@ public final class InternalSignature {
     /** 配置项名，可用环境变量 BYW_SECURITY_INTERNAL_SECRET 覆盖 */
     public static final String PROPERTY_NAME = "byw.security.internal-secret";
 
-    /** 未配置时使用的开发默认密钥，仅保证本地开箱即用，生产必须覆盖 */
+    /**
+     * 历史开发默认值。<b>不再作为兜底值使用</b>（见 {@link #requireUsableSecret}）：
+     * 它公开在源码里，谁都能拿去自签身份头，因此现在的唯一用途是启动时把它拉黑。
+     */
     public static final String DEFAULT_SECRET = "byw-internal-gateway-secret";
 
     private static final String ALGORITHM = "HmacSHA256";
@@ -108,10 +109,26 @@ public final class InternalSignature {
         }
     }
 
-    public static void warnIfDefaultSecret(String secret, Logger log) {
+    /**
+     * 启动期强校验：密钥缺失或仍是源码默认值，一律拒绝启动。
+     *
+     * <p>不给 {@code @Value} 留兜底默认值，是为了把"配置没生效"从静默退化变成启动失败——
+     * 签名方（网关）与验签方（各服务）任一侧退回公开密钥，整套身份头鉴权就等于没有，
+     * 而这种故障在运行期只表现为难以归因的 401/403。
+     *
+     * @throws IllegalStateException 密钥为空或等于 {@link #DEFAULT_SECRET}
+     */
+    public static void requireUsableSecret(String secret) {
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException("未配置 " + PROPERTY_NAME + "（或环境变量 BYW_SECURITY_INTERNAL_SECRET），"
+                    + "拒绝启动：该密钥用于网关身份头签名与服务间调用凭证，缺失即无法保证鉴权。"
+                    + "本地开发请确认 Nacos 共享配置 byw-common.yml 已发布（docs/deploy/nacos/publish.ps1）");
+        }
         if (DEFAULT_SECRET.equals(secret)) {
-            log.warn("未配置 {}，正在使用内置开发默认密钥，直连服务端口伪造身份头的风险未消除；"
-                    + "生产环境请通过环境变量 BYW_SECURITY_INTERNAL_SECRET 覆盖为随机密钥", PROPERTY_NAME);
+            throw new IllegalStateException(PROPERTY_NAME + " 仍是源码内置的开发默认值，拒绝启动："
+                    + "该值公开在仓库里，任何读过代码的人都能自签身份头直连服务端口冒充管理员。"
+                    + "请通过环境变量 BYW_SECURITY_INTERNAL_SECRET 或 Nacos 配置改为随机密钥"
+                    + "（生成方式见 docs/deploy/jasypt/README.md）");
         }
     }
 

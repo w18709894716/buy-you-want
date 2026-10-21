@@ -14,6 +14,9 @@
 > 需要看明文时用 `.\encrypt.ps1 -Text '<配置里的 ENC(...) 整串>' -Mode decrypt`（要主密钥）。
 > 轮换后必须重新 `publish.ps1` 发布 `byw-common.yml`，并**同时重启网关与全部业务服务**——
 > 签名方与验签方密钥不一致时，所有身份头都会验签失败、请求一律按游客处理。
+>
+> 该配置项现在是**强制项**：`@Value` 不再留兜底默认值，缺失或值仍等于 `DEFAULT_SECRET`
+> 都会在启动时被 `InternalSignature.requireUsableSecret` 拒绝（fail-closed）。
 
 ## 二、主密钥怎么放（唯一的红线）
 

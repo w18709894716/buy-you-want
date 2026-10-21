@@ -35,8 +35,10 @@ public class FeignRelayAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public FeignAuthRelayInterceptor feignAuthRelayInterceptor(
-            @Value("${" + InternalSignature.PROPERTY_NAME + ":" + InternalSignature.DEFAULT_SECRET + "}")
+            @Value("${" + InternalSignature.PROPERTY_NAME + ":}")
             String internalSecret) {
+        // 无兜底默认值：密钥缺失或仍是源码默认值时直接启动失败（见 requireUsableSecret）
+        InternalSignature.requireUsableSecret(internalSecret);
         return new FeignAuthRelayInterceptor(internalSecret);
     }
 

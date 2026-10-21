@@ -33,10 +33,12 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     private final String internalSecret;
 
     public AuthGlobalFilter(
-            @Value("${" + InternalSignature.PROPERTY_NAME + ":" + InternalSignature.DEFAULT_SECRET + "}")
+            @Value("${" + InternalSignature.PROPERTY_NAME + ":}")
             String internalSecret) {
+        // 无兜底默认值：密钥缺失或仍是源码默认值时直接启动失败（见 requireUsableSecret）。
+        // 网关是签名方，这里退回公开密钥等于所有服务的身份头鉴权同时失守。
+        InternalSignature.requireUsableSecret(internalSecret);
         this.internalSecret = internalSecret;
-        InternalSignature.warnIfDefaultSecret(internalSecret, log);
     }
 
     @Override
