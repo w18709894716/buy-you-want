@@ -7,9 +7,13 @@
 | 位置 | 配置项 | 明文 |
 |---|---|---|
 | 11 个有数据源的服务（im/logistics/order/pay/product/promotion/review/settle/shop/user/cart 的 `bootstrap.yml`） | `spring.datasource.password: 'ENC(...)'` | 原默认值 `root` |
-| Nacos 的 `byw-common.yml`（共享配置） | `byw.security.internal-secret: 'ENC(...)'` | 原来的开发默认值 `byw-internal-gateway-secret` |
+| Nacos 的 `byw-common.yml`（共享配置） | `byw.security.internal-secret: 'ENC(...)'` | 随机密钥（2026-10-21 轮换，明文不入仓库） |
 
-> 内部签名密钥**加密的是原值**，所以行为不变（网关与服务端仍然互认），只是仓库/配置中心里不再有明文。
+> 内部签名密钥**已轮换为随机值**：`InternalSignature.DEFAULT_SECRET` 是公开在源码里的，
+> 用它当线上密钥等于没有密钥，任何人都能自签身份头直连服务端口冒充管理员。
+> 需要看明文时用 `.\encrypt.ps1 -Text '<配置里的 ENC(...) 整串>' -Mode decrypt`（要主密钥）。
+> 轮换后必须重新 `publish.ps1` 发布 `byw-common.yml`，并**同时重启网关与全部业务服务**——
+> 签名方与验签方密钥不一致时，所有身份头都会验签失败、请求一律按游客处理。
 
 ## 二、主密钥怎么放（唯一的红线）
 
