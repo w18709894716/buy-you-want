@@ -30,7 +30,9 @@ CREATE TABLE t_coupon_record (
     used_time DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_user_id (user_id),
-    INDEX idx_coupon_id (coupon_id)
+    INDEX idx_coupon_id (coupon_id),
+    -- 一个用户对同一张券只允许一条记录：领券是"先查再插"，并发下会重复，靠唯一键兜底
+    UNIQUE KEY uk_coupon_user (coupon_id, user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 DROP TABLE IF EXISTS t_seckill_activity;
@@ -73,27 +75,29 @@ CREATE TABLE t_seckill_order (
     UNIQUE KEY uk_item_user (item_id, user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 拼团活动（GroupBuyActivity 实体对应表；此前基线漏建，导致 /promotion/group-buy 接口报表不存在）
 DROP TABLE IF EXISTS t_group_buy_activity;
 CREATE TABLE t_group_buy_activity (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    name VARCHAR(100) NOT NULL,
-    product_id BIGINT NOT NULL,
-    group_price DECIMAL(10,2) NOT NULL,
-    original_price DECIMAL(10,2) NOT NULL,
-    group_size INT NOT NULL DEFAULT 2,
-    max_groups INT,
+    name VARCHAR(100) NOT NULL COMMENT '活动名称',
+    product_id BIGINT NOT NULL COMMENT '商品ID（SPU）',
+    group_price DECIMAL(10,2) NOT NULL COMMENT '拼团价',
+    original_price DECIMAL(10,2) NOT NULL COMMENT '原价',
+    group_size INT NOT NULL DEFAULT 2 COMMENT '成团人数',
+    max_groups INT NULL COMMENT '最大成团数（空=不限）',
     start_time DATETIME NOT NULL,
     end_time DATETIME NOT NULL,
-    status TINYINT DEFAULT 0,
+    status TINYINT DEFAULT 0 COMMENT '0未开始 1进行中 2已结束',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted TINYINT DEFAULT 0
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    deleted TINYINT DEFAULT 0,
+    INDEX idx_status_end_time (status, end_time),
+    INDEX idx_product_id (product_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='拼团活动';
 
 -- ========== 清空数据 ==========
 TRUNCATE TABLE t_seckill_order;
 TRUNCATE TABLE t_coupon_record;
-TRUNCATE TABLE t_group_buy_activity;
 TRUNCATE TABLE t_seckill_activity_item;
 TRUNCATE TABLE t_seckill_activity;
 TRUNCATE TABLE t_coupon;
@@ -137,8 +141,3 @@ INSERT INTO t_seckill_activity_item (activity_id, product_id, sku_id, seckill_pr
 (2, 6, 14, 1699.00, 50, 42),
 (2, 7, 16, 599.00, 100, 78);
 
--- 团购活动
-INSERT INTO t_group_buy_activity (name, product_id, group_price, original_price, group_size, max_groups, start_time, end_time, status) VALUES
-('iPhone拼团优惠', 1, 8999.00, 9999.00, 3, 100, '2026-06-15 00:00:00', '2026-06-30 23:59:59', 1),
-('MacBook拼团', 4, 14999.00, 16999.00, 2, 50, '2026-06-15 00:00:00', '2026-06-30 23:59:59', 1),
-('iPad拼团', 9, 7499.00, 8499.00, 2, 80, '2026-06-15 00:00:00', '2026-06-30 23:59:59', 1);

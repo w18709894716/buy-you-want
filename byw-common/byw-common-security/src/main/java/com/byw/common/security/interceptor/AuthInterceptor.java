@@ -3,12 +3,14 @@ package com.byw.common.security.interceptor;
 import com.byw.common.core.constant.CommonConstants;
 import com.byw.common.core.exception.BusinessException;
 import com.byw.common.core.exception.ResultCode;
+import com.byw.common.security.annotation.InternalApi;
 import com.byw.common.security.annotation.Public;
 import com.byw.common.security.annotation.RequireAdmin;
 import com.byw.common.security.annotation.RequirePerm;
 import com.byw.common.security.annotation.RequireRole;
 import com.byw.common.security.context.UserContext;
 import com.byw.common.security.service.PermissionChecker;
+import com.byw.common.security.sign.InternalSignature;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -19,22 +21,42 @@ import org.springframework.web.servlet.HandlerInterceptor;
 public class AuthInterceptor implements HandlerInterceptor {
 
     private final PermissionChecker permissionChecker;
+    private final String internalSecret;
 
-    public AuthInterceptor() {
-        this(null);
-    }
-
-    public AuthInterceptor(PermissionChecker permissionChecker) {
+    public AuthInterceptor(PermissionChecker permissionChecker, String internalSecret) {
         this.permissionChecker = permissionChecker;
+        this.internalSecret = internalSecret;
     }
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        // 必须入口先清：下面任一鉴权分支抛异常时，Spring 不会执行本拦截器自己的 afterCompletion
+        // （HandlerExecutionChain 只在 preHandle 成功返回后才推进 interceptorIndex），
+        // 残留的身份会被同一线程上的下一个匿名请求继承（匿名请求没有身份头，一个字段都不会被覆盖）。
+        UserContext.clear();
+
         String userIdStr = request.getHeader(CommonConstants.HEADER_USER_ID);
-        String username = request.getHeader(CommonConstants.HEADER_USERNAME);
+        // 用户名在头里是百分号编码的（HTTP 头只支持 ISO-8859-1，中文直传会被打坏导致验签失败），
+        // 解码后才是签名时用的原文，UserContext 里也存原文
+        String username = InternalSignature.decodeUsername(request.getHeader(CommonConstants.HEADER_USERNAME));
         String userRole = request.getHeader(CommonConstants.HEADER_USER_ROLE);
         String shopIdStr = request.getHeader(CommonConstants.HEADER_SHOP_ID);
         String userType = request.getHeader(CommonConstants.HEADER_USER_TYPE);
+
+        // 身份头由网关注入、Feign 透传时重新签名；直连服务端口伪造的头签名对不上，
+        // 一律按游客处理（受保护接口随后 401），避免绕过网关直接拿到管理员身份。
+        boolean hasIdentity = userIdStr != null || username != null || userRole != null
+                || shopIdStr != null || userType != null;
+        if (hasIdentity && !InternalSignature.verify(internalSecret,
+                request.getHeader(CommonConstants.HEADER_IDENTITY_SIGNATURE),
+                userIdStr, username, userRole, shopIdStr, userType)) {
+            log.warn("身份头签名校验失败，按游客处理: uri={}", request.getRequestURI());
+            userIdStr = null;
+            username = null;
+            userRole = null;
+            shopIdStr = null;
+            userType = null;
+        }
 
         if (userIdStr != null && !userIdStr.isEmpty()) {
             UserContext.setUserId(Long.parseLong(userIdStr));
@@ -58,6 +80,18 @@ public class AuthInterceptor implements HandlerInterceptor {
 
         // 仅对 Controller 方法做注解级鉴权
         if (!(handler instanceof HandlerMethod handlerMethod)) {
+            return true;
+        }
+
+        // @InternalApi：服务间接口，只认内部凭证，不要求用户登录态。
+        // 缺凭证一律 403 —— 这类接口（改库存、改商品、审核）默认应当关闭，
+        // 仅凭"端口不可达"保护是不够的。
+        if (hasAnnotation(handlerMethod, InternalApi.class)) {
+            if (!InternalSignature.verifyInternal(internalSecret,
+                    request.getHeader(CommonConstants.HEADER_INTERNAL_SIGNATURE))) {
+                log.warn("内部接口缺少合法服务间凭证，拒绝访问: uri={}", request.getRequestURI());
+                throw new BusinessException(ResultCode.FORBIDDEN);
+            }
             return true;
         }
 

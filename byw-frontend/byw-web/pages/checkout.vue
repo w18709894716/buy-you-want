@@ -753,7 +753,9 @@ async function payNow() {
       const payOrder = await post<any>('/pay/create', null, {
         params: { orderNo, amount: detail.payAmount, channel }
       })
-      await post(`/pay/callback/${channel}`, null, {
+      // 走 /pay/mock/callback（需登录 + 支付单归属用户 + 服务端 mock-enabled=true）；
+      // /pay/callback 是真实渠道回调，必须带签名，前端不能直接调。
+      await post(`/pay/mock/callback/${channel}`, null, {
         params: { payNo: payOrder.payNo, tradeNo: 'MOCK' + Date.now() }
       })
       // 订单状态经 MQ 异步流转，跳转支付结果页轮询确认，与支付页行为保持一致

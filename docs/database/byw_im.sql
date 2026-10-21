@@ -164,3 +164,36 @@ CREATE TABLE t_im_faq (
   PRIMARY KEY (id),
   KEY idx_shop_id (shop_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='IM FAQ知识库';
+
+-- ============================================================
+-- IM 技能组（旧版分组机制）
+-- 已被上面的 t_im_dispatch_group 取代，但 byw-im 的 SkillGroup 实体/Mapper/Service
+-- 与 ImSkillGroupController(/im/skill-group) 仍在线，商家端也还留着调用它的页面，
+-- 因此基线必须建表，否则这些端点一调就报「表不存在」。
+-- 是否连同代码一起下线属业务决策，此处只补齐 schema。
+-- ============================================================
+DROP TABLE IF EXISTS t_im_skill_group;
+CREATE TABLE t_im_skill_group (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  shop_id BIGINT NOT NULL COMMENT '店铺ID',
+  group_name VARCHAR(50) NOT NULL COMMENT '技能组名称（售前/售后/物流…）',
+  keywords VARCHAR(500) NULL COMMENT '路由关键词（逗号分隔，匹配用户消息首句）',
+  sort INT NOT NULL DEFAULT 0 COMMENT '优先级（数字越小越优先匹配）',
+  status TINYINT NOT NULL DEFAULT 1 COMMENT '状态 0禁用 1启用',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted TINYINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  KEY idx_shop_id (shop_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='IM 技能组（旧版，已被分流分组取代）';
+
+DROP TABLE IF EXISTS t_im_skill_group_staff;
+CREATE TABLE t_im_skill_group_staff (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  group_id BIGINT NOT NULL COMMENT '技能组ID',
+  staff_id BIGINT NOT NULL COMMENT '客服ID（merchant_account.id）',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_group_staff (group_id, staff_id),
+  KEY idx_staff_id (staff_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='IM 技能组-客服关联（旧版）';
