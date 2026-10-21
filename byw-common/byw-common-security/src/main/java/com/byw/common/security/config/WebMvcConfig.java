@@ -14,7 +14,9 @@ public class WebMvcConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(authInterceptor)
                 .addPathPatterns("/**")
+                // actuator 健康检查需免登录：它只暴露 status，且网关不路由 /actuator，仅内网可达
                 .excludePathPatterns("/doc.html", "/swagger-resources/**", "/v3/api-docs/**",
-                        "/swagger-ui/**", "/swagger-ui.html", "/webjars/**", "/favicon.ico");
+                        "/swagger-ui/**", "/swagger-ui.html", "/webjars/**", "/favicon.ico",
+                        "/actuator/**");
     }
 }

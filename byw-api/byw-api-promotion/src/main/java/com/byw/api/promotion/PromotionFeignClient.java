@@ -1,5 +1,11 @@
 package com.byw.api.promotion;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import com.byw.api.promotion.dto.CouponDTO;
 import com.byw.api.promotion.dto.SeckillActivityDetailDTO;
 import com.byw.api.promotion.dto.UserCouponDTO;
@@ -69,19 +75,30 @@ public interface PromotionFeignClient {
     @Data
     class SeckillActivityDTO implements Serializable {
         private Long id;
+        @NotBlank(message = "活动名称不能为空")
+        @Size(max = 100, message = "活动名称过长")
         private String name;
+        @NotNull(message = "请选择开始时间")
         private java.time.LocalDateTime startTime;
+        @NotNull(message = "请选择结束时间")
         private java.time.LocalDateTime endTime;
         private Integer status;
+        @Valid
         private List<SeckillItemDTO> items;
     }
 
     @Data
     class SeckillItemDTO implements Serializable {
         private Long id;
+        @NotNull(message = "商品ID不能为空")
         private Long productId;
+        @NotNull(message = "SKU不能为空")
         private Long skuId;
+        @NotNull(message = "请填写秒杀价")
+        @DecimalMin(value = "0.01", message = "秒杀价必须大于 0")
         private BigDecimal seckillPrice;
+        @NotNull(message = "请填写秒杀库存")
+        @Min(value = 0, message = "秒杀库存不能为负")
         private Integer totalStock;
         private Integer availableStock;
     }

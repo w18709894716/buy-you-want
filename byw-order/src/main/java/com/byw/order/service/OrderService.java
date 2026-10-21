@@ -68,6 +68,16 @@ public interface OrderService {
     int autoConfirmReceive(int expireDays);
 
     /**
+     * 查出超过 timeoutMinutes 仍未支付、且未被超时取消消息取消的子订单/独立订单号。
+     *
+     * <p>作为 RocketMQ 延迟消息的对账兜底：消息丢失时订单会永久停留待付款、库存永久预占。
+     * 调用方需通过 Spring 代理逐个调用 {@link #cancelOrder(String, String, String)} 以复用其事务与状态机。
+     *
+     * @param limit 单轮最多返回多少条，避免积压时一次拉取过多、长时间占用调度锁
+     */
+    List<String> listTimeoutUnpaidOrderNos(int timeoutMinutes, int limit);
+
+    /**
      * 生成订单号
      */
     String generateOrderNo();

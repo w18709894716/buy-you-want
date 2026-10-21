@@ -1,5 +1,6 @@
 package com.byw.logistics.controller;
 
+import jakarta.validation.Valid;
 import com.byw.api.logistics.dto.LogisticsDTO;
 import com.byw.api.logistics.dto.ShipRequestDTO;
 import com.byw.common.core.result.R;
@@ -22,7 +23,7 @@ public class LogisticsController {
     @Operation(summary = "发货")
     @PostMapping("/ship")
     @RequireAdmin
-    public R<LogisticsDTO> ship(@RequestBody ShipRequestDTO request) {
+    public R<LogisticsDTO> ship(@Valid @RequestBody ShipRequestDTO request) {
         return R.ok(logisticsService.ship(request));
     }
 
@@ -41,7 +42,7 @@ public class LogisticsController {
     @Operation(summary = "更新物流轨迹")
     @PostMapping("/trace/{logisticsId}")
     @RequireAdmin
-    public R<Void> updateTrace(@PathVariable Long logisticsId, @RequestBody LogisticsTrace trace) {
+    public R<Void> updateTrace(@PathVariable Long logisticsId, @Valid @RequestBody LogisticsTrace trace) {
         logisticsService.updateTrace(logisticsId, trace);
         return R.ok();
     }

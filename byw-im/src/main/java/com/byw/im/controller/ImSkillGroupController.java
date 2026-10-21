@@ -1,5 +1,7 @@
 package com.byw.im.controller;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import com.byw.common.core.result.R;
 import com.byw.common.security.annotation.RequireLogin;
 import com.byw.common.security.context.UserContext;
@@ -36,7 +38,7 @@ public class ImSkillGroupController {
     @Operation(summary = "新增技能组")
     @RequireLogin
     @PostMapping
-    public R<SkillGroup> create(@RequestBody SkillGroup group) {
+    public R<SkillGroup> create(@Valid @RequestBody SkillGroup group) {
         Long shopId = UserContext.getShopId();
         if (shopId == null) return R.fail("仅商家端可用");
         group.setShopId(shopId);
@@ -48,7 +50,7 @@ public class ImSkillGroupController {
     @Operation(summary = "更新技能组")
     @RequireLogin
     @PutMapping
-    public R<SkillGroup> update(@RequestBody SkillGroup group) {
+    public R<SkillGroup> update(@Valid @RequestBody SkillGroup group) {
         Long shopId = UserContext.getShopId();
         if (shopId == null) return R.fail("仅商家端可用");
         group.setShopId(shopId);
@@ -75,13 +77,14 @@ public class ImSkillGroupController {
     @Operation(summary = "保存员工技能组（先删后插）")
     @RequireLogin
     @PostMapping("/staff")
-    public R<Void> saveStaffGroups(@RequestBody SaveStaffGroupsRequest request) {
+    public R<Void> saveStaffGroups(@Valid @RequestBody SaveStaffGroupsRequest request) {
         skillGroupService.saveStaffGroups(request.getStaffId(), request.getGroupIds());
         return R.ok();
     }
 
     @Data
     public static class SaveStaffGroupsRequest {
+        @NotNull(message = "客服ID不能为空")
         private Long staffId;
         private List<Long> groupIds;
     }

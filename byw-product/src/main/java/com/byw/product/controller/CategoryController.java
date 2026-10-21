@@ -1,5 +1,8 @@
 package com.byw.product.controller;
 
+import jakarta.validation.Valid;
+import com.alicp.jetcache.anno.CacheInvalidate;
+import com.byw.common.core.constant.CacheNames;
 import com.byw.common.core.result.R;
 import com.byw.common.security.annotation.Public;
 import com.byw.common.security.annotation.RequirePerm;
@@ -30,7 +33,8 @@ public class CategoryController {
     @Operation(summary = "新增分类(管理员)")
     @PostMapping
     @RequirePerm("category:manage")
-    public R<Void> createCategory(@RequestBody Category category) {
+    @CacheInvalidate(name = CacheNames.CATEGORY_TREE, key = "'all'")
+    public R<Void> createCategory(@Valid @RequestBody Category category) {
         categoryService.save(category);
         return R.ok();
     }
@@ -38,7 +42,8 @@ public class CategoryController {
     @Operation(summary = "更新分类(管理员)")
     @PutMapping
     @RequirePerm("category:manage")
-    public R<Void> updateCategory(@RequestBody Category category) {
+    @CacheInvalidate(name = CacheNames.CATEGORY_TREE, key = "'all'")
+    public R<Void> updateCategory(@Valid @RequestBody Category category) {
         categoryService.updateById(category);
         return R.ok();
     }
@@ -46,6 +51,7 @@ public class CategoryController {
     @Operation(summary = "删除分类(管理员)")
     @DeleteMapping("/{id}")
     @RequirePerm("category:manage")
+    @CacheInvalidate(name = CacheNames.CATEGORY_TREE, key = "'all'")
     public R<Void> deleteCategory(@PathVariable Long id) {
         categoryService.removeById(id);
         return R.ok();

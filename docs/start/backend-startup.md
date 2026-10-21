@@ -3,7 +3,7 @@
 ## 前置条件
 
 - 必需中间件已启动（Nacos、MySQL、Redis）
-- 可选中间件按需启动（RocketMQ、Elasticsearch、MongoDB、Seata）
+- 可选中间件按需启动（RocketMQ、Elasticsearch、MongoDB）
 - JDK 17+ 已配置
 - Maven 3.8+ 已配置
 
@@ -75,7 +75,7 @@ Nacos + MySQL + Redis（必须启动的中间件底座）
         ├── byw-product（需要 ES + RocketMQ）
         ├── byw-cart
         ├── byw-promotion
-        ├── byw-order ──→ Feign 调用 product / cart / promotion（需要 RocketMQ + Seata）
+        ├── byw-order ──→ Feign 调用 product / cart / promotion（需要 RocketMQ）
         ├── byw-pay ──→ RocketMQ 通知 order
         ├── byw-logistics（需要 RocketMQ）
         ├── byw-review（需要 MongoDB）
@@ -96,7 +96,6 @@ Nacos + MySQL + Redis（必须启动的中间件底座）
 | RocketMQ | 按需 | byw-order / byw-pay / byw-logistics / byw-product 使用 |
 | Elasticsearch | 按需 | 仅 byw-product 商品搜索使用 |
 | MongoDB | 按需 | 仅 byw-review 评价详情使用 |
-| Seata | 按需 | 仅 byw-order 分布式事务使用 |
 | MinIO | 按需 | 仅 byw-file 文件/图片上传使用 |
 
 > byw-settle 结算入账使用 Spring `@Scheduled` 定时扫描（内置于服务，无需额外中间件），并消费 byw-order 的确认收货事件（依赖 RocketMQ）。byw-shop / byw-merchant 无额外中间件依赖。
@@ -110,7 +109,7 @@ Nacos + MySQL + Redis（必须启动的中间件底座）
 > 场景 1 + product（+ ES + RocketMQ）
 
 **场景 3：测试完整下单流程**
-> 场景 2 + cart + promotion + order + pay（+ RocketMQ + Seata）
+> 场景 2 + cart + promotion + order + pay（+ RocketMQ）
 
 **场景 4：只开发管理后台某个模块**
 > Nacos + MySQL + Redis → gateway → auth → user → admin + 对应业务服务

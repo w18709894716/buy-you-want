@@ -3,9 +3,11 @@ package com.byw.im.ws;
 import cn.dev33.satoken.session.SaSession;
 import cn.dev33.satoken.stp.StpUtil;
 import com.byw.common.core.constant.CommonConstants;
+import com.byw.common.core.util.LoginIds;
 import com.byw.common.redis.util.RedisUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.stereotype.Component;
@@ -13,7 +15,6 @@ import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeInterceptor;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import java.net.URI;
 import java.util.List;
 import java.util.Map;
 
@@ -35,7 +36,7 @@ public class ImHandshakeInterceptor implements HandshakeInterceptor {
     @Override
     public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response,
                                    WebSocketHandler wsHandler, Map<String, Object> attributes) {
-        String token = resolveToken(request.getURI());
+        String token = resolveToken(request);
         if (token == null) {
             log.warn("IM 握手被拒绝：token 缺失");
             return false;
@@ -44,12 +45,14 @@ public class ImHandshakeInterceptor implements HandshakeInterceptor {
         SaSession session;
         try {
             Object loginId = StpUtil.getLoginIdByToken(token);
-            if (loginId == null) {
+            // loginId 为 "userType:id" 命名空间格式（兼容历史纯数字）
+            Long parsedUserId = LoginIds.userId(loginId);
+            if (loginId == null || parsedUserId == null) {
                 log.warn("IM 握手被拒绝：token 无效或已过期");
                 return false;
             }
-            userId = Long.valueOf(loginId.toString());
-            session = StpUtil.getSessionByLoginId(userId);
+            userId = parsedUserId;
+            session = StpUtil.getSessionByLoginId(loginId);
         } catch (Exception e) {
             log.warn("IM 握手被拒绝：token 校验失败, err={}", e.getMessage());
             return false;
@@ -115,16 +118,44 @@ public class ImHandshakeInterceptor implements HandshakeInterceptor {
         }
     }
 
-    private String resolveToken(URI uri) {
-        Map<String, List<String>> params = UriComponentsBuilder.fromUri(uri).build().getQueryParams();
+    /**
+     * 双模式取 token：优先 query 参数（兼容旧客户端），其次 HttpOnly Cookie。
+     * 前端切到 Cookie 后，浏览器会在 WebSocket 握手请求里自动带上 Cookie，因此这里必须支持回退；
+     * 注意 Cookie 名与网关/auth 用的是同一个常量，改一处即可。
+     */
+    private String resolveToken(ServerHttpRequest request) {
+        Map<String, List<String>> params = UriComponentsBuilder.fromUri(request.getURI()).build().getQueryParams();
         List<String> values = params.get("token");
-        if (values == null || values.isEmpty()) {
+        if (values != null && !values.isEmpty()) {
+            String token = values.get(0);
+            if (token != null && token.startsWith("Bearer ")) {
+                token = token.substring(7);
+            }
+            if (token != null && !token.isBlank()) {
+                return token;
+            }
+        }
+        String cookieHeader = request.getHeaders().getFirst(HttpHeaders.COOKIE);
+        if (cookieHeader == null || cookieHeader.isEmpty()) {
             return null;
         }
-        String token = values.get(0);
-        if (token != null && token.startsWith("Bearer ")) {
-            token = token.substring(7);
+        // 三端 Cookie 名不同：工作台用商家端，C 端聊天用 C 端，管理端兜底
+        String[] candidates = {
+                CommonConstants.AUTH_COOKIE_MERCHANT,
+                CommonConstants.AUTH_COOKIE_NAME,
+                CommonConstants.AUTH_COOKIE_ADMIN
+        };
+        for (String name : candidates) {
+            for (String part : cookieHeader.split(";")) {
+                String item = part.trim();
+                if (item.startsWith(name + "=")) {
+                    String value = item.substring(name.length() + 1).trim();
+                    if (!value.isEmpty()) {
+                        return value;
+                    }
+                }
+            }
         }
-        return token;
+        return null;
     }
 }

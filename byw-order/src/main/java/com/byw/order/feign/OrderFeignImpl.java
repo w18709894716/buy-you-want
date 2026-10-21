@@ -1,5 +1,6 @@
 package com.byw.order.feign;
 
+import com.byw.common.log.annotation.OperationLog;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -8,12 +9,13 @@ import com.byw.api.order.dto.OrderCreateDTO;
 import com.byw.api.order.dto.OrderDetailDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.Public;
+import com.byw.common.security.annotation.InternalApi;
 import com.byw.order.entity.Order;
 import com.byw.order.entity.OrderItem;
 import com.byw.order.mapper.OrderItemMapper;
 import com.byw.order.mapper.OrderMapper;
 import com.byw.order.service.OrderService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.web.bind.annotation.*;
@@ -27,7 +29,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/feign/order")
 @RequiredArgsConstructor
-@Public
+@InternalApi
 public class OrderFeignImpl implements OrderFeignClient {
 
     private final OrderService orderService;
@@ -36,7 +38,7 @@ public class OrderFeignImpl implements OrderFeignClient {
 
     @Override
     @PostMapping("/create")
-    public R<String> createOrder(@RequestBody OrderCreateDTO createDTO) {
+    public R<String> createOrder(@Valid @RequestBody OrderCreateDTO createDTO) {
         String orderNo = orderService.createOrder(createDTO);
         return R.ok(orderNo);
     }
@@ -62,6 +64,7 @@ public class OrderFeignImpl implements OrderFeignClient {
     }
 
     @Override
+    @OperationLog(module = "订单", operation = "发货", description = "商家发货（按商品行）")
     @PostMapping("/ship-items")
     public R<Boolean> shipItems(@RequestParam("orderNo") String orderNo,
                                 @RequestParam("companyName") String companyName,

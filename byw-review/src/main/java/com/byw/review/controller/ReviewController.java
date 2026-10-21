@@ -1,5 +1,12 @@
 package com.byw.review.controller;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import com.byw.api.review.dto.ReviewStatsDTO;
 import com.byw.api.user.UserFeignClient;
 import com.byw.api.user.dto.UserDTO;
@@ -35,7 +42,7 @@ public class ReviewController {
     @Operation(summary = "创建评价")
     @RequireLogin
     @PostMapping("/create")
-    public R<Void> create(@RequestBody CreateReviewRequest request) {
+    public R<Void> create(@Valid @RequestBody CreateReviewRequest request) {
         ReviewDetail detail = new ReviewDetail();
         detail.setOrderId(request.getOrderNo());
         detail.setProductId(request.getProductId());
@@ -52,7 +59,7 @@ public class ReviewController {
     @Operation(summary = "追加评价")
     @RequireLogin
     @PostMapping("/append")
-    public R<Void> append(@RequestBody AppendReviewRequest request) {
+    public R<Void> append(@Valid @RequestBody AppendReviewRequest request) {
         reviewService.appendReview(request.getOrderNo(), UserContext.getUserId(), request.getSkuId(),
                 request.getAppendContent(), request.getAppendImages());
         return R.ok();
@@ -157,7 +164,7 @@ public class ReviewController {
     @Operation(summary = "批量创建评价")
     @RequireLogin
     @PostMapping("/create-batch")
-    public R<Void> createBatch(@RequestBody BatchReviewRequest request) {
+    public R<Void> createBatch(@Valid @RequestBody BatchReviewRequest request) {
         List<ReviewDetail> details = new java.util.ArrayList<>();
         for (ReviewItem item : request.getReviews()) {
             ReviewDetail detail = new ReviewDetail();
@@ -188,9 +195,16 @@ public class ReviewController {
 
     @Data
     public static class CreateReviewRequest {
+        @NotBlank(message = "订单号不能为空")
+        @Size(max = 64, message = "订单号过长")
         private String orderNo;
+        @NotNull(message = "商品ID不能为空")
         private Long productId;
+        @NotNull(message = "请选择评分")
+        @Min(value = 1, message = "评分只能是 1~5")
+        @Max(value = 5, message = "评分只能是 1~5")
         private Integer rating;
+        @Size(max = 1000, message = "评价内容过长")
         private String content;
         private List<String> images;
         private List<String> videos;
@@ -199,15 +213,25 @@ public class ReviewController {
 
     @Data
     public static class BatchReviewRequest {
+        @NotEmpty(message = "评价列表不能为空")
+        @Valid
         private List<ReviewItem> reviews;
     }
 
     @Data
     public static class ReviewItem {
+        @NotBlank(message = "订单号不能为空")
+        @Size(max = 64, message = "订单号过长")
         private String orderNo;
+        @NotNull(message = "商品ID不能为空")
         private Long productId;
+        @NotNull(message = "SKU不能为空")
         private Long skuId;
+        @NotNull(message = "请选择评分")
+        @Min(value = 1, message = "评分只能是 1~5")
+        @Max(value = 5, message = "评分只能是 1~5")
         private Integer rating;
+        @Size(max = 1000, message = "评价内容过长")
         private String content;
         private List<String> images;
         private Integer isAnonymous;
@@ -215,8 +239,12 @@ public class ReviewController {
 
     @Data
     public static class AppendReviewRequest {
+        @NotBlank(message = "订单号不能为空")
+        @Size(max = 64, message = "订单号过长")
         private String orderNo;
+        @NotNull(message = "SKU不能为空")
         private Long skuId;
+        @Size(max = 1000, message = "追评内容过长")
         private String appendContent;
         private List<String> appendImages;
     }

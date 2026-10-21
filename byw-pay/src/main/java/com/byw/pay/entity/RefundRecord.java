@@ -25,6 +25,9 @@ public class RefundRecord {
 
     private String reason;
 
+    /** 退款幂等业务键（售后单号等），唯一索引兜底防止重复退款 */
+    private String refNo;
+
     private Integer status;
 
     @TableField(fill = FieldFill.INSERT)

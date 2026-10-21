@@ -23,12 +23,14 @@ export const useUserStore = defineStore('user', {
   },
 
   actions: {
-    /** 初始化 - 从 cookie/localStorage 恢复 token */
+    /**
+     * 初始化 - 从 localStorage 恢复 token（不拉用户信息）：中间件依赖 token 在 hydration 之前就位，
+     * 而 getUserInfo 会改顶栏渲染结果，须由调用方推迟到 hydration 之后（见 plugins/init.client.ts）。
+     */
     init() {
       const token = getToken()
       if (token) {
         this.token = token
-        this.getUserInfo()
       }
     },
 
@@ -58,12 +60,23 @@ export const useUserStore = defineStore('user', {
         const data = await get<{ id: number; username: string; nickname: string; avatar: string }>(
           '/user/me'
         )
+        if (!data) {
+          // 后端对查不到的用户返回 200 + null，这不是登录失效，别把人踢下线
+          console.warn('[user] /user/me 返回空数据，保留登录态')
+          return
+        }
         this.userId = data.id
         this.username = data.username
         this.nickname = data.nickname
         this.avatar = data.avatar || ''
-      } catch {
-        // token 失效：静默清理登录态，不强跳登录页（游客可继续浏览）
+      } catch (error) {
+        // 只有 token 真的失效才清登录态：request 层在 401 分支里已经 clearToken()，
+        // 用"token 还在不在"来区分认证失效与接口自身出错（网络抖动、500、限流）。
+        // 之前这里裸 catch 一律 reset()，任何后端故障都会表现成"莫名其妙自动退出"。
+        if (getToken()) {
+          console.error('[user] 获取用户信息失败，保留登录态', error)
+          return
+        }
         this.reset()
       }
     },

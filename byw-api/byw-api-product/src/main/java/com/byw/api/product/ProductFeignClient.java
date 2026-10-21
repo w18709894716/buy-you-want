@@ -37,6 +37,12 @@ public interface ProductFeignClient {
     @PostMapping("/feign/product/sku/lock-stock")
     R<Boolean> lockStock(@RequestBody List<SkuStockDeductDTO> deductList);
 
+    @PostMapping("/feign/product/sku/consume-stock")
+    R<Boolean> consumeStock(@RequestBody List<SkuStockDeductDTO> deductList);
+
+    @PostMapping("/feign/product/sku/restore-stock")
+    R<Boolean> restoreStock(@RequestBody List<SkuStockDeductDTO> deductList);
+
     @GetMapping("/feign/product/list")
     R<PageResult<ProductDTO>> listProducts(@RequestParam(value = "pageNum", defaultValue = "1") Integer pageNum,
                                            @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,

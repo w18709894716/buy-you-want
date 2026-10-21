@@ -1,0 +1,283 @@
+# Per-service configuration for byw-gateway (Nacos data-id: byw-gateway.yml, group: DEFAULT_GROUP)
+# Loaded automatically by Spring Cloud Alibaba (spring.cloud.nacos.config.file-extension=yml).
+# Repo mirror of this file: docs/deploy/nacos/services/byw-gateway.yml
+#
+# KEEP ASCII-ONLY: non-ASCII content makes the nacos client parse the whole config to EMPTY silently.
+# Secrets are jasypt ENC(...) values; the master key comes from env JASYPT_ENCRYPTOR_PASSWORD.
+
+spring:
+  codec:
+    max-in-memory-size: 50MB
+  cloud:
+    gateway:
+      default-filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 50
+            redis-rate-limiter.burstCapacity: 100
+            # Key = client IP + route: different APIs no longer share one bucket (an IP-only key lets
+            key-resolver: "#{@globalIpKeyResolver}"
+      routes:
+        # ===== Per-route limits for sensitive endpoints (must stay BEFORE the generic routes) =====
+        # Same uri/StripPrefix as the generic route, plus a stricter token bucket on top.
+        # The global default-filter (50/100) still applies, so the stricter one wins.
+        - id: byw-rl-auth-login
+          uri: lb://byw-auth
+          predicates:
+            - Path=/api/auth/login,/api/auth/merchant/login,/api/auth/admin/login
+          filters:
+            - StripPrefix=1
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 5
+                redis-rate-limiter.burstCapacity: 10
+                key-resolver: "#{@pathIpKeyResolver}"
+        - id: byw-rl-admin-auth-login
+          uri: lb://byw-auth
+          predicates:
+            - Path=/api/admin/auth/login
+          filters:
+            - StripPrefix=2
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 5
+                redis-rate-limiter.burstCapacity: 10
+                key-resolver: "#{@pathIpKeyResolver}"
+        - id: byw-rl-auth-sms
+          uri: lb://byw-auth
+          predicates:
+            - Path=/api/auth/sms/send
+          filters:
+            - StripPrefix=1
+            - name: RequestRateLimiter
+              args:
+                # SMS has a real cost: 1/s with burst 3
+                redis-rate-limiter.replenishRate: 1
+                redis-rate-limiter.burstCapacity: 3
+                key-resolver: "#{@pathIpKeyResolver}"
+        - id: byw-rl-order-create
+          uri: lb://byw-order
+          predicates:
+            - Path=/api/order
+            - Method=POST
+          filters:
+            - StripPrefix=1
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 10
+                redis-rate-limiter.burstCapacity: 20
+                key-resolver: "#{@pathIpKeyResolver}"
+        - id: byw-rl-pay
+          uri: lb://byw-pay
+          predicates:
+            - Path=/api/pay/**
+          filters:
+            - StripPrefix=1
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 10
+                redis-rate-limiter.burstCapacity: 20
+                key-resolver: "#{@pathIpKeyResolver}"
+        - id: byw-admin-auth
+          uri: lb://byw-auth
+          predicates:
+            - Path=/api/admin/auth/**
+          filters:
+            - StripPrefix=2
+        - id: byw-admin
+          uri: lb://byw-admin
+          predicates:
+            - Path=/api/admin/**
+          filters:
+            - StripPrefix=1
+        - id: byw-auth
+          uri: lb://byw-auth
+          predicates:
+            - Path=/api/auth/**
+          filters:
+            - StripPrefix=1
+        - id: byw-user
+          uri: lb://byw-user
+          predicates:
+            - Path=/api/user/**
+          filters:
+            - StripPrefix=1
+        - id: byw-product
+          uri: lb://byw-product
+          predicates:
+            - Path=/api/product/**,/api/category/**,/api/search/**,/api/brand/**,/api/banner/**
+          filters:
+            - StripPrefix=1
+        - id: byw-cart
+          uri: lb://byw-cart
+          predicates:
+            - Path=/api/cart/**
+          filters:
+            - StripPrefix=1
+        - id: byw-order
+          uri: lb://byw-order
+          predicates:
+            - Path=/api/order/**
+          filters:
+            - StripPrefix=1
+        - id: byw-pay
+          uri: lb://byw-pay
+          predicates:
+            - Path=/api/pay/**
+          filters:
+            - StripPrefix=1
+        - id: byw-logistics
+          uri: lb://byw-logistics
+          predicates:
+            - Path=/api/logistics/**
+          filters:
+            - StripPrefix=1
+        - id: byw-review
+          uri: lb://byw-review
+          predicates:
+            - Path=/api/review/**
+          filters:
+            - StripPrefix=1
+        - id: byw-promotion
+          uri: lb://byw-promotion
+          predicates:
+            - Path=/api/promotion/**,/api/coupon/**,/api/seckill/**
+          filters:
+            - StripPrefix=1
+        - id: byw-file
+          uri: lb://byw-file
+          predicates:
+            - Path=/api/file/**
+          filters:
+            - StripPrefix=1
+        - id: byw-shop
+          uri: lb://byw-shop
+          predicates:
+            - Path=/api/shop/**
+          filters:
+            - StripPrefix=1
+        - id: byw-merchant
+          uri: lb://byw-merchant
+          predicates:
+            - Path=/api/merchant/**
+          filters:
+            - StripPrefix=1
+        - id: byw-im
+          uri: lb://byw-im
+          predicates:
+            - Path=/api/im/**
+          filters:
+            - StripPrefix=1
+        - id: byw-im-ws
+          uri: lb:ws://byw-im
+          predicates:
+            - Path=/ws/im/**
+        - id: api-docs-auth
+          uri: lb://byw-auth
+          predicates:
+            - Path=/v3/api-docs/byw-auth
+          filters:
+            - RewritePath=/v3/api-docs/byw-auth, /v3/api-docs
+        - id: api-docs-user
+          uri: lb://byw-user
+          predicates:
+            - Path=/v3/api-docs/byw-user
+          filters:
+            - RewritePath=/v3/api-docs/byw-user, /v3/api-docs
+        - id: api-docs-product
+          uri: lb://byw-product
+          predicates:
+            - Path=/v3/api-docs/byw-product
+          filters:
+            - RewritePath=/v3/api-docs/byw-product, /v3/api-docs
+        - id: api-docs-cart
+          uri: lb://byw-cart
+          predicates:
+            - Path=/v3/api-docs/byw-cart
+          filters:
+            - RewritePath=/v3/api-docs/byw-cart, /v3/api-docs
+        - id: api-docs-order
+          uri: lb://byw-order
+          predicates:
+            - Path=/v3/api-docs/byw-order
+          filters:
+            - RewritePath=/v3/api-docs/byw-order, /v3/api-docs
+        - id: api-docs-pay
+          uri: lb://byw-pay
+          predicates:
+            - Path=/v3/api-docs/byw-pay
+          filters:
+            - RewritePath=/v3/api-docs/byw-pay, /v3/api-docs
+        - id: api-docs-logistics
+          uri: lb://byw-logistics
+          predicates:
+            - Path=/v3/api-docs/byw-logistics
+          filters:
+            - RewritePath=/v3/api-docs/byw-logistics, /v3/api-docs
+        - id: api-docs-review
+          uri: lb://byw-review
+          predicates:
+            - Path=/v3/api-docs/byw-review
+          filters:
+            - RewritePath=/v3/api-docs/byw-review, /v3/api-docs
+        - id: api-docs-promotion
+          uri: lb://byw-promotion
+          predicates:
+            - Path=/v3/api-docs/byw-promotion
+          filters:
+            - RewritePath=/v3/api-docs/byw-promotion, /v3/api-docs
+        - id: api-docs-file
+          uri: lb://byw-file
+          predicates:
+            - Path=/v3/api-docs/byw-file
+          filters:
+            - RewritePath=/v3/api-docs/byw-file, /v3/api-docs
+        - id: api-docs-admin
+          uri: lb://byw-admin
+          predicates:
+            - Path=/v3/api-docs/byw-admin
+          filters:
+            - RewritePath=/v3/api-docs/byw-admin, /v3/api-docs
+        - id: api-docs-shop
+          uri: lb://byw-shop
+          predicates:
+            - Path=/v3/api-docs/byw-shop
+          filters:
+            - RewritePath=/v3/api-docs/byw-shop, /v3/api-docs
+        - id: api-docs-merchant
+          uri: lb://byw-merchant
+          predicates:
+            - Path=/v3/api-docs/byw-merchant
+          filters:
+            - RewritePath=/v3/api-docs/byw-merchant, /v3/api-docs
+        - id: api-docs-im
+          uri: lb://byw-im
+          predicates:
+            - Path=/v3/api-docs/byw-im
+          filters:
+            - RewritePath=/v3/api-docs/byw-im, /v3/api-docs
+        - id: api-docs-settle
+          uri: lb://byw-settle
+          predicates:
+            - Path=/v3/api-docs/byw-settle
+          filters:
+            - RewritePath=/v3/api-docs/byw-settle, /v3/api-docs
+sa-token:
+  token-name: Authorization
+  token-prefix: Bearer
+  timeout: 86400
+  is-concurrent: true
+  is-share: false
+  is-read-cookie: false
+  is-read-header: true
+  token-style: uuid
+byw:
+  security:
+    cors:
+      allowed-origins: ${BYW_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000,http://localhost:5174,http://127.0.0.1:5174,http://localhost:5175,http://127.0.0.1:5175}
+      # Origin patterns: browser puts the page host into Origin, so a localhost-only list breaks access via LAN IP.
+      # Patterns keep allowCredentials enabled (unlike a bare '*'). Production should still narrow this.
+      allowed-origin-patterns: ${BYW_CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:*,http://127.0.0.1:*,http://192.168.*:*,http://10.*:*}
+  gateway:
+    api-docs:
+      enabled: ${BYW_API_DOCS_ENABLED:true}

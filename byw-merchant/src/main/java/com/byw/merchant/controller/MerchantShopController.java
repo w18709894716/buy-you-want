@@ -1,5 +1,6 @@
 package com.byw.merchant.controller;
 
+import jakarta.validation.Valid;
 import com.byw.api.shop.ShopFeignClient;
 import com.byw.api.shop.dto.ShopDTO;
 import com.byw.common.core.result.R;
@@ -25,7 +26,7 @@ public class MerchantShopController {
     }
 
     @PutMapping("/info")
-    public R<Void> updateShop(@RequestBody ShopDTO shopDTO) {
+    public R<Void> updateShop(@Valid @RequestBody ShopDTO shopDTO) {
         // 强制归属当前登录商家店铺，下游再次校验
         shopDTO.setId(UserContext.getShopId());
         return shopFeignClient.updateShop(shopDTO);

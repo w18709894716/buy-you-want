@@ -1,5 +1,6 @@
 package com.byw.settle.feign;
 
+import jakarta.validation.Valid;
 import com.byw.api.settle.SettleFeignClient;
 import com.byw.api.settle.dto.BalanceFlowDTO;
 import com.byw.api.settle.dto.CommissionRuleDTO;
@@ -9,7 +10,7 @@ import com.byw.api.settle.dto.WithdrawApplyDTO;
 import com.byw.api.settle.dto.WithdrawRecordDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.Public;
+import com.byw.common.security.annotation.InternalApi;
 import com.byw.settle.service.BalanceService;
 import com.byw.settle.service.CommissionRuleService;
 import com.byw.settle.service.SettleService;
@@ -25,7 +26,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/feign/settle")
 @RequiredArgsConstructor
-@Public
+@InternalApi
 public class SettleFeignImpl implements SettleFeignClient {
 
     private final BalanceService balanceService;
@@ -58,7 +59,7 @@ public class SettleFeignImpl implements SettleFeignClient {
 
     @Override
     @PostMapping("/withdraw/apply")
-    public R<String> applyWithdraw(@RequestParam("shopId") Long shopId, @RequestBody WithdrawApplyDTO applyDTO) {
+    public R<String> applyWithdraw(@RequestParam("shopId") Long shopId, @Valid @RequestBody WithdrawApplyDTO applyDTO) {
         return R.ok(withdrawService.applyWithdraw(shopId, applyDTO));
     }
 
@@ -88,7 +89,7 @@ public class SettleFeignImpl implements SettleFeignClient {
 
     @Override
     @PostMapping("/commission/save")
-    public R<Boolean> saveCommissionRule(@RequestBody CommissionRuleDTO dto) {
+    public R<Boolean> saveCommissionRule(@Valid @RequestBody CommissionRuleDTO dto) {
         return R.ok(commissionRuleService.saveRule(dto));
     }
 

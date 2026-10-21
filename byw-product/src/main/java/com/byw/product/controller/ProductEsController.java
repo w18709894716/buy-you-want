@@ -1,6 +1,7 @@
 package com.byw.product.controller;
 
 import com.byw.common.core.result.R;
+import com.byw.common.security.annotation.RequireAdmin;
 import com.byw.product.es.ProductEsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,7 +20,8 @@ public class ProductEsController {
 
     private final ProductEsService productEsService;
 
-    /** 全量重建商品索引 */
+    /** 全量重建商品索引（仅平台管理员：会扫全表并批量写 ES，不能对普通登录用户开放） */
+    @RequireAdmin
     @PostMapping("/reindex")
     public R<Integer> reindex() {
         return R.ok(productEsService.reindexAll());

@@ -1,8 +1,10 @@
 package com.byw.product.service.impl;
 
+import com.alicp.jetcache.anno.Cached;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.byw.common.core.constant.CacheNames;
 import com.byw.common.core.result.PageResult;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.byw.product.entity.Product;
@@ -19,6 +21,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -110,6 +113,7 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
     }
 
     @Override
+    @Cached(name = CacheNames.PRODUCT_DETAIL, key = "#id", expire = 30, timeUnit = TimeUnit.MINUTES)
     public Product getProductDetail(Long id) {
         return baseMapper.selectById(id);
     }

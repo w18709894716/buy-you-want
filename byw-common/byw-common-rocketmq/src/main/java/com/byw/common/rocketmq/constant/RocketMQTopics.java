@@ -25,5 +25,8 @@ public class RocketMQTopics {
     // IM related (broadcast for cross-node message push)
     public static final String IM_MESSAGE = "im-message";
 
+    // Operation audit log: produced by byw-common-log aspect, consumed and persisted by byw-user
+    public static final String OPERATION_LOG = "operation-log";
+
     private RocketMQTopics() {}
 }

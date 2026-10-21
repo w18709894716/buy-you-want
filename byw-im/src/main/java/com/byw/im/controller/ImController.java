@@ -1,5 +1,8 @@
 package com.byw.im.controller;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
 import com.byw.common.security.annotation.RequireLogin;
@@ -39,7 +42,7 @@ public class ImController {
     @Operation(summary = "获取或创建会话（买家发起）")
     @RequireLogin
     @PostMapping("/conversation")
-    public R<Conversation> conversation(@RequestBody ConversationRequest request) {
+    public R<Conversation> conversation(@Valid @RequestBody ConversationRequest request) {
         if (request == null || request.getShopId() == null) {
             return R.fail("shopId 不能为空");
         }
@@ -68,7 +71,7 @@ public class ImController {
     @Operation(summary = "标记会话已读")
     @RequireLogin
     @PostMapping("/read")
-    public R<Void> read(@RequestBody ReadRequest request) {
+    public R<Void> read(@Valid @RequestBody ReadRequest request) {
         if (request == null || request.getConversationId() == null) {
             return R.fail("conversationId 不能为空");
         }
@@ -136,13 +139,16 @@ public class ImController {
 
     @Data
     public static class ConversationRequest {
+        @NotNull(message = "店铺ID不能为空")
         private Long shopId;
         /** 入口意图（product-商品详情 order-订单页 shop-店铺首页；可空） */
+        @Size(max = 20, message = "入口标识过长")
         private String entry;
     }
 
     @Data
     public static class ReadRequest {
+        @NotNull(message = "会话ID不能为空")
         private Long conversationId;
     }
 }

@@ -83,7 +83,7 @@ const toggleCollapse = () => {
 
 const handleCommand = (command: string) => {
   if (command === 'logout') {
-    userStore.logout()
+    void userStore.logout()
     router.push('/login')
   }
 }

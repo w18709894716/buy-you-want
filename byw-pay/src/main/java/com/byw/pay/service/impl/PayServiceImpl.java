@@ -7,25 +7,30 @@ import com.byw.api.pay.dto.PayOrderDTO;
 import com.byw.common.core.result.R;
 import com.byw.api.pay.dto.RefundInfoDTO;
 import com.byw.common.core.exception.BusinessException;
+import com.byw.common.core.exception.ResultCode;
+import com.byw.common.core.util.SnowflakeIdGenerator;
 import com.byw.pay.entity.PayOrder;
 import com.byw.pay.entity.RefundRecord;
 import com.byw.pay.mapper.PayOrderMapper;
 import com.byw.pay.mapper.RefundRecordMapper;
+import com.byw.pay.producer.PayCallbackContext;
 import com.byw.pay.producer.PayEventProducer;
 import com.byw.pay.service.PayService;
+import com.byw.common.security.context.UserContext;
 import com.byw.pay.strategy.PayStrategy;
 import com.byw.pay.strategy.PayStrategyFactory;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicLong;
 
 @Slf4j
 @Service
@@ -38,24 +43,75 @@ public class PayServiceImpl implements PayService {
     private final PayEventProducer payEventProducer;
     private final OrderFeignClient orderFeignClient;
 
-    private static final AtomicLong SEQUENCE = new AtomicLong(0);
+    /**
+     * 模拟支付回调开关（演示/本地联调）。
+     * 开启时回调不做渠道验签，仅允许支付单归属用户触发；生产必须置 false 并接入真实渠道验签。
+     */
+    @Value("${byw.pay.mock-enabled:true}")
+    private boolean mockEnabled;
+
+    @PostConstruct
+    public void warnIfMockEnabled() {
+        if (mockEnabled) {
+            log.warn("byw.pay.mock-enabled=true：支付回调为模拟通道，仅支付单归属用户可触发；"
+                    + "生产环境请置为 false 并接入真实渠道验签");
+        }
+    }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public PayOrderDTO createPayOrder(String orderNo, Long userId, BigDecimal amount, String channel) {
+        // 金额以订单为准：客户端传入的 amount 只用于核对，绝不允许"自报金额"支付。
+        // 本方法不再包事务：内部只有一次 insert，且要在事务外调用订单服务，避免长时间占用连接。
+        R<OrderDetailDTO> orderResult = orderFeignClient.getOrderDetail(orderNo);
+        if (orderResult == null || !orderResult.isSuccess() || orderResult.getData() == null) {
+            throw new BusinessException("订单不存在");
+        }
+        OrderDetailDTO order = orderResult.getData();
+        if (userId == null || !userId.equals(order.getUserId())) {
+            throw new BusinessException(ResultCode.FORBIDDEN);
+        }
+        if (order.getStatus() == null || order.getStatus() != 0) {
+            throw new BusinessException("订单当前状态不可支付");
+        }
+        BigDecimal payAmount = order.getPayAmount() == null ? BigDecimal.ZERO : order.getPayAmount();
+        if (amount != null && amount.compareTo(payAmount) != 0) {
+            log.warn("支付金额与订单不一致，拒绝创建支付单: orderNo={}, clientAmount={}, orderAmount={}",
+                    orderNo, amount, payAmount);
+            throw new BusinessException("支付金额与订单不一致，请刷新后重试");
+        }
+        if (payAmount.signum() <= 0) {
+            throw new BusinessException("订单应付金额异常，无法发起支付");
+        }
+
+        // 同一订单已有待支付支付单时复用，避免连点/重试产生多张支付单
+        PayOrder pending = payOrderMapper.selectOne(new LambdaQueryWrapper<PayOrder>()
+                .eq(PayOrder::getOrderNo, orderNo)
+                .eq(PayOrder::getStatus, 0)
+                .orderByDesc(PayOrder::getId)
+                .last("LIMIT 1"));
+        if (pending != null) {
+            Map<String, String> existingPayResult =
+                    payStrategyFactory.getStrategy(channel).pay(pending.getPayNo(), pending.getAmount());
+            PayOrderDTO existingDto = new PayOrderDTO();
+            BeanUtils.copyProperties(pending, existingDto);
+            existingDto.setPayUrl(existingPayResult.get("payUrl"));
+            log.info("复用待支付支付单: payNo={}, orderNo={}", pending.getPayNo(), orderNo);
+            return existingDto;
+        }
+
         // 生成支付单号
         String payNo = generatePayNo();
 
         // 使用策略模式发起支付
         PayStrategy strategy = payStrategyFactory.getStrategy(channel);
-        Map<String, String> payResult = strategy.pay(payNo, amount);
+        Map<String, String> payResult = strategy.pay(payNo, payAmount);
 
         // 创建支付单
         PayOrder payOrder = new PayOrder();
         payOrder.setPayNo(payNo);
         payOrder.setOrderNo(orderNo);
         payOrder.setUserId(userId);
-        payOrder.setAmount(amount);
+        payOrder.setAmount(payAmount);
         payOrder.setPayChannel(channel);
         payOrder.setStatus(0); // 待支付
         payOrderMapper.insert(payOrder);
@@ -65,7 +121,7 @@ public class PayServiceImpl implements PayService {
         BeanUtils.copyProperties(payOrder, dto);
         dto.setPayUrl(payResult.get("payUrl"));
 
-        log.info("创建支付单成功: payNo={}, orderNo={}, channel={}", payNo, orderNo, channel);
+        log.info("创建支付单成功: payNo={}, orderNo={}, channel={}, amount={}", payNo, orderNo, channel, payAmount);
         return dto;
     }
 
@@ -80,9 +136,36 @@ public class PayServiceImpl implements PayService {
         return getPayOrderByNo(payNo).getUserId();
     }
 
+    /**
+     * 真实渠道回调：验签由控制层（{@code PayCallbackSignature}）在进入本方法前完成，
+     * 因此这里不再重复做"归属用户"校验 —— 渠道回调没有登录态。
+     */
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public void handlePayCallback(String channel, String payNo, String tradeNo, String callbackContent) {
+        applyCallbackResult(channel, payNo, tradeNo, callbackContent);
+    }
+
+    /**
+     * 模拟回调：没有渠道验签，退化为两道门槛 —— 开关必须显式打开，且调用方必须是支付单归属用户。
+     * 任何一条不满足都拒绝，避免"猜到 payNo 就能把别人订单改成已支付"。
+     */
+    @Override
+    public void handleMockCallback(String channel, String payNo, String tradeNo) {
+        if (!mockEnabled) {
+            log.warn("模拟支付回调未开启，拒绝: payNo={}", payNo);
+            throw new BusinessException(ResultCode.FORBIDDEN, "模拟支付回调未开启");
+        }
+        PayOrder payOrder = getPayOrderByNo(payNo);
+        Long currentUserId = UserContext.getUserId();
+        if (currentUserId == null || !currentUserId.equals(payOrder.getUserId())) {
+            log.warn("模拟支付回调被拒绝：调用方非支付单归属用户, payNo={}, caller={}", payNo, currentUserId);
+            throw new BusinessException(ResultCode.FORBIDDEN);
+        }
+        applyCallbackResult(channel, payNo, tradeNo, null);
+    }
+
+    /** 回调结果的公共处理：状态幂等判断 + 支付状态查询 + 事务消息/落库 */
+    private void applyCallbackResult(String channel, String payNo, String tradeNo, String callbackContent) {
         PayOrder payOrder = getPayOrderByNo(payNo);
 
         if (payOrder.getStatus() != 0) {
@@ -94,31 +177,83 @@ public class PayServiceImpl implements PayService {
         PayStrategy strategy = payStrategyFactory.getStrategy(channel);
         Integer payStatus = strategy.queryStatus(payNo);
 
-        // 更新支付单状态
-        payOrder.setStatus(payStatus);
-        payOrder.setChannelTradeNo(tradeNo);
-        payOrder.setCallbackContent(callbackContent);
         if (payStatus == 1) {
-            payOrder.setPayTime(LocalDateTime.now());
-        }
-        payOrderMapper.updateById(payOrder);
-
-        // 支付成功时发送RocketMQ消息通知订单服务
-        if (payStatus == 1) {
-            payEventProducer.sendPaymentResult(payOrder.getOrderNo(), payNo, payStatus);
-            log.info("支付成功，已发送RocketMQ通知: payNo={}, orderNo={}", payNo, payOrder.getOrderNo());
+            // 支付成功：发事务消息，把"支付单置为已支付"交给本地事务在半消息落盘后执行，
+            // 使落库与消息投递同生共死。
+            // 注意本方法不能加 @Transactional：否则本地事务会并入外层事务，
+            // broker 提交半消息时外层事务尚未提交，dual-write 窗口依然存在。
+            boolean committed = payEventProducer.sendPaymentResultInTransaction(payOrder.getOrderNo(), payNo,
+                    new PayCallbackContext(payNo, tradeNo, callbackContent));
+            if (!committed) {
+                throw new BusinessException(ResultCode.PAY_FAILED, "支付结果处理失败，请重试");
+            }
+            log.info("支付成功，支付结果事务消息已提交: payNo={}, orderNo={}", payNo, payOrder.getOrderNo());
+        } else {
+            // 非成功结果（支付失败/处理中）没有消息要发，直接落库
+            payOrder.setStatus(payStatus);
+            payOrder.setChannelTradeNo(tradeNo);
+            payOrder.setCallbackContent(callbackContent);
+            payOrderMapper.updateById(payOrder);
         }
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void refund(String orderNo, BigDecimal amount, String reason) {
+    public void completePayment(String payNo, String tradeNo, String callbackContent) {
+        PayOrder payOrder = getPayOrderByNo(payNo);
+        if (payOrder.getStatus() != 0) {
+            // 同一支付单只会有一条半消息，此处仅防御异常调用，避免覆盖 payTime
+            log.warn("支付单已处理，跳过本地事务: payNo={}, status={}", payNo, payOrder.getStatus());
+            return;
+        }
+        payOrder.setStatus(1);
+        payOrder.setChannelTradeNo(tradeNo);
+        payOrder.setCallbackContent(callbackContent);
+        payOrder.setPayTime(LocalDateTime.now());
+        payOrderMapper.updateById(payOrder);
+        log.info("支付单本地事务提交成功: payNo={}, orderNo={}", payNo, payOrder.getOrderNo());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void refund(String orderNo, BigDecimal amount, String reason, String refNo) {
+        // 幂等闸门：同一业务键（售后单号）重复驱动退款直接返回成功，避免重复退款。
+        // 唯一索引 uk_ref_no 是并发场景的最终兜底（见下方 DuplicateKeyException 分支）。
+        if (refNo != null && !refNo.isEmpty()) {
+            RefundRecord existing = refundRecordMapper.selectOne(new LambdaQueryWrapper<RefundRecord>()
+                    .eq(RefundRecord::getRefNo, refNo)
+                    .last("LIMIT 1"));
+            if (existing != null) {
+                log.info("退款已存在，幂等返回: refNo={}, refundNo={}", refNo, existing.getRefundNo());
+                return;
+            }
+        }
+
         // 查找可退款支付单：先按本单查，未命中再回溯父订单（聚合支付的支付单挂在父订单号上）
         PayOrder payOrder = findRefundablePayOrder(orderNo);
 
         if (payOrder == null) {
             log.warn("退款失败，未找到已支付的支付单: orderNo={}", orderNo);
             throw new BusinessException("未找到已支付的订单");
+        }
+        // 金额边界：不允许退零/负数，也不允许单笔超过原支付金额
+        if (amount == null || amount.signum() <= 0) {
+            throw new BusinessException("退款金额必须大于 0");
+        }
+        if (amount.compareTo(payOrder.getAmount()) > 0) {
+            throw new BusinessException("退款金额不能超过支付金额");
+        }
+        // 累计退款不得超过原支付金额：同一次聚合支付下多个子订单先后退款时，
+        // 单笔都在上限内但总和可能超出。并发下存在读-改-写窗口，
+        // 由 t_refund_record 的唯一索引与售后幂等键共同兜住主要路径。
+        BigDecimal refundedTotal = refundRecordMapper.selectList(new LambdaQueryWrapper<RefundRecord>()
+                        .eq(RefundRecord::getPayNo, payOrder.getPayNo()))
+                .stream()
+                .map(RefundRecord::getRefundAmount)
+                .filter(java.util.Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (refundedTotal.add(amount).compareTo(payOrder.getAmount()) > 0) {
+            throw new BusinessException("累计退款金额不能超过支付金额");
         }
 
         // 创建退款记录
@@ -130,8 +265,15 @@ public class PayServiceImpl implements PayService {
         refundRecord.setUserId(payOrder.getUserId());
         refundRecord.setRefundAmount(amount);
         refundRecord.setReason(reason);
+        refundRecord.setRefNo(refNo);
         refundRecord.setStatus(1); // 模拟退款成功
-        refundRecordMapper.insert(refundRecord);
+        try {
+            refundRecordMapper.insert(refundRecord);
+        } catch (DuplicateKeyException e) {
+            // 并发重复驱动被唯一索引拦下：首笔已退款，此处按幂等成功处理
+            log.warn("并发退款被唯一索引拦下，幂等返回: refNo={}", refNo);
+            return;
+        }
 
         // 更新支付单状态为已退款
         payOrder.setStatus(3);
@@ -216,15 +358,13 @@ public class PayServiceImpl implements PayService {
                         .last("LIMIT 1"));
     }
 
+    /** 支付单号：PAY + 雪花ID（全局唯一，多实例安全） */
     private String generatePayNo() {
-        String datePart = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
-        long seq = SEQUENCE.incrementAndGet() % 100000;
-        return "PAY" + datePart + String.format("%05d", seq);
+        return "PAY" + SnowflakeIdGenerator.nextIdStr();
     }
 
+    /** 退款单号：REF + 雪花ID */
     private String generateRefundNo() {
-        String datePart = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
-        long seq = SEQUENCE.incrementAndGet() % 100000;
-        return "REF" + datePart + String.format("%05d", seq);
+        return "REF" + SnowflakeIdGenerator.nextIdStr();
     }
 }

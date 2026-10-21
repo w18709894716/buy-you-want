@@ -25,31 +25,112 @@ export function isPublicPath(path: string): boolean {
   return PUBLIC_PATHS.includes(path) || path.startsWith('/product/') || path.startsWith('/shop/')
 }
 
-/** 获取 token */
+/**
+ * 获取 token。
+ *
+ * 只从 localStorage 读取。此前还额外写入了一个**非 HttpOnly 的 byw_token Cookie**，
+ * 但后端并不读取它（Sa-Token 配置 is-read-cookie=false），
+ * 等于让凭据随每个请求自动外发，XSS / 中间代理 / 访问日志都能拿到，因此已移除。
+ */
 export function getToken(): string | null {
   if (import.meta.server) return null
-  return localStorage.getItem(TOKEN_KEY) || getCookieToken()
-}
-
-/** 从 cookie 中读取 token（兼容 SSR） */
-function getCookieToken(): string | null {
-  if (typeof document === 'undefined') return null
-  const match = document.cookie.match(/(?:^|;\s*)byw_token=([^;]*)/)
-  return match ? decodeURIComponent(match[1]) : null
+  return localStorage.getItem(TOKEN_KEY)
 }
 
 /** 设置 token */
 export function setToken(token: string) {
   if (import.meta.server) return
   localStorage.setItem(TOKEN_KEY, token)
-  document.cookie = `byw_token=${encodeURIComponent(token)}; path=/; max-age=${60 * 60 * 24 * 7}`
+  clearLegacyCookie()
 }
 
 /** 清除 token */
 export function clearToken() {
   if (import.meta.server) return
   localStorage.removeItem(TOKEN_KEY)
+  clearLegacyCookie()
+}
+
+/** 清理历史版本遗留的 byw_token Cookie（后端不读，仅停止继续外发） */
+function clearLegacyCookie() {
+  if (typeof document === 'undefined') return
   document.cookie = 'byw_token=; path=/; max-age=0'
+}
+
+// ==================== Token 自动续期 ====================
+// 背景（真机验证结论）：Sa-Token 的 timeout 是 86400 秒，而本项目的调用路径不会触发
+// Sa-Token 的自动续期（网关只调 getLoginIdByToken，服务侧只信任网关注入的身份头），
+// 所以 token 是"登录后固定 24 小时过期"，与用户是否活跃无关 —— 用户正在操作时也会被登出。
+// 这里在剩余时间不足阈值时主动调 /auth/refresh 换新 token，避免这种"突然登出"。
+
+/** 剩余不足该秒数就续期 */
+const REFRESH_THRESHOLD_SECONDS = 2 * 60 * 60
+/** 两次探测的最小间隔，避免每个请求都打一次 */
+const TTL_CHECK_INTERVAL_MS = 10 * 60 * 1000
+
+let lastTtlCheckAt = 0
+let refreshing: Promise<string | null> | null = null
+
+/** 取当前 token 剩余秒数；探测失败返回 null（不影响正常请求） */
+async function probeTokenTtl(token: string): Promise<number | null> {
+  try {
+    const config = useRuntimeConfig()
+    const resp = await $fetch<R<number>>('/auth/token-ttl', {
+      baseURL: config.public.apiBase as string,
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return typeof resp?.data === 'number' ? resp.data : null
+  } catch {
+    return null
+  }
+}
+
+/** 单飞刷新：并发请求共享同一次刷新，避免把同一个旧 token 反复注销 */
+async function refreshTokenOnce(token: string): Promise<string | null> {
+  if (!refreshing) {
+    refreshing = (async () => {
+      try {
+        const config = useRuntimeConfig()
+        const resp = await $fetch<R<{ token: string }>>('/auth/refresh', {
+          baseURL: config.public.apiBase as string,
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const fresh = resp?.data?.token
+        if (fresh) {
+          setToken(fresh)
+          return fresh
+        }
+        return null
+      } catch {
+        return null
+      } finally {
+        refreshing = null
+      }
+    })()
+  }
+  return refreshing
+}
+
+/**
+ * 请求前确保 token 可用：临近过期（默认 2 小时）就续期一次。
+ * - 无 token / SSR：原样返回
+ * - token 已失效（TTL=-2）：清理本地 token，交给后续 401 流程跳登录
+ * - 探测失败：不阻塞请求
+ */
+export async function ensureFreshToken(): Promise<string | null> {
+  const token = getToken()
+  if (!token || import.meta.server) return token
+  const now = Date.now()
+  if (now - lastTtlCheckAt < TTL_CHECK_INTERVAL_MS) return token
+  lastTtlCheckAt = now
+  const ttl = await probeTokenTtl(token)
+  if (ttl === null || ttl === -1 || ttl > REFRESH_THRESHOLD_SECONDS) return token
+  if (ttl <= 0) {
+    clearToken()
+    return null
+  }
+  return (await refreshTokenOnce(token)) ?? token
 }
 
 /** 核心请求函数 */
@@ -61,7 +142,8 @@ export async function request<T = any>(
   const config = useRuntimeConfig()
   const baseURL = config.public.apiBase as string
 
-  const token = getToken()
+  // 临近过期先续期，避免用户在操作过程中被登出
+  const token = await ensureFreshToken()
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -140,7 +222,7 @@ export function del<T = any>(url: string, options?: RequestOptions): Promise<T> 
 export async function upload<T = any>(url: string, formData: FormData): Promise<T> {
   const config = useRuntimeConfig()
   const baseURL = config.public.apiBase as string
-  const token = getToken()
+  const token = await ensureFreshToken()
   const headers: Record<string, string> = {}
   if (token) {
     headers['Authorization'] = `Bearer ${token}`

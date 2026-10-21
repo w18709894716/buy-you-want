@@ -2,7 +2,7 @@
   <el-upload
     class="image-upload"
     :action="uploadAction"
-    :headers="headers"
+    :with-credentials="true"
     :file-list="fileList"
     :limit="limit"
     :on-success="handleSuccess"
@@ -53,11 +53,6 @@ const uploadAction = computed(() => `/api/admin/upload?folder=${props.folder}`)
 const emit = defineEmits<{
   'update:modelValue': [value: string[]]
 }>()
-
-const headers = computed(() => {
-  const token = localStorage.getItem('admin_token')
-  return token ? { Authorization: `Bearer ${token}` } : {}
-})
 
 const fileList = ref<UploadUserFile[]>(
   props.modelValue.map(url => ({ name: '', url }))

@@ -4,9 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byw.api.pay.PayFeignClient;
 import com.byw.api.pay.dto.RefundInfoDTO;
-import com.byw.api.product.ProductFeignClient;
-import com.byw.api.product.dto.SkuStockDeductDTO;
 import com.byw.common.core.exception.BusinessException;
+import com.byw.common.core.util.SnowflakeIdGenerator;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
 import com.byw.common.security.context.UserContext;
@@ -21,16 +20,15 @@ import com.byw.order.service.AfterSaleService;
 import com.byw.order.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -42,11 +40,8 @@ public class AfterSaleServiceImpl implements AfterSaleService {
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
     private final PayFeignClient payFeignClient;
-    private final ProductFeignClient productFeignClient;
     private final OrderService orderService;
-
-    /** 售后单号序列计数器 */
-    private static final AtomicLong SEQUENCE = new AtomicLong(0);
+    private final AfterSaleRefundExecutor refundExecutor;
 
     /** 退款类售后类型：仅退款/退货退款/价保，必须携带退款金额 */
     private static final List<Integer> REFUND_TYPES = List.of(1, 2, 6);
@@ -124,7 +119,13 @@ public class AfterSaleServiceImpl implements AfterSaleService {
         afterSale.setDescription(description);
         afterSale.setRefundAmount(refundAmount);
         afterSale.setStatus(0);
-        afterSaleMapper.insert(afterSale);
+        try {
+            afterSaleMapper.insert(afterSale);
+        } catch (DuplicateKeyException e) {
+            // 并发重复提交兜底：同一订单明细同时只允许一条"进行中"售后单（唯一键 uk_item_active）。
+            // 上面的 selectCount 检查在并发下会双双通过，所以必须处理冲突而不是只靠预检查。
+            throw new BusinessException("该商品已有进行中的售后申请，请勿重复提交");
+        }
 
         // 退款类售后（仅退款/退货退款）：交易完成的订单同步进入「退款中」(5)，被拒/撤销后回退为交易完成；
         // 确认收货前（1/2/7）申请售后订单主状态不变，售后进度仅体现在商品行上，避免阻塞其余商品发货
@@ -167,8 +168,17 @@ public class AfterSaleServiceImpl implements AfterSaleService {
         if (afterSale.getStatus() != 0) {
             throw new BusinessException("仅待审核的售后单可以撤销");
         }
+        // CAS：仅待审核(0)可撤销，避免与商家审核并发时互相覆盖
+        AfterSale update = new AfterSale();
+        update.setId(id);
+        update.setStatus(4);
+        int rows = afterSaleMapper.update(update, new LambdaQueryWrapper<AfterSale>()
+                .eq(AfterSale::getId, id)
+                .eq(AfterSale::getStatus, 0));
+        if (rows == 0) {
+            throw new BusinessException("售后单状态已变更，请刷新后重试");
+        }
         afterSale.setStatus(4);
-        afterSaleMapper.updateById(afterSale);
         revertOrderRefunding(afterSale);
     }
 
@@ -193,21 +203,29 @@ public class AfterSaleServiceImpl implements AfterSaleService {
         if (afterSale.getStatus() == null || afterSale.getStatus() != 0) {
             throw new BusinessException("仅待审核的售后单可以审核");
         }
-        afterSale.setApproveTime(LocalDateTime.now());
+        LocalDateTime now = LocalDateTime.now();
         Integer type = afterSale.getType();
+        AfterSale update = new AfterSale();
+        update.setId(id);
+        update.setApproveTime(now);
         if (type != null && type == 1) {
-            // 仅退款：审核通过即退款
-            afterSaleMapper.updateById(afterSale);
-            doRefund(afterSale);
+            // 仅退款：先置「退款中」并提交事务，远程退款由 driveRefundIfPending 在事务外驱动，
+            // 避免"远程已退款、本地回滚"造成钱退了但售后单回到待审核
+            update.setStatus(6);
         } else if (type != null && type == 2) {
             // 退货退款：审核通过转「待买家寄回」
-            afterSale.setStatus(1);
-            afterSaleMapper.updateById(afterSale);
+            update.setStatus(1);
         } else {
             // 换货/维修/补寄/价保：审核同意即完成，不触发关单退款
-            afterSale.setStatus(3);
-            afterSale.setFinishTime(LocalDateTime.now());
-            afterSaleMapper.updateById(afterSale);
+            update.setStatus(3);
+            update.setFinishTime(now);
+        }
+        // CAS：仅待审核(0)可流转，并发审核/撤销只有一个能生效（退款只可能被触发一次）
+        int rows = afterSaleMapper.update(update, new LambdaQueryWrapper<AfterSale>()
+                .eq(AfterSale::getId, id)
+                .eq(AfterSale::getStatus, 0));
+        if (rows == 0) {
+            throw new BusinessException("售后单状态已变更，请刷新后重试");
         }
     }
 
@@ -218,9 +236,17 @@ public class AfterSaleServiceImpl implements AfterSaleService {
         if (afterSale.getStatus() == null || afterSale.getStatus() != 0) {
             throw new BusinessException("仅待审核的售后单可以拒绝");
         }
+        AfterSale update = new AfterSale();
+        update.setId(id);
+        update.setStatus(2);
+        update.setRejectReason(reason);
+        int rows = afterSaleMapper.update(update, new LambdaQueryWrapper<AfterSale>()
+                .eq(AfterSale::getId, id)
+                .eq(AfterSale::getStatus, 0));
+        if (rows == 0) {
+            throw new BusinessException("售后单状态已变更，请刷新后重试");
+        }
         afterSale.setStatus(2);
-        afterSale.setRejectReason(reason);
-        afterSaleMapper.updateById(afterSale);
         revertOrderRefunding(afterSale);
     }
 
@@ -240,11 +266,18 @@ public class AfterSaleServiceImpl implements AfterSaleService {
         if (trackingNo == null || trackingNo.trim().isEmpty()) {
             throw new BusinessException("请填写寄回运单号");
         }
-        afterSale.setReturnCompany(company);
-        afterSale.setReturnTrackingNo(trackingNo);
-        afterSale.setReturnShipTime(LocalDateTime.now());
-        afterSale.setStatus(5); // 待商家收货
-        afterSaleMapper.updateById(afterSale);
+        AfterSale update = new AfterSale();
+        update.setId(id);
+        update.setReturnCompany(company);
+        update.setReturnTrackingNo(trackingNo);
+        update.setReturnShipTime(LocalDateTime.now());
+        update.setStatus(5); // 待商家收货
+        int rows = afterSaleMapper.update(update, new LambdaQueryWrapper<AfterSale>()
+                .eq(AfterSale::getId, id)
+                .eq(AfterSale::getStatus, 1));
+        if (rows == 0) {
+            throw new BusinessException("售后单状态已变更，请刷新后重试");
+        }
     }
 
     @Override
@@ -254,9 +287,16 @@ public class AfterSaleServiceImpl implements AfterSaleService {
         if (afterSale.getStatus() == null || afterSale.getStatus() != 5) {
             throw new BusinessException("仅待商家收货的售后单可以确认收货");
         }
-        afterSale.setReceiveTime(LocalDateTime.now());
-        afterSaleMapper.updateById(afterSale);
-        doRefund(afterSale);
+        AfterSale update = new AfterSale();
+        update.setId(id);
+        update.setReceiveTime(LocalDateTime.now());
+        update.setStatus(6); // 退款中：远程退款由事务外驱动
+        int rows = afterSaleMapper.update(update, new LambdaQueryWrapper<AfterSale>()
+                .eq(AfterSale::getId, id)
+                .eq(AfterSale::getStatus, 5));
+        if (rows == 0) {
+            throw new BusinessException("售后单状态已变更，请刷新后重试");
+        }
     }
 
     @Override
@@ -339,115 +379,50 @@ public class AfterSaleServiceImpl implements AfterSaleService {
         return nodes;
     }
 
-    /** 执行退款：置退款中 → 调支付服务原路退回 → 置已完成，并编排订单状态流转 */
-    private void doRefund(AfterSale afterSale) {
-        afterSale.setStatus(6); // 退款中
-        afterSaleMapper.updateById(afterSale);
-
+    @Override
+    public void driveRefundIfPending(Long id) {
+        AfterSale afterSale = afterSaleMapper.selectById(id);
+        if (afterSale == null || afterSale.getStatus() == null || afterSale.getStatus() != 6) {
+            return; // 不在「退款中」无需处理（审核拒绝、退货待寄回、其他售后类型等）
+        }
         BigDecimal amount = afterSale.getRefundAmount();
+        // 远程退款在本地事务之外调用，且以 afterSaleNo 作为幂等业务键：
+        // 重复驱动（对账任务、重试）不会重复退款。
         R<Boolean> refundResult = payFeignClient.refund(afterSale.getOrderNo(), amount,
-                afterSale.getReason() == null ? "售后退款" : afterSale.getReason());
+                afterSale.getReason() == null ? "售后退款" : afterSale.getReason(),
+                afterSale.getAfterSaleNo());
         if (refundResult == null || !refundResult.isSuccess() || !Boolean.TRUE.equals(refundResult.getData())) {
             log.error("售后退款失败: afterSaleNo={}, orderNo={}, amount={}, respCode={}, respMessage={}",
                     afterSale.getAfterSaleNo(), afterSale.getOrderNo(), amount,
                     refundResult == null ? null : refundResult.getCode(),
                     refundResult == null ? null : refundResult.getMessage());
-            // 透传支付服务的失败原因（如"未找到已支付的订单"），便于定位问题
+            // 透传支付服务的失败原因（如"未找到已支付的订单"），便于定位问题；
+            // 售后单保持「退款中」，由 AfterSaleRefundScheduler 对账重试
             String message = refundResult == null ? null : refundResult.getMessage();
             throw new BusinessException(message == null || message.isEmpty() ? "退款失败，请稍后重试" : message);
         }
 
-        afterSale.setStatus(3); // 已完成
-        afterSale.setFinishTime(LocalDateTime.now());
-        afterSaleMapper.updateById(afterSale);
-        // 未发货商品仅退款成功：货未寄出，回补下单时扣减的库存
-        releaseStockIfUnshipped(afterSale);
-        // 退款成功后的订单状态编排：全部退完关单 / 部分退款回退交易完成 / 仍有进行中保持退款中
-        settleOrderAfterRefund(afterSale);
-        log.info("售后退款完成: afterSaleNo={}, orderNo={}, amount={}",
-                afterSale.getAfterSaleNo(), afterSale.getOrderNo(), amount);
-    }
-
-    /**
-     * 退款成功后的订单状态编排：
-     * 历史订单级售后（orderItemId 为空）→ 整单退款，订单置交易关闭(4)；
-     * 商品级售后 → 全部明细均已完成退款则关单(4)（含确认收货前 1/2/7 场景）；
-     * 部分退款时仅退款中(5)的订单需回退：无其他进行中退款售后回退交易完成(3)，仍有则保持退款中；
-     * 确认收货前（1/2/7）部分退款主状态未动，无需处理
-     */
-    private void settleOrderAfterRefund(AfterSale afterSale) {
-        String orderNo = afterSale.getOrderNo();
-        Order order = orderMapper.selectOne(new LambdaQueryWrapper<Order>().eq(Order::getOrderNo, orderNo));
-        if (order == null || order.getStatus() == null) {
-            return;
-        }
-        Integer status = order.getStatus();
-        if (afterSale.getOrderItemId() == null) {
-            // 历史订单级售后：整单退款 → 交易关闭（退款驱动关单自动标记 close_type=2）
-            if (status == 5) {
-                orderService.updateStatus(orderNo, 4);
-            }
-            return;
-        }
-        // 全部明细均已存在已完成的退款类售后 → 整单退完，交易关闭
-        List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
-                .eq(OrderItem::getOrderNo, orderNo));
-        Set<Long> refundedItemIds = afterSaleMapper.selectList(new LambdaQueryWrapper<AfterSale>()
-                        .eq(AfterSale::getOrderNo, orderNo)
-                        .in(AfterSale::getType, 1, 2)
-                        .eq(AfterSale::getStatus, 3)
-                        .isNotNull(AfterSale::getOrderItemId)).stream()
-                .map(AfterSale::getOrderItemId)
-                .collect(Collectors.toSet());
-        boolean allRefunded = !items.isEmpty()
-                && items.stream().allMatch(it -> refundedItemIds.contains(it.getId()));
-        if (allRefunded) {
-            if (status == 5 || status == 1 || status == 2 || status == 7) {
-                orderService.updateStatus(orderNo, 4);
-            }
-            return;
-        }
-        // 部分退款：部分发货(7)时若剩余未退款商品已全部发货，推进待收货(2)，避免订单卡在部分发货等一个不会再发的商品
-        if (status == 1 || status == 7) {
-            boolean restAllShipped = items.stream()
-                    .allMatch(it -> refundedItemIds.contains(it.getId())
-                            || (it.getShipStatus() != null && it.getShipStatus() == 1));
-            if (restAllShipped) {
-                orderService.updateStatus(orderNo, 2);
-            }
-            return;
-        }
-        // 部分退款：仅交易完成路径（退款中5）需要回退；待收货(2)主状态未动，保持原状态继续履约
-        if (status != 5) {
-            return;
-        }
-        Long processing = afterSaleMapper.selectCount(new LambdaQueryWrapper<AfterSale>()
-                .eq(AfterSale::getOrderNo, orderNo)
-                .in(AfterSale::getType, 1, 2)
-                .in(AfterSale::getStatus, 0, 1, 5, 6));
-        if (processing == null || processing == 0) {
-            orderService.updateStatus(orderNo, 3);
+        // 本地终态（6→3 + 订单编排）在一个事务内完成
+        boolean finalized = refundExecutor.finalizeRefund(afterSale.getId());
+        if (finalized) {
+            // 库存回补放在终态事务提交之后：避免"远程回补成功 + 本地回滚"被重试放大成重复回补
+            refundExecutor.restoreStockIfUnshipped(afterSale);
         }
     }
 
-    /** 未发货商品仅退款成功：回补下单时扣减的库存（退货退款的商品已寄出，不自动回补） */
-    private void releaseStockIfUnshipped(AfterSale afterSale) {
-        if (afterSale.getOrderItemId() == null || afterSale.getType() == null || afterSale.getType() != 1) {
-            return;
-        }
-        OrderItem item = orderItemMapper.selectById(afterSale.getOrderItemId());
-        if (item == null || (item.getShipStatus() != null && item.getShipStatus() == 1)) {
-            return;
-        }
-        try {
-            productFeignClient.releaseStock(List.of(new SkuStockDeductDTO(item.getSkuId(), item.getQuantity())));
-            log.info("未发货商品退款回补库存: afterSaleNo={}, skuId={}, quantity={}",
-                    afterSale.getAfterSaleNo(), item.getSkuId(), item.getQuantity());
-        } catch (Exception e) {
-            // 库存回补失败不阻断退款主流程，记日志人工处理
-            log.warn("未发货商品退款回补库存失败: afterSaleNo={}, skuId={}, error={}",
-                    afterSale.getAfterSaleNo(), item.getSkuId(), e.getMessage());
-        }
+    @Override
+    public List<Long> listStuckRefundIds(int olderThanMinutes, int limit) {
+        // 对账兜底：远程退款成功后若终态回写失败（进程崩溃、订单编排抛错），售后单会停在「退款中」，
+        // 由定时任务重新驱动（退款按 afterSaleNo 幂等，重复驱动安全）
+        LocalDateTime deadline = LocalDateTime.now().minusMinutes(olderThanMinutes);
+        return afterSaleMapper.selectList(new LambdaQueryWrapper<AfterSale>()
+                        .eq(AfterSale::getStatus, 6)
+                        .le(AfterSale::getUpdatedAt, deadline)
+                        .orderByAsc(AfterSale::getId)
+                        .last("LIMIT " + Math.max(limit, 1)))
+                .stream()
+                .map(AfterSale::getId)
+                .collect(Collectors.toList());
     }
 
     /** 售后被拒绝/撤销：订单不再有其他进行中的退款类售后时，从「退款中」(5)回退为「交易完成」(3) */
@@ -476,17 +451,15 @@ public class AfterSaleServiceImpl implements AfterSaleService {
         if (afterSale == null) {
             throw new BusinessException("售后单不存在");
         }
-        Long shopId = UserContext.getShopId();
-        if (shopId != null && !shopId.equals(afterSale.getShopId())) {
+        // fail-closed：无店铺上下文且非平台管理员一律拒绝（原实现"shopId 为空则跳过"可被游客绕过）
+        if (!UserContext.canAccessShop(afterSale.getShopId())) {
             throw new BusinessException("无权操作该售后单");
         }
         return afterSale;
     }
 
-    /** 生成售后单号：AS + 时间戳 + 5位序列 */
+    /** 生成售后单号：AS + 雪花ID（全局唯一，多实例安全） */
     private String generateAfterSaleNo() {
-        String datePart = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
-        long seq = SEQUENCE.incrementAndGet() % 100000;
-        return "AS" + datePart + String.format("%05d", seq);
+        return "AS" + SnowflakeIdGenerator.nextIdStr();
     }
 }

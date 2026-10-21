@@ -159,9 +159,11 @@ async function confirmPay() {
     const payOrder = await post<any>('/pay/create', null, {
       params: { orderNo, amount: order.value.payAmount, channel }
     })
-    // 2. 模拟支付渠道回调：支付单置为已支付，并经 MQ 通知订单服务流转状态
+    // 2. 模拟支付渠道回调：支付单置为已支付，并经 MQ 通知订单服务流转状态。
+    //    走 /pay/mock/callback（需登录 + 支付单归属用户 + 服务端 mock-enabled=true）；
+    //    /pay/callback 是真实渠道回调，必须带签名，前端不能直接调。
     await new Promise(resolve => setTimeout(resolve, 1500))
-    await post(`/pay/callback/${channel}`, null, {
+    await post(`/pay/mock/callback/${channel}`, null, {
       params: { payNo: payOrder.payNo, tradeNo: 'MOCK' + Date.now() }
     })
     // 3. 订单状态经 MQ 异步流转，跳转支付结果页轮询确认，避免订单列表瞬时仍显示待付款

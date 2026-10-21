@@ -1,6 +1,11 @@
+# 本文件只保留"启动自举 + 日志"两类配置：
+#   - server.port / spring.application.name / nacos 连接与 shared-configs：读 Nacos 之前就要用到，不能上移
+#   - logging：日志系统早于远程配置初始化，放 Nacos 不生效（实测）
+# 其余服务私有配置（datasource / rocketmq / jetcache / minio / mongodb / elasticsearch / 网关路由…）
+# 已上移到 Nacos 的 byw-<service>.yml（数据源密码是 jasypt 密文，主密钥走环境变量 JASYPT_ENCRYPTOR_PASSWORD）
+
 server:
   port: 8088
-
 spring:
   application:
     name: byw-review
@@ -13,46 +18,11 @@ spring:
         server-addr: ${NACOS_ADDR:localhost:8848}
         namespace: ${NACOS_NAMESPACE:}
         file-extension: yml
-    sentinel:
-      transport:
-        dashboard: ${SENTINEL_DASHBOARD:localhost:8858}
-      datasource:
-        flow:
-          nacos:
-            server-addr: ${NACOS_ADDR:localhost:8848}
-            namespace: ${NACOS_NAMESPACE:}
-            data-id: ${spring.application.name}-flow-rules
-            group-id: SENTINEL_GROUP
-            rule-type: flow
-        degrade:
-          nacos:
-            server-addr: ${NACOS_ADDR:localhost:8848}
-            namespace: ${NACOS_NAMESPACE:}
-            data-id: ${spring.application.name}-degrade-rules
-            group-id: SENTINEL_GROUP
-            rule-type: degrade
-  datasource:
-    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/byw_review?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-    username: ${MYSQL_USER:root}
-    password: ${MYSQL_PASSWORD:root}
-    driver-class-name: com.mysql.cj.jdbc.Driver
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-    mongodb:
-      uri: ${MONGODB_URI:mongodb://localhost:27017/byw_review}
-
-mybatis-plus:
-  configuration:
-    map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
-  global-config:
-    db-config:
-      logic-delete-field: deleted
-      logic-delete-value: 1
-      logic-not-delete-value: 0
-
-springdoc:
-  api-docs:
-    path: /v3/api-docs
+        shared-configs:
+          - data-id: byw-common.yml
+            group: DEFAULT_GROUP
+            refresh: true
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{traceId:-}] [%thread]
+      %logger{36} - %msg%n"

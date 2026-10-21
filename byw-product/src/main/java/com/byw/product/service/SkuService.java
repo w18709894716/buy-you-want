@@ -13,4 +13,8 @@ public interface SkuService extends IService<Sku> {
     Boolean lockStock(List<SkuStockDeductDTO> deductList);
 
     Boolean releaseStock(List<SkuStockDeductDTO> deductList);
+
+    Boolean consumeStock(List<SkuStockDeductDTO> deductList);
+
+    Boolean restoreStock(List<SkuStockDeductDTO> deductList);
 }

@@ -1,0 +1,129 @@
+# =============================================================================
+# 基础设施编排（MySQL / Redis / Nacos / RocketMQ / MongoDB / Elasticsearch / MinIO）
+#
+#   docker compose -f deploy/docker-compose.yml up -d          # 只起中间件
+#
+# 首次启动时 MySQL 会自动执行 docs/database/*.sql 建库建表（每个脚本自带 CREATE DATABASE）。
+# 想连应用一起起：见 deploy/docker-compose.app.yml 顶部说明。
+# =============================================================================
+name: byw-infra
+
+services:
+  mysql:
+    image: mysql:5.7
+    container_name: byw-mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      - --default-time-zone=+08:00
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - byw-mysql-data:/var/lib/mysql
+      # 初始化脚本：11 个库的全量 DDL + 种子数据（文件名排序无关，脚本自带 USE）
+      - ../docs/database:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    container_name: byw-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - byw-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+
+  nacos:
+    image: nacos/nacos-server:v2.3.2
+    container_name: byw-nacos
+    environment:
+      MODE: standalone
+      NACOS_AUTH_ENABLE: "false"
+      TZ: Asia/Shanghai
+    ports:
+      - "8848:8848"
+      - "9848:9848"
+
+  rocketmq-namesrv:
+    image: apache/rocketmq:5.3.1
+    container_name: byw-rocketmq-namesrv
+    command: sh mqnamesrv
+    environment:
+      JAVA_OPT_EXT: "-Xms256m -Xmx256m"
+    ports:
+      - "9876:9876"
+
+  rocketmq-broker:
+    image: apache/rocketmq:5.3.1
+    container_name: byw-rocketmq-broker
+    depends_on:
+      - rocketmq-namesrv
+    command: sh mqbroker -n rocketmq-namesrv:9876 -c /home/rocketmq/conf/broker.conf
+    environment:
+      JAVA_OPT_EXT: "-Xms512m -Xmx512m"
+    ports:
+      - "10909:10909"
+      - "10911:10911"
+    volumes:
+      - ./rocketmq/broker.conf:/home/rocketmq/conf/broker.conf:ro
+      - byw-rocketmq-store:/home/rocketmq/store
+
+  mongo:
+    image: mongo:6
+    container_name: byw-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - byw-mongo-data:/data/db
+
+  elasticsearch:
+    image: elasticsearch:7.17.18
+    container_name: byw-elasticsearch
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - byw-es-data:/usr/share/elasticsearch/data
+
+  minio:
+    image: minio/minio:latest
+    container_name: byw-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - byw-minio-data:/data
+
+# 固定网络名：应用 compose（deploy/docker-compose.app.yml）也用同名网络，
+# 这样"先起中间件、再起应用"分成两个 compose 项目时，服务名依然可以互相解析。
+networks:
+  default:
+    name: byw-net
+
+volumes:
+  byw-mysql-data:
+  byw-redis-data:
+  byw-rocketmq-store:
+  byw-mongo-data:
+  byw-es-data:
+  byw-minio-data:

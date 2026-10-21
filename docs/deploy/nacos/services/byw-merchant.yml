@@ -1,0 +1,12 @@
+# Per-service configuration for byw-merchant (Nacos data-id: byw-merchant.yml, group: DEFAULT_GROUP)
+# Loaded automatically by Spring Cloud Alibaba (spring.cloud.nacos.config.file-extension=yml).
+# Repo mirror of this file: docs/deploy/nacos/services/byw-merchant.yml
+#
+# KEEP ASCII-ONLY: non-ASCII content makes the nacos client parse the whole config to EMPTY silently.
+# Secrets are jasypt ENC(...) values; the master key comes from env JASYPT_ENCRYPTOR_PASSWORD.
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 50MB

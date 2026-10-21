@@ -1,5 +1,6 @@
 package com.byw.admin.controller;
 
+import jakarta.validation.Valid;
 import com.byw.api.settle.SettleFeignClient;
 import com.byw.api.settle.dto.CommissionRuleDTO;
 import com.byw.api.settle.dto.SettleRecordDTO;
@@ -33,7 +34,7 @@ public class AdminSettleController {
 
     @PostMapping("/commission/save")
     @RequirePerm("settle:commission")
-    public R<Boolean> saveCommissionRule(@RequestBody CommissionRuleDTO dto) {
+    public R<Boolean> saveCommissionRule(@Valid @RequestBody CommissionRuleDTO dto) {
         return settleFeignClient.saveCommissionRule(dto);
     }
 

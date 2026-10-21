@@ -1,5 +1,9 @@
 package com.byw.im.controller;
 
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.Valid;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byw.api.user.UserFeignClient;
@@ -62,7 +66,7 @@ public class ImDispatchController {
     @Operation(summary = "新增分流分组")
     @RequireLogin
     @PostMapping("/group")
-    public R<DispatchGroup> groupCreate(@RequestBody DispatchGroup group) {
+    public R<DispatchGroup> groupCreate(@Valid @RequestBody DispatchGroup group) {
         Long shopId = UserContext.getShopId();
         if (shopId == null) return R.fail("仅商家端可用");
         group.setId(null);
@@ -73,7 +77,7 @@ public class ImDispatchController {
     @Operation(summary = "更新分流分组")
     @RequireLogin
     @PutMapping("/group")
-    public R<DispatchGroup> groupUpdate(@RequestBody DispatchGroup group) {
+    public R<DispatchGroup> groupUpdate(@Valid @RequestBody DispatchGroup group) {
         Long shopId = UserContext.getShopId();
         if (shopId == null) return R.fail("仅商家端可用");
         group.setShopId(shopId);
@@ -104,7 +108,7 @@ public class ImDispatchController {
     @Operation(summary = "新增分流规则")
     @RequireLogin
     @PostMapping("/rule")
-    public R<DispatchRule> ruleCreate(@RequestBody DispatchRule rule) {
+    public R<DispatchRule> ruleCreate(@Valid @RequestBody DispatchRule rule) {
         Long shopId = UserContext.getShopId();
         if (shopId == null) return R.fail("仅商家端可用");
         rule.setId(null);
@@ -115,7 +119,7 @@ public class ImDispatchController {
     @Operation(summary = "更新分流规则")
     @RequireLogin
     @PutMapping("/rule")
-    public R<DispatchRule> ruleUpdate(@RequestBody DispatchRule rule) {
+    public R<DispatchRule> ruleUpdate(@Valid @RequestBody DispatchRule rule) {
         Long shopId = UserContext.getShopId();
         if (shopId == null) return R.fail("仅商家端可用");
         rule.setShopId(shopId);
@@ -245,7 +249,7 @@ public class ImDispatchController {
     @Operation(summary = "保存员工分流分组（先删后插，含权重）")
     @RequireLogin
     @PostMapping("/staff")
-    public R<Void> saveStaffGroups(@RequestBody SaveStaffGroupsRequest request) {
+    public R<Void> saveStaffGroups(@Valid @RequestBody SaveStaffGroupsRequest request) {
         Map<Long, Integer> weights = new LinkedHashMap<>();
         if (request.getItems() != null) {
             for (StaffGroupWeight item : request.getItems()) {
@@ -273,7 +277,7 @@ public class ImDispatchController {
     @Operation(summary = "保存分组内客服（先删后插，含权重）")
     @RequireLogin
     @PostMapping("/{id}/staff")
-    public R<Void> saveGroupStaff(@PathVariable Long id, @RequestBody SaveGroupStaffRequest request) {
+    public R<Void> saveGroupStaff(@PathVariable Long id, @Valid @RequestBody SaveGroupStaffRequest request) {
         Long shopId = UserContext.getShopId();
         if (shopId == null) return R.fail("仅商家端可用");
         Map<Long, Integer> weights = new LinkedHashMap<>();
@@ -340,24 +344,32 @@ public class ImDispatchController {
 
     @Data
     public static class StaffGroupWeight {
+        @NotNull(message = "技能组ID不能为空")
         private Long groupId;
+        @Min(value = 0, message = "权重不能为负")
         private Integer weight;
     }
 
     @Data
     public static class SaveStaffGroupsRequest {
+        @NotNull(message = "客服ID不能为空")
         private Long staffId;
+        @Valid
         private List<StaffGroupWeight> items;
     }
 
     @Data
     public static class GroupStaffWeight {
+        @NotNull(message = "客服ID不能为空")
         private Long staffId;
+        @Min(value = 0, message = "权重不能为负")
         private Integer weight;
     }
 
     @Data
     public static class SaveGroupStaffRequest {
+        @NotEmpty(message = "客服列表不能为空")
+        @Valid
         private List<GroupStaffWeight> items;
     }
 }

@@ -1,14 +1,18 @@
 package com.byw.user.feign;
 
+import jakarta.validation.Valid;
+import com.byw.common.log.annotation.OperationLog;
+import com.alicp.jetcache.anno.CacheInvalidate;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byw.api.user.UserFeignClient;
 import com.byw.api.user.dto.AddressDTO;
 import com.byw.api.user.dto.UserDTO;
+import com.byw.common.core.constant.CacheNames;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.Public;
+import com.byw.common.security.annotation.InternalApi;
 import com.byw.user.entity.User;
 import com.byw.user.entity.UserAddress;
 import com.byw.user.mapper.UserAddressMapper;
@@ -27,7 +31,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/feign/user")
 @RequiredArgsConstructor
-@Public
+@InternalApi
 public class UserFeignImpl implements UserFeignClient {
 
     private final UserService userService;
@@ -36,11 +40,9 @@ public class UserFeignImpl implements UserFeignClient {
 
     @GetMapping("/{userId}")
     public R<UserDTO> getUserById(@PathVariable Long userId) {
-        User user = userService.getById(userId);
+        User user = userService.getUserDetail(userId);
         if (user == null) return R.fail("用户不存在");
-        UserDTO dto = new UserDTO();
-        BeanUtils.copyProperties(user, dto);
-        return R.ok(dto);
+        return R.ok(toSafeDTO(user));
     }
 
     @Override
@@ -49,15 +51,18 @@ public class UserFeignImpl implements UserFeignClient {
         if (ids == null || ids.isEmpty()) {
             return R.ok(java.util.Collections.emptyList());
         }
-        List<UserDTO> list = userService.listByIds(ids).stream().map(user -> {
-            UserDTO dto = new UserDTO();
-            BeanUtils.copyProperties(user, dto);
-            dto.setPassword(null);
-            return dto;
-        }).collect(Collectors.toList());
+        List<UserDTO> list = userService.listByIds(ids).stream()
+                .map(this::toSafeDTO)
+                .collect(Collectors.toList());
         return R.ok(list);
     }
 
+    /**
+     * 按用户名查询（**登录校验专用**）。
+     *
+     * <p>这是唯一会返回 password 哈希的服务间接口：byw-auth 需要它做 BCrypt 比对。
+     * 其他任何接口都不得外传哈希，否则管理端列表、IM、评价等链路都会把凭据泄露给前端。
+     */
     @GetMapping("/username/{username}")
     public R<UserDTO> getUserByUsername(@PathVariable String username) {
         User user = userService.getByUsername(username);
@@ -71,13 +76,11 @@ public class UserFeignImpl implements UserFeignClient {
     public R<UserDTO> getUserByPhone(@PathVariable String phone) {
         User user = userService.getByPhone(phone);
         if (user == null) return R.fail("用户不存在");
-        UserDTO dto = new UserDTO();
-        BeanUtils.copyProperties(user, dto);
-        return R.ok(dto);
+        return R.ok(toSafeDTO(user));
     }
 
     @PostMapping
-    public R<Long> createUser(@RequestBody UserDTO userDTO) {
+    public R<Long> createUser(@Valid @RequestBody UserDTO userDTO) {
         User user = new User();
         BeanUtils.copyProperties(userDTO, user);
         // Use provided password if available, otherwise default
@@ -117,6 +120,19 @@ public class UserFeignImpl implements UserFeignClient {
         return R.ok(matches);
     }
 
+    /**
+     * 出网前抹掉密码哈希。
+     *
+     * <p>BCrypt 串属于凭据，一旦随管理端列表 / IM / 评价等接口返回，前端、日志、抓包都会留下副本，
+     * 且可被离线暴力破解。除 {@link #getUserByUsername(String)}（登录校验）外一律置空。
+     */
+    private UserDTO toSafeDTO(User user) {
+        UserDTO dto = new UserDTO();
+        BeanUtils.copyProperties(user, dto);
+        dto.setPassword(null);
+        return dto;
+    }
+
     @Override
     @GetMapping("/list")
     public R<PageResult<UserDTO>> listUsers(@RequestParam(value = "pageNum", defaultValue = "1") Integer pageNum,
@@ -130,16 +146,16 @@ public class UserFeignImpl implements UserFeignClient {
         }
         wrapper.orderByDesc(User::getCreatedAt);
         IPage<User> page = userService.page(new Page<>(pageNum, pageSize), wrapper);
-        List<UserDTO> dtoList = page.getRecords().stream().map(user -> {
-            UserDTO dto = new UserDTO();
-            BeanUtils.copyProperties(user, dto);
-            return dto;
-        }).collect(Collectors.toList());
+        List<UserDTO> dtoList = page.getRecords().stream()
+                .map(this::toSafeDTO)
+                .collect(Collectors.toList());
         return R.ok(PageResult.of(dtoList, page.getTotal(), pageNum, pageSize));
     }
 
     @Override
+    @OperationLog(module = "用户", operation = "状态变更", description = "启用/禁用会员账号")
     @PutMapping("/{userId}/status")
+    @CacheInvalidate(name = CacheNames.USER_INFO, key = "#userId")
     public R<Boolean> updateUserStatus(@PathVariable("userId") Long userId, @RequestParam("status") Integer status) {
         User user = userService.getById(userId);
         if (user == null) return R.fail("用户不存在");

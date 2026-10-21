@@ -20,6 +20,7 @@ public class SkuServiceImpl extends ServiceImpl<SkuMapper, Sku> implements SkuSe
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Boolean deductStock(List<SkuStockDeductDTO> deductList) {
+        validateDeductList(deductList);
         for (SkuStockDeductDTO dto : deductList) {
             // 查询当前库存
             Sku sku = baseMapper.selectById(dto.getSkuId());
@@ -45,6 +46,7 @@ public class SkuServiceImpl extends ServiceImpl<SkuMapper, Sku> implements SkuSe
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Boolean lockStock(List<SkuStockDeductDTO> deductList) {
+        validateDeductList(deductList);
         for (SkuStockDeductDTO dto : deductList) {
             // lock stock: stock - quantity, lockStock + quantity
             LambdaUpdateWrapper<Sku> wrapper = new LambdaUpdateWrapper<>();
@@ -63,6 +65,7 @@ public class SkuServiceImpl extends ServiceImpl<SkuMapper, Sku> implements SkuSe
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Boolean releaseStock(List<SkuStockDeductDTO> deductList) {
+        validateDeductList(deductList);
         for (SkuStockDeductDTO dto : deductList) {
             // release: stock + quantity, lockStock - quantity
             LambdaUpdateWrapper<Sku> wrapper = new LambdaUpdateWrapper<>();
@@ -76,5 +79,60 @@ public class SkuServiceImpl extends ServiceImpl<SkuMapper, Sku> implements SkuSe
             }
         }
         return true;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Boolean consumeStock(List<SkuStockDeductDTO> deductList) {
+        validateDeductList(deductList);
+        for (SkuStockDeductDTO dto : deductList) {
+            // 核销：支付成功后将下单预占真正售出，stock 已在 lockStock 时预减，此处仅减 lock_stock
+            LambdaUpdateWrapper<Sku> wrapper = new LambdaUpdateWrapper<>();
+            wrapper.eq(Sku::getId, dto.getSkuId())
+                    .ge(Sku::getLockStock, dto.getQuantity())
+                    .setSql("lock_stock = lock_stock - " + dto.getQuantity());
+            int rows = baseMapper.update(null, wrapper);
+            if (rows == 0) {
+                throw new BusinessException("锁定库存不足，无法核销，SKU ID: " + dto.getSkuId());
+            }
+        }
+        return true;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Boolean restoreStock(List<SkuStockDeductDTO> deductList) {
+        validateDeductList(deductList);
+        for (SkuStockDeductDTO dto : deductList) {
+            // 回补：已支付订单取消/售后退款，货未售出退回可售库存，仅加 stock（lock_stock 已在核销时清零）
+            LambdaUpdateWrapper<Sku> wrapper = new LambdaUpdateWrapper<>();
+            wrapper.eq(Sku::getId, dto.getSkuId())
+                    .setSql("stock = stock + " + dto.getQuantity());
+            int rows = baseMapper.update(null, wrapper);
+            if (rows == 0) {
+                throw new BusinessException("库存回补失败，SKU 不存在，SKU ID: " + dto.getSkuId());
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 库存操作入参自检：数量必须为正整数。
+     *
+     * <p>扣减/预占使用 {@code stock = stock - quantity} 这类 SQL 表达式，数量为负时表达式会变成加法，
+     * 因此即使调用方（订单/售后/秒杀）已经校验过，服务侧仍必须再挡一次。
+     */
+    private void validateDeductList(List<SkuStockDeductDTO> deductList) {
+        if (deductList == null || deductList.isEmpty()) {
+            return; // 空列表视为无操作，保持与原实现一致
+        }
+        for (SkuStockDeductDTO dto : deductList) {
+            if (dto == null || dto.getSkuId() == null) {
+                throw new BusinessException("库存操作参数不合法");
+            }
+            if (dto.getQuantity() == null || dto.getQuantity() <= 0) {
+                throw new BusinessException("库存操作数量必须大于 0");
+            }
+        }
     }
 }

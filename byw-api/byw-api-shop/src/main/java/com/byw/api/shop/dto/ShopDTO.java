@@ -1,5 +1,7 @@
 package com.byw.api.shop.dto;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.io.Serializable;
@@ -14,21 +16,27 @@ public class ShopDTO implements Serializable {
     private Long id;
 
     /** 店铺名称 */
+    @NotBlank(message = "店铺名称不能为空")
+    @Size(max = 100, message = "店铺名称过长")
     private String name;
 
     /** 店铺Logo */
+    @Size(max = 500, message = "店铺Logo地址过长")
     private String logo;
 
     /** 店铺简介 */
+    @Size(max = 500, message = "店铺简介过长")
     private String description;
 
     /** 归属商家账号ID */
     private Long merchantId;
 
     /** 联系人 */
+    @Size(max = 50, message = "联系人姓名过长")
     private String contactName;
 
     /** 联系电话 */
+    @Size(max = 20, message = "联系电话过长")
     private String contactPhone;
 
     /** 0自营 1第三方商家 */

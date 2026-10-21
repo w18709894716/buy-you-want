@@ -19,6 +19,10 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -26,6 +30,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -44,15 +49,32 @@ public class SeckillServiceImpl implements SeckillService {
     /** item 维度的用户限购 key */
     private static final String SECKILL_USER_KEY = "seckill:user:item:";
 
-    /** Lua 原子预扣：限购校验 + 库存校验 + 扣库存 + 标记已购一个原子操作完成，返回 0=成功 1=已抢购过 2=库存不足 */
+    /**
+     * Lua 原子预扣：限购校验 + 库存校验 + 扣库存 + 标记已购一个原子操作完成，
+     * 返回 0=成功 1=已抢购过 2=库存不足。ARGV[1] 为限购标记的存活秒数（避免 key 永久驻留）。
+     */
     private static final DefaultRedisScript<Long> SECKILL_DEDUCT_SCRIPT = new DefaultRedisScript<>("""
             if redis.call('exists', KEYS[2]) == 1 then return 1 end
             local stock = tonumber(redis.call('get', KEYS[1]) or '0')
             if stock <= 0 then return 2 end
             redis.call('decr', KEYS[1])
-            redis.call('set', KEYS[2], '1')
+            redis.call('set', KEYS[2], '1', 'EX', ARGV[1])
             return 0
             """, Long.class);
+
+    /** Lua 原子回退预扣：库存加回 + 清除限购标记（本地事务回滚时调用） */
+    private static final DefaultRedisScript<Long> SECKILL_COMPENSATE_SCRIPT = new DefaultRedisScript<>("""
+            redis.call('incr', KEYS[1])
+            redis.call('del', KEYS[2])
+            return 1
+            """, Long.class);
+
+    /** Redis key 在活动结束后的保留缓冲（7 天） */
+    private static final long KEY_TTL_BUFFER_SECONDS = 7 * 24 * 3600L;
+    /** Redis key 最短存活时长（1 小时） */
+    private static final long MIN_KEY_TTL_SECONDS = 3600L;
+    /** 活动结束时间缺失时的兜底存活时长（30 天） */
+    private static final long DEFAULT_KEY_TTL_SECONDS = 30 * 24 * 3600L;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -70,7 +92,7 @@ public class SeckillServiceImpl implements SeckillService {
         log.info("秒杀活动已入库: id={}, name={}, items={}", activity.getId(), activity.getName(), items.size());
 
         // Redis库存初始化失败不影响活动创建
-        initRedisStock(items);
+        initRedisStock(items, activity.getEndTime());
     }
 
     @Override
@@ -101,7 +123,7 @@ public class SeckillServiceImpl implements SeckillService {
         }
         log.info("秒杀活动已更新: id={}, items={}", activity.getId(), items.size());
 
-        initRedisStock(items);
+        initRedisStock(items, activity.getEndTime());
     }
 
     @Override
@@ -147,13 +169,17 @@ public class SeckillServiceImpl implements SeckillService {
         // 4. Lua 原子预扣（限购 + 库存校验 + 扣库存 + 标记已购，原子完成）
         String stockKey = SECKILL_STOCK_KEY + itemId;
         String userKey = SECKILL_USER_KEY + itemId + ":" + userId;
-        Long deductResult = stringRedisTemplate.execute(SECKILL_DEDUCT_SCRIPT, Arrays.asList(stockKey, userKey));
+        Long deductResult = stringRedisTemplate.execute(SECKILL_DEDUCT_SCRIPT, Arrays.asList(stockKey, userKey),
+                String.valueOf(redisKeyTtlSeconds(activity.getEndTime())));
         if (deductResult != null && deductResult == 1L) {
             throw new BusinessException("您已抢购过该商品");
         }
         if (deductResult == null || deductResult == 2L) {
             throw new BusinessException("库存不足");
         }
+        // 登记回滚补偿：本地事务失败（含提交阶段失败）必须把 Redis 预扣退回，
+        // 否则库存被永久占用、用户被永久限购。放在事务回调中可覆盖 catch 看不到的提交期失败。
+        registerRedisRollbackCompensation(stockKey, userKey);
 
         // 5. 创建秒杀订单记录
         SeckillOrder seckillOrder = new SeckillOrder();
@@ -240,18 +266,63 @@ public class SeckillServiceImpl implements SeckillService {
     }
 
     /**
-     * 初始化各 item 的 Redis 库存（失败不影响DB事务）
+     * 初始化各 item 的 Redis 库存（失败不影响DB事务）。
+     * 带 TTL：活动结束后保留一段缓冲即可，避免 key 永久驻留 Redis。
      */
-    private void initRedisStock(List<SeckillActivityItem> items) {
+    private void initRedisStock(List<SeckillActivityItem> items, LocalDateTime activityEndTime) {
+        long ttlSeconds = redisKeyTtlSeconds(activityEndTime);
         for (SeckillActivityItem item : items) {
             try {
                 String stockKey = SECKILL_STOCK_KEY + item.getId();
-                redisUtil.set(stockKey, item.getTotalStock());
-                log.info("Redis库存初始化成功: key={}, value={}", stockKey, item.getTotalStock());
+                redisUtil.set(stockKey, item.getTotalStock(), ttlSeconds, TimeUnit.SECONDS);
+                log.info("Redis库存初始化成功: key={}, value={}, ttl={}s", stockKey, item.getTotalStock(), ttlSeconds);
             } catch (Exception e) {
                 log.error("Redis库存初始化失败(不影响活动保存): itemId={}, error={}", item.getId(), e.getMessage());
             }
         }
+    }
+
+    /**
+     * 注册"本地事务回滚后"的 Redis 预扣回退补偿。
+     *
+     * <p>预扣发生在 Redis（非事务资源），而后续的 {@code t_seckill_order} 落库、
+     * DB 库存更新、MQ 投递任一失败都会回滚本地事务 —— 若不补偿，Redis 库存就永久少一份。
+     * 与 OrderServiceImpl 的做法一致：放在 {@code afterCompletion} 而非 catch，
+     * 以便同时覆盖"方法内抛异常"与"提交阶段失败"。
+     */
+    private void registerRedisRollbackCompensation(String stockKey, String userKey) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status != TransactionSynchronization.STATUS_COMMITTED) {
+                    compensateRedisDeduct(stockKey, userKey);
+                }
+            }
+        });
+    }
+
+    /** 回退 Redis 预扣：库存加回 + 解除限购标记 */
+    private void compensateRedisDeduct(String stockKey, String userKey) {
+        try {
+            stringRedisTemplate.execute(SECKILL_COMPENSATE_SCRIPT, Arrays.asList(stockKey, userKey));
+            log.warn("秒杀本地事务回滚，已退回 Redis 预扣: stockKey={}, userKey={}", stockKey, userKey);
+        } catch (Exception e) {
+            log.error("秒杀 Redis 预扣回退失败，库存可能被少扣，需人工处理: stockKey={}, userKey={}",
+                    stockKey, userKey, e);
+        }
+    }
+
+    /** 计算 Redis key 存活时长：活动结束 + 7 天缓冲；结束时间缺失用 30 天兜底；下限 1 小时 */
+    private long redisKeyTtlSeconds(LocalDateTime activityEndTime) {
+        if (activityEndTime == null) {
+            return DEFAULT_KEY_TTL_SECONDS;
+        }
+        long seconds = Duration.between(LocalDateTime.now(), activityEndTime).getSeconds()
+                + KEY_TTL_BUFFER_SECONDS;
+        return Math.max(seconds, MIN_KEY_TTL_SECONDS);
     }
 }
 

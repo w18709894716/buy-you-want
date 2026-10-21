@@ -28,6 +28,14 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
+        <!--
+          健康检查：放在唯一被所有服务依赖的 common-core，避免 16 个服务各写一份。
+          默认只暴露 /actuator/health（不含明细），且网关不路由 /actuator，仅内网可达。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
         <dependency>
             <groupId>cn.hutool</groupId>
             <artifactId>hutool-all</artifactId>
@@ -49,6 +57,16 @@
             <groupId>com.alibaba.cloud</groupId>
             <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
             <optional>true</optional>
+        </dependency>
+        <!--
+            配置项加密（ENC(...)）：所有服务共享，因此**不能** optional。
+            主密钥通过环境变量 JASYPT_ENCRYPTOR_PASSWORD 注入，绝不写进仓库或 Nacos。
+            版本 3.0.5 已在 Boot 3.2.5 + Spring Cloud 2023 + Nacos shared-config 下实测可用。
+        -->
+        <dependency>
+            <groupId>com.github.ulisesbocchio</groupId>
+            <artifactId>jasypt-spring-boot-starter</artifactId>
+            <version>3.0.5</version>
         </dependency>
     </dependencies>
 </project>

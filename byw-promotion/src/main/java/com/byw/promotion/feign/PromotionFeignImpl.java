@@ -1,5 +1,6 @@
 package com.byw.promotion.feign;
 
+import com.byw.common.log.annotation.OperationLog;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -12,7 +13,8 @@ import com.byw.api.promotion.dto.SeckillActivityDetailDTO;
 import com.byw.api.promotion.dto.UserCouponDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.Public;
+import com.byw.common.security.annotation.InternalApi;
+import com.byw.common.security.context.UserContext;
 import com.byw.promotion.entity.Coupon;
 import com.byw.promotion.entity.SeckillActivity;
 import com.byw.promotion.entity.SeckillActivityItem;
@@ -20,6 +22,7 @@ import com.byw.promotion.mapper.CouponMapper;
 import com.byw.promotion.mapper.SeckillActivityMapper;
 import com.byw.promotion.service.CouponService;
 import com.byw.promotion.service.SeckillService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
@@ -38,7 +41,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/feign/promotion")
 @RequiredArgsConstructor
-@Public
+@InternalApi
 public class PromotionFeignImpl implements PromotionFeignClient {
 
     private final CouponService couponService;
@@ -83,7 +86,7 @@ public class PromotionFeignImpl implements PromotionFeignClient {
                                                 @RequestParam(value = "status", required = false) Integer status) {
         LambdaQueryWrapper<Coupon> wrapper = new LambdaQueryWrapper<>();
         // 商家上下文：仅返回本店优惠券；平台管理员 shopId 为空则不过滤
-        Long shopId = com.byw.common.security.context.UserContext.getShopId();
+        Long shopId = UserContext.getShopId();
         wrapper.eq(shopId != null, Coupon::getShopId, shopId);
         if (status != null) {
             wrapper.eq(Coupon::getStatus, status);
@@ -99,8 +102,9 @@ public class PromotionFeignImpl implements PromotionFeignClient {
     }
 
     @Override
+    @OperationLog(module = "优惠券", operation = "新增", description = "新增优惠券")
     @PostMapping("/coupon")
-    public R<Long> createCoupon(@RequestBody CouponDTO couponDTO) {
+    public R<Long> createCoupon(@Valid @RequestBody CouponDTO couponDTO) {
         Coupon coupon = new Coupon();
         BeanUtils.copyProperties(couponDTO, coupon);
         couponMapper.insert(coupon);
@@ -108,13 +112,15 @@ public class PromotionFeignImpl implements PromotionFeignClient {
     }
 
     @Override
+    @OperationLog(module = "优惠券", operation = "修改", description = "修改优惠券")
     @PutMapping("/coupon/{couponId}")
-    public R<Boolean> updateCoupon(@PathVariable("couponId") Long couponId, @RequestBody CouponDTO couponDTO) {
+    public R<Boolean> updateCoupon(@PathVariable("couponId") Long couponId, @Valid @RequestBody CouponDTO couponDTO) {
         Coupon coupon = couponMapper.selectById(couponId);
         if (coupon == null) return R.fail("优惠券不存在");
         // 商家上下文：只能改本店优惠券，且不允许篡改归属店铺
-        Long ctxShopId = com.byw.common.security.context.UserContext.getShopId();
-        if (ctxShopId != null && !ctxShopId.equals(coupon.getShopId())) {
+        Long ctxShopId = UserContext.getShopId();
+        // fail-closed：无店铺上下文且非平台管理员（例如身份头验签失败降级为游客）一律拒绝
+        if (!UserContext.canAccessShop(coupon.getShopId())) {
             return R.fail("无权操作其他店铺的优惠券");
         }
         Long originalShopId = coupon.getShopId();
@@ -127,15 +133,13 @@ public class PromotionFeignImpl implements PromotionFeignClient {
     }
 
     @Override
+    @OperationLog(module = "优惠券", operation = "删除", description = "删除优惠券")
     @DeleteMapping("/coupon/{couponId}")
     public R<Boolean> deleteCoupon(@PathVariable("couponId") Long couponId) {
-        Long ctxShopId = com.byw.common.security.context.UserContext.getShopId();
-        if (ctxShopId != null) {
-            Coupon coupon = couponMapper.selectById(couponId);
-            if (coupon == null) return R.fail("优惠券不存在");
-            if (!ctxShopId.equals(coupon.getShopId())) {
-                return R.fail("无权操作其他店铺的优惠券");
-            }
+        Coupon coupon = couponMapper.selectById(couponId);
+        if (coupon == null) return R.fail("优惠券不存在");
+        if (!UserContext.canAccessShop(coupon.getShopId())) {
+            return R.fail("无权操作其他店铺的优惠券");
         }
         return R.ok(couponMapper.deleteById(couponId) > 0);
     }
@@ -160,8 +164,9 @@ public class PromotionFeignImpl implements PromotionFeignClient {
     }
 
     @Override
+    @OperationLog(module = "秒杀", operation = "新增", description = "新增秒杀活动")
     @PostMapping("/seckill")
-    public R<Long> createSeckillActivity(@RequestBody SeckillActivityDTO activityDTO) {
+    public R<Long> createSeckillActivity(@Valid @RequestBody SeckillActivityDTO activityDTO) {
         int itemCount = activityDTO.getItems() == null ? 0 : activityDTO.getItems().size();
         log.info("创建秒杀活动请求: name={}, items={}, startTime={}, endTime={}",
                 activityDTO.getName(), itemCount, activityDTO.getStartTime(), activityDTO.getEndTime());
@@ -183,8 +188,9 @@ public class PromotionFeignImpl implements PromotionFeignClient {
     }
 
     @Override
+    @OperationLog(module = "秒杀", operation = "修改", description = "修改秒杀活动")
     @PutMapping("/seckill/{activityId}")
-    public R<Boolean> updateSeckillActivity(@PathVariable("activityId") Long activityId, @RequestBody SeckillActivityDTO activityDTO) {
+    public R<Boolean> updateSeckillActivity(@PathVariable("activityId") Long activityId, @Valid @RequestBody SeckillActivityDTO activityDTO) {
         try {
             SeckillActivity activity = seckillActivityMapper.selectById(activityId);
             if (activity == null) return R.fail("秒杀活动不存在");
@@ -203,6 +209,7 @@ public class PromotionFeignImpl implements PromotionFeignClient {
     }
 
     @Override
+    @OperationLog(module = "秒杀", operation = "删除", description = "删除秒杀活动")
     @DeleteMapping("/seckill/{activityId}")
     public R<Boolean> deleteSeckillActivity(@PathVariable("activityId") Long activityId) {
         seckillService.deleteActivity(activityId);

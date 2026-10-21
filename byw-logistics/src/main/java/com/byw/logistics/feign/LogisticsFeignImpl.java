@@ -1,11 +1,12 @@
 package com.byw.logistics.feign;
 
+import jakarta.validation.Valid;
 import com.byw.api.logistics.LogisticsFeignClient;
 import com.byw.api.logistics.dto.LogisticsDTO;
 import com.byw.api.logistics.dto.ShipRequestDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.Public;
+import com.byw.common.security.annotation.InternalApi;
 import com.byw.logistics.entity.LogisticsOrder;
 import com.byw.logistics.entity.LogisticsTrace;
 import com.byw.logistics.service.LogisticsService;
@@ -20,14 +21,14 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/feign/logistics")
 @RequiredArgsConstructor
-@Public
+@InternalApi
 public class LogisticsFeignImpl implements LogisticsFeignClient {
 
     private final LogisticsService logisticsService;
 
     @Override
     @PostMapping("/ship")
-    public R<LogisticsDTO> ship(@RequestBody ShipRequestDTO request) {
+    public R<LogisticsDTO> ship(@Valid @RequestBody ShipRequestDTO request) {
         return R.ok(logisticsService.ship(request));
     }
 

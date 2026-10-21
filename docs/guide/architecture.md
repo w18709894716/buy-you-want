@@ -41,7 +41,6 @@ graph TB
         D4[RocketMQ 5.x]
         D5[Elasticsearch 8.13]
         D6[MongoDB 7.0]
-        D7[Seata 分布式事务]
     end
 
     A1 --> B1
@@ -57,7 +56,6 @@ graph TB
     C5 & C6 & C7 & C9 & C14 & C15 --> D4
     C3 --> D5
     C8 & C15 --> D6
-    C5 --> D7
 ```
 
 ## 微服务划分
@@ -69,11 +67,11 @@ graph TB
 | byw-user | 8082 | C端会员 CRUD、收货地址、会员等级；**RBAC 五表持有方（t_sys_user/role/menu/user_role/role_menu），经 /feign/rbac 提供员工/角色/菜单/权限契约** | MySQL, Redis, Nacos |
 | byw-product | 8083 | 分类/品牌/SPU-SKU 管理、库存、ES 搜索 | MySQL, Redis, ES, Nacos |
 | byw-cart | 8084 | 购物车增删改查、结算 | MySQL, Redis, Nacos |
-| byw-order | 8085 | 订单创建、状态机、超时取消、Seata 事务 | MySQL, Redis, RocketMQ, Seata, Nacos |
+| byw-order | 8085 | 订单创建、状态机、超时取消、回滚补偿与对账 | MySQL, Redis, RocketMQ, Nacos |
 | byw-pay | 8086 | 支付策略、模拟回调、支付流水 | MySQL, Redis, RocketMQ, Nacos |
 | byw-logistics | 8087 | 发货管理、物流跟踪、状态更新 | MySQL, RocketMQ, Nacos |
 | byw-review | 8088 | 评价管理、评分统计、商家回复 | MySQL, MongoDB, Redis, Nacos |
-| byw-promotion | 8089 | 优惠券、秒杀（Lua预扣+限流）、拼团 | MySQL, Redis, RocketMQ, Nacos |
+| byw-promotion | 8089 | 优惠券、秒杀（Lua预扣+限流） | MySQL, Redis, RocketMQ, Nacos |
 | byw-admin | 8090 | 管理后台 BFF 聚合层（含系统员工/角色管理，转发 RBAC 契约） | Nacos |
 | byw-file | 8091 | 文件/图片上传（MinIO） | MinIO, Nacos |
 | byw-shop | 8092 | 店铺管理、商家账号与入驻审核、**商家子账号（t_merchant_account.parent_id）CRUD** | MySQL, Redis, Nacos |
@@ -97,10 +95,11 @@ graph TB
 通过 RocketMQ 发布/订阅事件，实现跨服务最终一致性和削峰填谷：
 - **支付成功** → Pay 发送事件 → Order 更新状态为待发货
 - **库存扣减** → Promotion 秒杀预扣 → Order 异步创建订单
-- **物流状态变更** → Logistics 发送事件 → Order 更新物流状态
 - **订单完成** → Order 发送事件 → Review 开放评价入口、Promotion 结算优惠券
 - **确认收货** → Order 发送事件 → Settle 消费并按分类佣金率创建结算单（T+N 冷静期后入账）
-- **确认收货** → Order 发送事件 → Settle 消费并按分类佣金率创建结算单（T+N 冷静期后入账）
+
+> 物流状态由 Order 同步驱动（发货时回写运单号与发货状态），没有物流→订单的异步事件：
+> 原先的 `LOGISTICS_UPDATE` 只有生产方、无任何消费者，已随死代码清理移除。
 
 ## 核心业务流程
 
@@ -130,7 +129,7 @@ sequenceDiagram
     O->>C: Feign 清空购物车已结算商品
     C-->>O: 清空成功
 
-    Note over O: Seata AT 分布式事务保障
+    Note over O: 本地事务 + 事务回滚补偿（远端写失败即撤回）
     O->>O: 生成雪花算法订单号，创建订单
     O-->>GW: 返回订单信息
     GW-->>U: 返回订单ID和支付信息
@@ -188,7 +187,7 @@ sequenceDiagram
         RD-->>PR: 预扣成功
         PR->>MQ: 发布 SECKILL_ORDER 事件
         MQ->>O: 消费秒杀事件
-        O->>O: 异步创建秒杀订单（Seata事务）
+        O->>O: 异步创建秒杀订单（按 biz_key 幂等落库）
         O-->>U: 推送秒杀结果通知
     end
 ```
@@ -210,7 +209,7 @@ sequenceDiagram
         O->>P: Feign 校验商品与扣减库存
         O->>O: 创建子订单（is_parent=0，归属单一 shop_id，含明细）
     end
-    Note over O: Seata AT 事务保障父子订单一致性
+    Note over O: 本地事务 + 回滚补偿保障父子订单一致性
     O-->>U: 返回父订单号与支付信息（支付以父订单聚合，履约按子订单独立进行）
 ```
 

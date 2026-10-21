@@ -1,21 +1,21 @@
 package com.byw.settle.util;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.concurrent.ThreadLocalRandom;
+import com.byw.common.core.util.SnowflakeIdGenerator;
 
 /**
- * 单号生成器：前缀 + yyyyMMddHHmmss + 6位随机数。
+ * 单号生成器：前缀 + 雪花ID。
+ *
+ * <p>原实现是"yyyyMMddHHmmss + 6位随机数"，同一秒内并发量上来就会出现重复；
+ * 而 t_settle_record/t_withdraw_record/t_balance_flow 的单号列都是唯一索引，
+ * 一旦撞号就是一次业务失败。改用雪花ID后全局唯一且趋势递增。
  */
 public final class NoGenerator {
-
-    private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
     private NoGenerator() {
     }
 
     public static String generate(String prefix) {
-        return prefix + LocalDateTime.now().format(FMT) + String.format("%06d", ThreadLocalRandom.current().nextInt(1000000));
+        return prefix + SnowflakeIdGenerator.nextIdStr();
     }
 
     /** 结算单号 */

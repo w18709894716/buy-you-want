@@ -1,6 +1,7 @@
 // 商家端 IM WebSocket 客户端（模块级单例）
-// 浏览器 WebSocket 无法设置请求头，故用 query token 鉴权；
+// 浏览器 WebSocket 无法设置请求头，因此改用 HttpOnly Cookie 鉴权（握手时浏览器自动携带）；
 // Vite devProxy 不支持 ws，开发环境直连网关 8080。
+import { getToken } from './token'
 import { ref } from 'vue'
 
 const WS_BASE = (import.meta.env.VITE_WS_BASE as string) || 'ws://localhost:8080'
@@ -17,9 +18,10 @@ let reconnectAttempts = 0
 let manualClosed = false
 
 function buildUrl(): string | null {
-  const token = localStorage.getItem('merchant_token')
-  if (!token) return null
-  return `${WS_BASE}/ws/im?token=${encodeURIComponent(token)}`
+  // 未登录不连；登录态现在由 HttpOnly Cookie 承载，浏览器会在 WS 握手时自动带上 Cookie，
+  // 不再把 token 拼进 query（避免 token 出现在 URL 与访问日志里）。
+  if (!getToken()) return null
+  return `${WS_BASE}/ws/im`
 }
 
 export function setFrameHandler(handler: (frame: Record<string, any>) => void) {

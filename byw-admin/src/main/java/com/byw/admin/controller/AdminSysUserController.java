@@ -1,5 +1,6 @@
 package com.byw.admin.controller;
 
+import jakarta.validation.Valid;
 import com.byw.api.user.RbacFeignClient;
 import com.byw.api.user.dto.SysUserDTO;
 import com.byw.common.core.result.PageResult;
@@ -29,12 +30,12 @@ public class AdminSysUserController {
     }
 
     @PostMapping
-    public R<Long> create(@RequestBody SysUserDTO dto) {
+    public R<Long> create(@Valid @RequestBody SysUserDTO dto) {
         return rbacFeignClient.createSysUser(dto);
     }
 
     @PutMapping
-    public R<Boolean> update(@RequestBody SysUserDTO dto) {
+    public R<Boolean> update(@Valid @RequestBody SysUserDTO dto) {
         return rbacFeignClient.updateSysUser(dto);
     }
 

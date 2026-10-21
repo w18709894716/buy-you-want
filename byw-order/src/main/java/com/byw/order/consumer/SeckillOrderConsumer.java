@@ -9,43 +9,44 @@ import com.byw.common.core.result.R;
 import com.byw.common.rocketmq.constant.RocketMQTopics;
 import com.byw.order.entity.Order;
 import com.byw.order.entity.OrderItem;
-import com.byw.order.mapper.OrderItemMapper;
-import com.byw.order.mapper.OrderMapper;
-import com.byw.order.mapper.OrderStatusLogMapper;
 import com.byw.order.entity.OrderStatusLog;
 import com.byw.order.producer.OrderEventProducer;
 import com.byw.order.service.OrderService;
+import com.byw.order.service.impl.SeckillOrderCreator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.Map;
 
 /**
- * 秒杀订单消费者
- * 消费 promotion 服务发送的 seckill-order 消息，在 t_order + t_order_item 中创建真实订单
+ * 秒杀订单消费者：消费 promotion 服务发送的 seckill-order 消息，在 t_order + t_order_item 中创建真实订单。
  *
- * 注意：秒杀已在 promotion 服务的 Redis 中预扣库存，此处不再调用 deductStock
+ * <p>幂等：以 {@code biz_key = seckill:{条目}:{用户}} 为业务幂等键，落库由
+ * {@link SeckillOrderCreator} 在一个事务内完成，唯一索引 uk_biz_key 兜底；
+ * RocketMQ 重复投递（消费失败重试、多实例并发消费）只会生成一单。
+ *
+ * <p>注意：秒杀已在 promotion 服务的 Redis 中预扣库存，此处不再调用扣减库存。
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 @RocketMQMessageListener(
         topic = RocketMQTopics.SECKILL_ORDER,
-        consumerGroup = "byw-order-seckill-group"
+        consumerGroup = "byw-order-seckill-group",
+        maxReconsumeTimes = 3
 )
 public class SeckillOrderConsumer implements RocketMQListener<Map<String, Object>> {
 
-    private final OrderMapper orderMapper;
-    private final OrderItemMapper orderItemMapper;
-    private final OrderStatusLogMapper orderStatusLogMapper;
     private final ProductFeignClient productFeignClient;
     private final UserFeignClient userFeignClient;
     private final OrderService orderService;
     private final OrderEventProducer orderEventProducer;
+    private final SeckillOrderCreator seckillOrderCreator;
 
     @Override
     public void onMessage(Map<String, Object> message) {
@@ -61,11 +62,14 @@ public class SeckillOrderConsumer implements RocketMQListener<Map<String, Object
             log.info("收到秒杀订单消息: activityId={}, itemId={}, userId={}, productId={}, skuId={}, addressId={}, price={}",
                     activityId, itemId, userId, productId, skuId, addressId, seckillPrice);
 
+            if (userId == null || skuId == null) {
+                throw new IllegalArgumentException("秒杀订单消息缺少 userId/skuId: " + message);
+            }
+
             // 1. 获取商品信息
             String productName = "秒杀商品";
             String productImage = "";
             String skuName = "";
-
             try {
                 R<ProductDTO> productResult = productFeignClient.getProductById(productId);
                 if (productResult.isSuccess() && productResult.getData() != null) {
@@ -119,10 +123,9 @@ public class SeckillOrderConsumer implements RocketMQListener<Map<String, Object
                 log.warn("获取收货地址失败, userId={}, addressId={}: {}", userId, addressId, e.getMessage());
             }
 
-            // 3. 生成订单号
+            // 3. 生成订单号并组装实体
             String orderNo = orderService.generateOrderNo();
 
-            // 4. 创建订单记录
             Order order = new Order();
             order.setOrderNo(orderNo);
             order.setUserId(userId);
@@ -136,11 +139,8 @@ public class SeckillOrderConsumer implements RocketMQListener<Map<String, Object
             order.setReceiverName(receiverName);
             order.setReceiverPhone(receiverPhone);
             order.setReceiverAddress(receiverAddress);
-            orderMapper.insert(order);
 
-            // 5. 创建订单项记录
             OrderItem orderItem = new OrderItem();
-            orderItem.setOrderId(order.getId());
             orderItem.setOrderNo(orderNo);
             orderItem.setUserId(userId);
             orderItem.setProductId(productId);
@@ -151,25 +151,38 @@ public class SeckillOrderConsumer implements RocketMQListener<Map<String, Object
             orderItem.setPrice(seckillPrice);
             orderItem.setQuantity(1);
             orderItem.setSubtotal(seckillPrice);
-            orderItemMapper.insert(orderItem);
 
-            // 6. 发送30分钟超时取消延迟消息
-            orderEventProducer.sendOrderTimeoutCancelEvent(orderNo);
-
-            // 7. 保存状态日志
             OrderStatusLog statusLog = new OrderStatusLog();
-            statusLog.setOrderId(order.getId());
             statusLog.setFromStatus(null);
             statusLog.setToStatus(0);
             statusLog.setOperator("系统");
             statusLog.setRemark("秒杀订单创建");
-            orderStatusLogMapper.insert(statusLog);
 
-            log.info("秒杀订单创建成功: orderNo={}, userId={}, activityId={}, itemId={}", orderNo, userId, activityId, itemId);
+            // 4. 幂等落库（事务内）
+            String bizKey = buildBizKey(activityId, itemId, skuId, userId);
+            if (!seckillOrderCreator.create(bizKey, order, orderItem, statusLog)) {
+                return;
+            }
+
+            // 5. 事务提交后再投递超时取消延迟消息：回滚的单不会留下无主的延迟消息
+            orderEventProducer.sendOrderTimeoutCancelEvent(orderNo);
+
+            log.info("秒杀订单创建成功: orderNo={}, userId={}, activityId={}, itemId={}, bizKey={}",
+                    orderNo, userId, activityId, itemId, bizKey);
+        } catch (DuplicateKeyException e) {
+            // 唯一索引兜底：并发/重复投递时首单已建，按幂等成功处理
+            log.warn("秒杀订单已存在（唯一索引拦截），幂等跳过: {}", message);
         } catch (Exception e) {
             log.error("处理秒杀订单消息失败: {}", message, e);
-            throw e; // 重新抛出，让 RocketMQ 重试
+            throw e; // 重新抛出，让 RocketMQ 重试（超过 maxReconsumeTimes 进死信）
         }
+    }
+
+    /** 业务幂等键：同一秒杀条目 + 用户只允许生成一单；旧消息无 itemId 时退化用 skuId 区分 */
+    private String buildBizKey(Long activityId, Long itemId, Long skuId, Long userId) {
+        String itemPart = itemId != null ? String.valueOf(itemId)
+                : (skuId != null ? "sku" + skuId : "act" + activityId);
+        return "seckill:" + itemPart + ":" + userId;
     }
 
     private Long toLong(Object obj) {

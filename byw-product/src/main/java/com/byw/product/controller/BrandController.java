@@ -1,6 +1,8 @@
 package com.byw.product.controller;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import jakarta.validation.Valid;
+import com.alicp.jetcache.anno.CacheInvalidate;
+import com.byw.common.core.constant.CacheNames;
 import com.byw.common.core.result.R;
 import com.byw.common.security.annotation.Public;
 import com.byw.common.security.annotation.RequirePerm;
@@ -25,15 +27,14 @@ public class BrandController {
     @GetMapping("/list")
     @Public
     public R<List<Brand>> listBrands() {
-        LambdaQueryWrapper<Brand> wrapper = new LambdaQueryWrapper<>();
-        wrapper.orderByAsc(Brand::getSortOrder);
-        return R.ok(brandService.list(wrapper));
+        return R.ok(brandService.listAllBrands());
     }
 
     @Operation(summary = "新增品牌(管理员)")
     @PostMapping
     @RequirePerm("brand:manage")
-    public R<Void> createBrand(@RequestBody Brand brand) {
+    @CacheInvalidate(name = CacheNames.BRAND_ALL, key = "'all'")
+    public R<Void> createBrand(@Valid @RequestBody Brand brand) {
         brandService.save(brand);
         return R.ok();
     }
@@ -41,7 +42,8 @@ public class BrandController {
     @Operation(summary = "更新品牌(管理员)")
     @PutMapping
     @RequirePerm("brand:manage")
-    public R<Void> updateBrand(@RequestBody Brand brand) {
+    @CacheInvalidate(name = CacheNames.BRAND_ALL, key = "'all'")
+    public R<Void> updateBrand(@Valid @RequestBody Brand brand) {
         brandService.updateById(brand);
         return R.ok();
     }
@@ -49,6 +51,7 @@ public class BrandController {
     @Operation(summary = "删除品牌(管理员)")
     @DeleteMapping("/{id}")
     @RequirePerm("brand:manage")
+    @CacheInvalidate(name = CacheNames.BRAND_ALL, key = "'all'")
     public R<Void> deleteBrand(@PathVariable Long id) {
         brandService.removeById(id);
         return R.ok();

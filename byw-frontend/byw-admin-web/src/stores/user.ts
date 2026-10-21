@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { getToken, setToken, clearToken } from '../utils/token'
 import { ref } from 'vue'
 import request from '../utils/request'
 
@@ -23,7 +24,7 @@ const readJson = <T>(key: string, fallback: T): T => {
 }
 
 export const useUserStore = defineStore('user', () => {
-  const token = ref<string>(localStorage.getItem('admin_token') || '')
+  const token = ref<string>(getToken())
   const username = ref<string>(localStorage.getItem('admin_username') || '')
   const menus = ref<MenuNode[]>(readJson<MenuNode[]>('admin_menus', []))
   const perms = ref<string[]>(readJson<string[]>('admin_perms', []))
@@ -31,9 +32,10 @@ export const useUserStore = defineStore('user', () => {
   const login = async (loginForm: { username: string; password: string }) => {
     // 专用管理员登录接口，服务端校验 role 必须为 platform_admin
     const data: any = await request.post('/auth/admin/login', loginForm)
-    token.value = data.token
+    // Cookie 模式：token 在 HttpOnly Cookie 里，本地只记"已登录"
+    token.value = '1'
     username.value = data.username || loginForm.username
-    localStorage.setItem('admin_token', data.token)
+    setToken()
     localStorage.setItem('admin_username', data.username || loginForm.username)
     return data
   }
@@ -48,12 +50,18 @@ export const useUserStore = defineStore('user', () => {
     return data
   }
 
-  const logout = () => {
+  // 必须通知服务端清 Cookie：否则本地跳走了、Cookie 还在，刷新就又登上了
+  const logout = async () => {
+    try {
+      await request.post('/auth/logout')
+    } catch {
+      // 服务端不可用也要把本地状态清掉
+    }
     token.value = ''
     username.value = ''
     menus.value = []
     perms.value = []
-    localStorage.removeItem('admin_token')
+    clearToken()
     localStorage.removeItem('admin_username')
     localStorage.removeItem('admin_menus')
     localStorage.removeItem('admin_perms')

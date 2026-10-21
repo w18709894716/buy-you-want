@@ -1,10 +1,11 @@
 package com.byw.order.feign;
 
+import com.byw.common.log.annotation.OperationLog;
 import com.byw.api.order.AfterSaleFeignClient;
 import com.byw.api.order.dto.AfterSaleDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.Public;
+import com.byw.common.security.annotation.InternalApi;
 import com.byw.order.entity.AfterSale;
 import com.byw.order.service.AfterSaleService;
 import lombok.RequiredArgsConstructor;
@@ -20,7 +21,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/feign/order/aftersale")
 @RequiredArgsConstructor
-@Public
+@InternalApi
 public class AfterSaleFeignImpl implements AfterSaleFeignClient {
 
     private final AfterSaleService afterSaleService;
@@ -40,13 +41,17 @@ public class AfterSaleFeignImpl implements AfterSaleFeignClient {
     }
 
     @Override
+    @OperationLog(module = "售后", operation = "同意", description = "商家同意售后申请")
     @PostMapping("/approve")
     public R<Boolean> approveAfterSale(@RequestParam("id") Long id) {
+        // 先提交"审核通过/置退款中"事务，再在事务外驱动远程退款（幂等，失败可重试）
         afterSaleService.approve(id);
+        afterSaleService.driveRefundIfPending(id);
         return R.ok(true);
     }
 
     @Override
+    @OperationLog(module = "售后", operation = "拒绝", description = "商家拒绝售后申请")
     @PostMapping("/reject")
     public R<Boolean> rejectAfterSale(@RequestParam("id") Long id, @RequestParam("reason") String reason) {
         afterSaleService.reject(id, reason);
@@ -54,9 +59,11 @@ public class AfterSaleFeignImpl implements AfterSaleFeignClient {
     }
 
     @Override
+    @OperationLog(module = "售后", operation = "确认收货", description = "商家确认收到退货")
     @PostMapping("/confirm-return")
     public R<Boolean> confirmReturnReceived(@RequestParam("id") Long id) {
         afterSaleService.confirmReturnReceived(id);
+        afterSaleService.driveRefundIfPending(id);
         return R.ok(true);
     }
 }

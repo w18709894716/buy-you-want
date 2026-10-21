@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router'
+import { getToken } from '../utils/token'
 import { hasPerm } from '../utils/permission'
 import { useUserStore } from '../stores/user'
 
@@ -131,7 +132,7 @@ const router = createRouter({
 
 // 路由守卫：登录校验（/login、/apply 免登录）+ 页面级权限校验
 router.beforeEach(async (to, from, next) => {
-  const token = localStorage.getItem('merchant_token')
+  const token = getToken()
   const publicPaths = ['/login', '/apply']
   if (!publicPaths.includes(to.path) && !token) {
     next('/login')

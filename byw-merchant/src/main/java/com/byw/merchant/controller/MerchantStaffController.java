@@ -1,5 +1,6 @@
 package com.byw.merchant.controller;
 
+import jakarta.validation.Valid;
 import com.byw.api.shop.ShopFeignClient;
 import com.byw.api.shop.dto.MerchantAccountDTO;
 import com.byw.api.user.RbacFeignClient;
@@ -55,7 +56,7 @@ public class MerchantStaffController {
 
     /** 新建子账号（用户名+密码+姓名+电话+角色），随后分配预设角色 */
     @PostMapping
-    public R<Long> create(@RequestBody MerchantAccountDTO dto) {
+    public R<Long> create(@Valid @RequestBody MerchantAccountDTO dto) {
         R<Long> created = shopFeignClient.createStaff(UserContext.getUserId(), UserContext.getShopId(), dto);
         Long staffId = created.getData();
         if (staffId != null && dto.getRoleIds() != null && !dto.getRoleIds().isEmpty()) {

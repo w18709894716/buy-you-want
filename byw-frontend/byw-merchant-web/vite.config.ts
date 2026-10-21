@@ -12,6 +12,8 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0',
+    // 允许 dev server 读取仓库内共享目录（../shared/http-client.ts），否则 dev 下会 403
+    fs: { allow: ['..'] },
     port: 5175,
     proxy: {
       '/api': {

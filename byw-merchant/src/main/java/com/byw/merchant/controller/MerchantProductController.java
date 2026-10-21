@@ -1,5 +1,6 @@
 package com.byw.merchant.controller;
 
+import jakarta.validation.Valid;
 import com.byw.api.product.ProductFeignClient;
 import com.byw.api.product.dto.BrandDTO;
 import com.byw.api.product.dto.CategoryDTO;
@@ -41,7 +42,7 @@ public class MerchantProductController {
 
     @PostMapping
     @RequirePerm("m:product:publish")
-    public R<Long> createProduct(@RequestBody ProductDTO productDTO) {
+    public R<Long> createProduct(@Valid @RequestBody ProductDTO productDTO) {
         // 强制归属当前商家店铺，防止越权创建
         productDTO.setShopId(UserContext.getShopId());
         return productFeignClient.createProduct(productDTO);
@@ -49,7 +50,7 @@ public class MerchantProductController {
 
     @PutMapping("/{productId}")
     @RequirePerm("m:product:publish")
-    public R<Boolean> updateProduct(@PathVariable Long productId, @RequestBody ProductDTO productDTO) {
+    public R<Boolean> updateProduct(@PathVariable Long productId, @Valid @RequestBody ProductDTO productDTO) {
         productDTO.setShopId(UserContext.getShopId());
         return productFeignClient.updateProduct(productId, productDTO);
     }

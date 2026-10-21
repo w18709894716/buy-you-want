@@ -431,24 +431,6 @@ erDiagram
 
 唯一索引：`uk_activity_user(activity_id, user_id)` — 防重复秒杀
 
-#### t_group_buy_activity（拼团活动）
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | BIGINT | 主键 |
-| name | VARCHAR | 活动名称 |
-| product_id | BIGINT | 商品ID |
-| group_price | DECIMAL | 拼团价 |
-| original_price | DECIMAL | 原价 |
-| group_size | INT | 成团人数 |
-| max_groups | INT | 最大团数 |
-| start_time | DATETIME | 开始时间 |
-| end_time | DATETIME | 结束时间 |
-| status | TINYINT | 状态 |
-| created_at | DATETIME | 创建时间 |
-| updated_at | DATETIME | 更新时间 |
-| deleted | TINYINT | 逻辑删除 |
-
 ### byw_shop
 
 店铺中心库，支撑多商家入驻与商家账号体系（建库脚本：`docs/database/byw_shop.sql`）。

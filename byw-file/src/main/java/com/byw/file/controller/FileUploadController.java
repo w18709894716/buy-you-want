@@ -2,6 +2,7 @@ package com.byw.file.controller;
 
 import com.byw.common.core.result.R;
 import com.byw.common.security.annotation.Public;
+import com.byw.common.security.annotation.RequireAdmin;
 import com.byw.file.service.FileService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -40,7 +41,12 @@ public class FileUploadController {
         return R.ok(fileService.uploadFiles(files, folder));
     }
 
-    @Operation(summary = "删除文件")
+    /**
+     * 删除文件：文件没有归属记录，任何登录用户都能凭 URL 删除他人文件，
+     * 因此收紧为**仅平台管理员**（当前前端未使用该接口，收紧无兼容影响）。
+     */
+    @RequireAdmin
+    @Operation(summary = "删除文件（平台管理员）")
     @DeleteMapping("/delete")
     public R<Boolean> delete(@RequestParam("url") String fileUrl) {
         return R.ok(fileService.deleteFile(fileUrl));

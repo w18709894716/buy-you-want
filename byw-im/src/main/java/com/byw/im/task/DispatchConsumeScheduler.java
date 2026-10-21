@@ -1,6 +1,7 @@
 package com.byw.im.task;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.byw.common.redis.lock.DistributedLock;
 import com.byw.im.entity.Conversation;
 import com.byw.im.mapper.ConversationMapper;
 import com.byw.im.service.DispatchService;
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -22,11 +24,20 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class DispatchConsumeScheduler {
 
+    /** 分布式锁 key：多实例下同一轮只允许一个节点执行 */
+    private static final String LOCK_DISPATCH_CONSUME = "byw:lock:task:im-dispatch-consume";
+
     private final ConversationMapper conversationMapper;
     private final DispatchService dispatchService;
+    private final DistributedLock distributedLock;
 
     @Scheduled(fixedDelayString = "${byw.im.dispatch-consume-interval-ms:30000}")
     public void consumePending() {
+        distributedLock.tryExecuteWithLock(LOCK_DISPATCH_CONSUME, 0, TimeUnit.SECONDS, this::consumePendingLocked);
+    }
+
+    /** 抢到锁后实际执行的消费逻辑 */
+    private void consumePendingLocked() {
         try {
             // 仅处理存在排队/离线池会话的店铺，避免全量店铺空转
             List<Conversation> pending = conversationMapper.selectList(

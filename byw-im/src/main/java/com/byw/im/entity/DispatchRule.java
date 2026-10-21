@@ -1,5 +1,8 @@
 package com.byw.im.entity;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 
@@ -20,6 +23,8 @@ public class DispatchRule {
     private Long shopId;
 
     /** 规则名称 */
+    @NotBlank(message = "规则名称不能为空")
+    @Size(max = 50, message = "规则名称过长")
     private String ruleName;
 
     /** 优先智能机器人 0否 1是（服务时间内有效） */
@@ -47,6 +52,7 @@ public class DispatchRule {
     private String orderStatuses;
 
     /** 匹配分组ID（命中后进入该分组按客服权重分配） */
+    @NotNull(message = "请选择命中后进入的分流分组")
     private Long groupId;
 
     /** 优先级（数字越小越优先匹配） */

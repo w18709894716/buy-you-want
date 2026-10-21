@@ -19,5 +19,9 @@ public interface ProductService extends IService<Product> {
             Long shopId, Long brandId, java.util.List<Long> categoryIds, java.util.List<Long> productIds,
             String keyword, java.math.BigDecimal minPrice, java.math.BigDecimal maxPrice, String orderBy);
 
+    /**
+     * 商品详情读缓存，仅供展示类只读链路使用。
+     * 写链路（改状态/审核/删除前的读取）必须走 getById，否则会读到旧数据。
+     */
     Product getProductDetail(Long id);
 }

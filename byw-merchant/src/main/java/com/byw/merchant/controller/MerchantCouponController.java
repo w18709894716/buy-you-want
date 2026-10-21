@@ -1,5 +1,6 @@
 package com.byw.merchant.controller;
 
+import jakarta.validation.Valid;
 import com.byw.api.promotion.PromotionFeignClient;
 import com.byw.api.promotion.dto.CouponDTO;
 import com.byw.common.core.result.PageResult;
@@ -33,14 +34,14 @@ public class MerchantCouponController {
     }
 
     @PostMapping
-    public R<Long> createCoupon(@RequestBody CouponDTO couponDTO) {
+    public R<Long> createCoupon(@Valid @RequestBody CouponDTO couponDTO) {
         // 店铺券：强制归属当前商家店铺
         couponDTO.setShopId(UserContext.getShopId());
         return promotionFeignClient.createCoupon(couponDTO);
     }
 
     @PutMapping("/{couponId}")
-    public R<Boolean> updateCoupon(@PathVariable Long couponId, @RequestBody CouponDTO couponDTO) {
+    public R<Boolean> updateCoupon(@PathVariable Long couponId, @Valid @RequestBody CouponDTO couponDTO) {
         couponDTO.setShopId(UserContext.getShopId());
         return promotionFeignClient.updateCoupon(couponId, couponDTO);
     }

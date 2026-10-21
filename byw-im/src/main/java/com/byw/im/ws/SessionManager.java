@@ -54,10 +54,17 @@ public class SessionManager {
 
     /**
      * 客服挂起状态：key=staffId（merchant_account.id），true=已挂起（不再接新消息）。
-     * 存内存+Redis（重启后需客服重新挂起，可接受）。
+     *
+     * <p><b>只以 Redis 为真源</b>（im:staff:suspend:<staffId>，24h TTL，需要续挂起会重新写入）。
+     *
+     * <p>早期实现是"内存 Map 优先、Redis 兜底"，在多节点部署下会脏读：
+     * 客服在 B 节点恢复（删掉 Redis key）后，A 节点内存里的 true 永远不会失效，
+     * 于是 A 节点继续把它判为"已挂起"，新会话不再分给它（表现为客服恢复后仍然没单）。
+     * 挂起是**跨节点共享状态**，不能有本地副本；另外只存 Redis 后，实例重启也不会丢挂起状态。
      */
-    private final ConcurrentHashMap<Long, Boolean> suspendedStaff = new ConcurrentHashMap<>();
     private static final String SUSPEND_KEY_PREFIX = "im:staff:suspend:";
+    /** 挂起状态 TTL：避免客服忘记恢复导致永远不接新会话 */
+    private static final long SUSPEND_TTL_SECONDS = 24 * 60 * 60L;
 
     public static String userPrincipal(Long userId) {
         return "u:" + userId;
@@ -249,20 +256,21 @@ public class SessionManager {
 
     // ========== 客服挂起状态 ==========
 
-    /** 判断客服是否处于挂起状态（不接新消息；存量会话可继续回复） */
+    /** 判断客服是否处于挂起状态（不接新消息；存量会话可继续回复）。跨节点一致：只读 Redis。 */
     public boolean isStaffSuspended(Long staffId) {
-        Boolean local = suspendedStaff.get(staffId);
-        if (local != null) {
-            return local;
+        if (staffId == null) {
+            return false;
         }
         return Boolean.TRUE.equals(redisUtil.hasKey(SUSPEND_KEY_PREFIX + staffId));
     }
 
-    /** 设置客服挂起状态 */
+    /** 设置客服挂起状态（只写 Redis，任何节点都能立刻看到） */
     public void setSuspended(Long staffId, boolean suspended) {
-        suspendedStaff.put(staffId, suspended);
+        if (staffId == null) {
+            return;
+        }
         if (suspended) {
-            redisUtil.set(SUSPEND_KEY_PREFIX + staffId, "1", 24 * 60 * 60, TimeUnit.SECONDS);
+            redisUtil.set(SUSPEND_KEY_PREFIX + staffId, "1", SUSPEND_TTL_SECONDS, TimeUnit.SECONDS);
         } else {
             redisUtil.delete(SUSPEND_KEY_PREFIX + staffId);
         }

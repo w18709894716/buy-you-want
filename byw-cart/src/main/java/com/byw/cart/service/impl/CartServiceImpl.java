@@ -136,8 +136,58 @@ public class CartServiceImpl extends ServiceImpl<CartItemMapper, CartItem> imple
         List<CartItem> items = list(new LambdaQueryWrapper<CartItem>()
                 .eq(CartItem::getUserId, userId)
                 .orderByDesc(CartItem::getCreatedAt));
+        refreshSkuSnapshots(items);
         fillShopNames(items);
         return items;
+    }
+
+    /**
+     * 刷新购物车行的 SKU 快照（价格/规格名/图片/店铺）。
+     *
+     * <p>下单接口以商品服务价格为准，客户端价格不一致会被拒绝；购物车列表必须返回实时价格，
+     * 否则用户会卡在"结算被拒 → 返回购物车 → 看到的还是旧价"的死循环里。
+     */
+    private void refreshSkuSnapshots(List<CartItem> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        List<Long> skuIds = items.stream()
+                .map(CartItem::getSkuId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (skuIds.isEmpty()) {
+            return;
+        }
+        try {
+            R<List<SkuDTO>> skuResult = productFeignClient.getSkuByIds(skuIds);
+            if (skuResult == null || !skuResult.isSuccess() || skuResult.getData() == null) {
+                return;
+            }
+            Map<Long, SkuDTO> skuMap = skuResult.getData().stream()
+                    .filter(s -> s.getId() != null)
+                    .collect(Collectors.toMap(SkuDTO::getId, s -> s, (a, b) -> a));
+            for (CartItem item : items) {
+                SkuDTO sku = skuMap.get(item.getSkuId());
+                if (sku == null) {
+                    continue;
+                }
+                if (sku.getPrice() != null) {
+                    item.setPrice(sku.getPrice());
+                }
+                if (sku.getSkuName() != null) {
+                    item.setSkuName(sku.getSkuName());
+                }
+                if (sku.getImage() != null && !sku.getImage().isBlank()) {
+                    item.setProductImage(sku.getImage());
+                }
+                if (sku.getShopId() != null) {
+                    item.setShopId(sku.getShopId());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("刷新购物车 SKU 快照失败: {}", e.getMessage());
+        }
     }
 
     /** 批量回填购物车项归属店铺名称，供前端按店铺分组展示；失败时静默跳过 */

@@ -1,0 +1,12 @@
+# Docker 构建上下文裁剪（构建上下文 = 仓库根目录）
+.git
+.idea
+.qoder
+.vscode
+__pycache__
+**/node_modules
+**/dist
+**/.output
+**/target
+byw-frontend
+docs

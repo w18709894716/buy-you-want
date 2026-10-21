@@ -1,5 +1,6 @@
 package com.byw.admin.controller;
 
+import jakarta.validation.Valid;
 import com.byw.api.user.RbacFeignClient;
 import com.byw.api.user.dto.SysMenuDTO;
 import com.byw.api.user.dto.SysRoleDTO;
@@ -29,7 +30,7 @@ public class AdminSysRoleController {
 
     /** 新建平台角色 */
     @PostMapping
-    public R<Long> create(@RequestBody SysRoleDTO dto) {
+    public R<Long> create(@Valid @RequestBody SysRoleDTO dto) {
         dto.setScope("platform");
         dto.setShopId(null);
         dto.setIsPreset(0);
@@ -38,7 +39,7 @@ public class AdminSysRoleController {
 
     /** 编辑平台角色（内置预设不可改） */
     @PutMapping
-    public R<Boolean> update(@RequestBody SysRoleDTO dto) {
+    public R<Boolean> update(@Valid @RequestBody SysRoleDTO dto) {
         return rbacFeignClient.updateRole(dto);
     }
 

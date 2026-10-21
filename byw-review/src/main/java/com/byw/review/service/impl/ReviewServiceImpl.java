@@ -12,6 +12,7 @@ import com.byw.api.user.dto.UserDTO;
 import com.byw.common.core.exception.BusinessException;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
+import com.byw.common.security.context.UserContext;
 import com.byw.review.document.ReviewDetail;
 import com.byw.review.entity.Review;
 import com.byw.review.entity.ReviewImage;
@@ -420,11 +421,14 @@ public class ReviewServiceImpl implements ReviewService {
         }
         review.setStatus(status);
         reviewMapper.updateById(review);
-        // 同步到 MongoDB 明细，保证 C 端商品评价列表同步隐藏/显示
+        // 同步到 MongoDB 明细，保证 C 端商品评价列表同步隐藏/显示。
+        // 必须"要么都成功、要么都失败"：C 端列表读的是 MongoDB，一旦吞掉异常，
+        // 管理员看到操作成功、用户端却仍是旧状态（反之亦然）。
         try {
             mongoTemplate.updateMulti(buildDetailQuery(review), new Update().set("status", status), ReviewDetail.class);
         } catch (Exception e) {
-            log.warn("同步评价显示状态到MongoDB失败: reviewId={}, error={}", reviewId, e.getMessage());
+            log.error("同步评价显示状态到 MongoDB 失败，事务回滚: reviewId={}", reviewId, e);
+            throw new BusinessException("评价状态同步失败，请稍后重试");
         }
     }
 
@@ -436,13 +440,15 @@ public class ReviewServiceImpl implements ReviewService {
             throw new BusinessException("评价不存在");
         }
         reviewMapper.deleteById(reviewId);
-        // 同步删除 MongoDB 明细与图片，避免 C 端仍展示已删评价
+        // 同步删除 MongoDB 明细与图片，避免 C 端仍展示已删评价。
+        // 原先失败只 warn：用户端会继续展示"已被删除"的评价，而管理员端看到的是删除成功。
         try {
             mongoTemplate.remove(buildDetailQuery(review), ReviewDetail.class);
             reviewImageMapper.delete(new LambdaQueryWrapper<ReviewImage>()
                     .eq(ReviewImage::getReviewId, reviewId));
         } catch (Exception e) {
-            log.warn("同步删除MongoDB评价明细失败: reviewId={}, error={}", reviewId, e.getMessage());
+            log.error("同步删除 MongoDB 评价明细失败，事务回滚: reviewId={}", reviewId, e);
+            throw new BusinessException("评价删除同步失败，请稍后重试");
         }
     }
 
@@ -453,9 +459,8 @@ public class ReviewServiceImpl implements ReviewService {
         if (review == null) {
             throw new BusinessException("评价不存在");
         }
-        // 商家仅能回复本店评价
-        Long shopId = com.byw.common.security.context.UserContext.getShopId();
-        if (shopId != null && !shopId.equals(review.getShopId())) {
+        // 商家仅能回复本店评价；fail-closed：无店铺上下文且非平台管理员一律拒绝
+        if (!UserContext.canAccessShop(review.getShopId())) {
             throw new BusinessException("无权回复其他店铺的评价");
         }
         Review update = new Review();
@@ -464,13 +469,15 @@ public class ReviewServiceImpl implements ReviewService {
         java.time.LocalDateTime repliedAt = java.time.LocalDateTime.now();
         update.setRepliedAt(repliedAt);
         reviewMapper.updateById(update);
-        // 同步到 MongoDB 明细，保证 C 端商品评价/订单评价能看到商家回复
+        // 同步到 MongoDB 明细，保证 C 端商品评价/订单评价能看到商家回复。
+        // 原先失败只 warn：商家看到"回复成功"，用户端却永远看不到这条回复。
         try {
             mongoTemplate.updateMulti(buildDetailQuery(review),
                     new Update().set("merchantReply", content).set("repliedAt", repliedAt),
                     ReviewDetail.class);
         } catch (Exception e) {
-            log.warn("同步商家回复到MongoDB失败: reviewId={}, error={}", reviewId, e.getMessage());
+            log.error("同步商家回复到 MongoDB 失败，事务回滚: reviewId={}", reviewId, e);
+            throw new BusinessException("商家回复同步失败，请稍后重试");
         }
     }
 

@@ -1,0 +1,25 @@
+# Per-service configuration for byw-shop (Nacos data-id: byw-shop.yml, group: DEFAULT_GROUP)
+# Loaded automatically by Spring Cloud Alibaba (spring.cloud.nacos.config.file-extension=yml).
+# Repo mirror of this file: docs/deploy/nacos/services/byw-shop.yml
+#
+# KEEP ASCII-ONLY: non-ASCII content makes the nacos client parse the whole config to EMPTY silently.
+# Secrets are jasypt ENC(...) values; the master key comes from env JASYPT_ENCRYPTOR_PASSWORD.
+
+spring:
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/byw_shop?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USER:root}
+    password: ENC(wtqk+Xb7N/VJATrcW+w1ZDjJJDrEeFqV6S+eo5LUS0wnihpH088DJtQ3VLOzxp+P)
+    driver-class-name: com.mysql.cj.jdbc.Driver
+jetcache:
+  statIntervalMinutes: 15
+  areaInCacheName: false
+  penetrationProtect: true
+  remote:
+    default:
+      type: redis.springdata
+      keyPrefix: "byw:cache:"
+      keyConvertor: FASTJSON2
+      valueEncoder: bean:fastjson2ValueEncoder
+      valueDecoder: bean:fastjson2ValueDecoder
+      expireAfterWriteInMillis: 1800000

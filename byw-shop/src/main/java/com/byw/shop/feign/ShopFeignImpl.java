@@ -1,11 +1,12 @@
 package com.byw.shop.feign;
 
+import jakarta.validation.Valid;
 import com.byw.api.shop.ShopFeignClient;
 import com.byw.api.shop.dto.MerchantAccountDTO;
 import com.byw.api.shop.dto.ShopDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.Public;
+import com.byw.common.security.annotation.InternalApi;
 import com.byw.common.security.context.UserContext;
 import com.byw.shop.service.ShopService;
 import lombok.RequiredArgsConstructor;
@@ -16,7 +17,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/feign/shop")
 @RequiredArgsConstructor
-@Public
+@InternalApi
 public class ShopFeignImpl implements ShopFeignClient {
 
     private final ShopService shopService;
@@ -59,7 +60,7 @@ public class ShopFeignImpl implements ShopFeignClient {
 
     @Override
     @PutMapping("/update")
-    public R<Void> updateShop(@RequestBody ShopDTO shopDTO) {
+    public R<Void> updateShop(@Valid @RequestBody ShopDTO shopDTO) {
         // 强制作用于当前登录商家的 shopId（由 BFF 透传身份头重建上下文）
         shopDTO.setId(UserContext.getShopId());
         shopService.updateShop(shopDTO);
@@ -85,7 +86,7 @@ public class ShopFeignImpl implements ShopFeignClient {
     @PostMapping("/staff")
     public R<Long> createStaff(@RequestParam("parentId") Long parentId,
                                @RequestParam("shopId") Long shopId,
-                               @RequestBody MerchantAccountDTO dto) {
+                               @Valid @RequestBody MerchantAccountDTO dto) {
         return R.ok(shopService.createStaff(parentId, shopId, dto));
     }
 

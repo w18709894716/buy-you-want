@@ -1,5 +1,6 @@
 package com.byw.im.task;
 
+import com.byw.common.redis.lock.DistributedLock;
 import com.byw.im.service.ServiceRecordService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -8,6 +9,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
+import java.util.concurrent.TimeUnit;
 
 /**
  * IM 服务超时扫描：双方（用户与客服）无互发消息超过超时阈值自动结束服务。
@@ -18,7 +20,11 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public class ServiceTimeoutScheduler {
 
+    /** 分布式锁 key：多实例下同一轮只允许一个节点执行 */
+    private static final String LOCK_SERVICE_TIMEOUT = "byw:lock:task:im-service-timeout";
+
     private final ServiceRecordService serviceRecordService;
+    private final DistributedLock distributedLock;
 
     /** 服务超时阈值（分钟），默认 10 */
     @Value("${byw.im.service-timeout-minutes:10}")
@@ -34,13 +40,15 @@ public class ServiceTimeoutScheduler {
      */
     @Scheduled(fixedDelayString = "${byw.im.service-scan-interval-ms:30000}")
     public void scanTimeoutServices() {
-        try {
-            LocalDateTime now = LocalDateTime.now();
-            serviceRecordService.scanTimeoutServices(
-                    now.minusMinutes(Math.max(timeoutMinutes - aheadMinutes, 1)),
-                    now.minusMinutes(timeoutMinutes));
-        } catch (Exception e) {
-            log.error("IM 服务超时扫描任务执行失败", e);
-        }
+        distributedLock.tryExecuteWithLock(LOCK_SERVICE_TIMEOUT, 0, TimeUnit.SECONDS, () -> {
+            try {
+                LocalDateTime now = LocalDateTime.now();
+                serviceRecordService.scanTimeoutServices(
+                        now.minusMinutes(Math.max(timeoutMinutes - aheadMinutes, 1)),
+                        now.minusMinutes(timeoutMinutes));
+            } catch (Exception e) {
+                log.error("IM 服务超时扫描任务执行失败", e);
+            }
+        });
     }
 }

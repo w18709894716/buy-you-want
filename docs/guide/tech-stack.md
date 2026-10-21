@@ -7,14 +7,13 @@
 | Java | 17 | JDK LTS 版本，支持 Records、Pattern Matching 等新特性 |
 | Spring Boot | 3.2.5 | 应用框架基座，Jakarta EE 迁移 |
 | Spring Cloud | 2023.0.1 | 微服务治理框架（Gateway、OpenFeign、LoadBalancer） |
-| Spring Cloud Alibaba | 2023.0.1.0 | 阿里微服务组件（Nacos、Sentinel、Seata） |
+| Spring Cloud Alibaba | 2023.0.1.0 | 阿里微服务组件（Nacos、Sentinel） |
 | MyBatis-Plus | 3.5.6 | ORM 增强，内置分页插件、自动填充、代码生成 |
 | MySQL Connector/J | 8.3.0 | MySQL JDBC 驱动 |
 | Redisson | 3.28.0 | Redis 高级客户端，分布式锁、布隆过滤器、限流器 |
 | RocketMQ Spring Boot Starter | 2.3.0 | RocketMQ 客户端封装，生产者/消费者配置 |
 | Spring Data Elasticsearch | — | Elasticsearch 客户端，索引与查询操作 |
 | Spring Data MongoDB | — | MongoDB 客户端，文档 CRUD 操作 |
-| Seata | 2.0.0 | 分布式事务框架，AT/TCC/Saga 模式 |
 | Sa-Token | 1.38.0 | 轻量级权限认证框架，单点登录 |
 | Hutool | 5.8.27 | Java 工具集（字符串、日期、加密、HTTP 等） |
 | Knife4j | 4.4.0 | 各微服务 OpenAPI 3.0 接口文档 UI，增强 Swagger |
@@ -78,7 +77,6 @@
 | RocketMQ | 5.x | 消息队列，事件驱动，支持顺序消息、事务消息 |
 | Elasticsearch | 8.13.4 | 商品全文搜索，IK 中文分词 |
 | MongoDB | 7.0.9 | 评价详情、图片等非结构化文档存储 |
-| Seata | 2.0 | 分布式事务协调（AT 模式） |
 | Sentinel | — | 限流、熔断、降级、热点参数流控 |
 
 ## 技术选型说明
@@ -86,7 +84,7 @@
 ### Spring Cloud Alibaba vs Spring Cloud Netflix
 - **国产生态成熟**：Nacos 一站式提供注册中心 + 配置中心，无需 Eureka + Config Server 双组件
 - **社区活跃**：Spring Cloud Netflix 已进入维护模式（Ribbon/Hystrix 停止更新），Spring Cloud Alibaba 持续迭代
-- **功能全面**：Sentinel 限流 + Seata 事务 + RocketMQ 消息，开箱即用
+- **功能全面**：Sentinel 限流 + RocketMQ 消息，开箱即用
 
 ### Redisson vs Lettuce / Jedis
 - **高级数据结构**：内置分布式锁（可重入/公平锁）、布隆过滤器、限流器、延迟队列
@@ -98,7 +96,15 @@
 - **事务消息**：内置事务消息，保证本地事务与消息发送的一致性
 - **阿里生态**：与 Spring Cloud Alibaba 生态无缝集成
 
-### Seata AT vs TCC
-- **开发效率优先**：AT 模式基于数据源代理自动生成回滚 SQL，业务代码零侵入
-- **TCC 复杂度高**：需要手动编写 Try / Confirm / Cancel 三个接口，适合对一致性要求极高的金融场景
-- **本项目选型**：电商下单链路采用 AT 模式，兼顾开发效率与数据一致性；秒杀场景结合 RocketMQ 最终一致性方案
+### 一致性方案：为什么最终没有用 Seata
+
+项目早期声明过 Seata AT 模式，但全仓 0 处 `@GlobalTransactional`、DDL 中也没有 `undo_log`，
+属于"看起来有分布式事务兜底、实际没有"的死配置，已于 2026-10-13 彻底移除。当前下单链路采用组合方案：
+
+| 环节 | 方案 |
+|---|---|
+| 本地落库 | 单个服务内用 `@Transactional` 保证订单 + 明细 + 状态日志原子 |
+| 跨服务远端写（核销券 / 预占库存） | **事务回滚回调补偿**：`afterCompletion` 里撤回已成功的远端写 |
+| 结果未知（Feign 超时） | 不做盲撤，落日志 + 由对账任务兜底 |
+| 支付结果落库与消息投递 | RocketMQ **事务消息**（半消息 + 本地事务 + broker 回查） |
+| 漂移收敛 | `@Scheduled` 对账任务（超时未支付取消、退款卡单重试） |

@@ -7,6 +7,7 @@ import { useUserStore } from '~/stores/user'
  */
 const favoriteIds = ref<Set<number>>(new Set())
 const loaded = ref(false)
+let pending: Promise<void> | null = null
 
 export function useFavorites() {
   const userStore = useUserStore()
@@ -18,15 +19,26 @@ export function useFavorites() {
       loaded.value = true
       return
     }
-    if (loaded.value && !force) return
-    try {
-      const ids = await get<number[]>('/user/favorite/ids')
-      favoriteIds.value = new Set(ids || [])
-    } catch {
-      // 忽略：未登录或接口异常时保持空集合
-    } finally {
-      loaded.value = true
+    if (!force && (loaded.value || pending)) {
+      return pending ?? undefined
     }
+    // 单飞：商品卡是逐张挂载的，同一批 flush 里 N 张卡会同时走到这里，
+    // 而 loaded 要等响应回来才置位，光靠它拦不住并发 —— 必须让后来者复用同一个 Promise。
+    const task = (async () => {
+      try {
+        const ids = await get<number[]>('/user/favorite/ids')
+        favoriteIds.value = new Set(ids || [])
+      } catch {
+        // 忽略：未登录或接口异常时保持空集合
+      } finally {
+        loaded.value = true
+        if (pending === task) {
+          pending = null
+        }
+      }
+    })()
+    pending = task
+    return task
   }
 
   /** 是否已收藏 */

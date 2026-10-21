@@ -1,3 +1,4 @@
 com.byw.common.core.exception.GlobalExceptionHandler
 com.byw.common.core.config.JacksonAutoConfiguration
 com.byw.common.core.sentinel.SentinelAutoConfiguration
+com.byw.common.core.trace.TraceIdAutoConfiguration

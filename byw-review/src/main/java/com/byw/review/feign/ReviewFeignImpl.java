@@ -4,7 +4,7 @@ import com.byw.api.review.ReviewFeignClient;
 import com.byw.api.review.dto.ReviewStatsDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.Public;
+import com.byw.common.security.annotation.InternalApi;
 import com.byw.review.service.ReviewService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -14,7 +14,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/feign/review")
 @RequiredArgsConstructor
-@Public
+@InternalApi
 public class ReviewFeignImpl implements ReviewFeignClient {
 
     private final ReviewService reviewService;

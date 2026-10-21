@@ -1,9 +1,12 @@
 package com.byw.shop.service.impl;
 
+import com.alicp.jetcache.anno.CacheInvalidate;
+import com.alicp.jetcache.anno.Cached;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byw.api.shop.dto.MerchantAccountDTO;
 import com.byw.api.shop.dto.ShopDTO;
+import com.byw.common.core.constant.CacheNames;
 import com.byw.common.core.constant.CommonConstants;
 import com.byw.common.core.exception.BusinessException;
 import com.byw.common.core.result.PageResult;
@@ -22,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -33,6 +37,7 @@ public class ShopServiceImpl implements ShopService {
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     @Override
+    @Cached(name = CacheNames.SHOP_INFO, key = "#shopId", expire = 30, timeUnit = TimeUnit.MINUTES)
     public ShopDTO getShopById(Long shopId) {
         Shop shop = shopMapper.selectById(shopId);
         return toShopDTO(shop);
@@ -55,7 +60,7 @@ public class ShopServiceImpl implements ShopService {
 
     @Override
     public MerchantAccountDTO getMerchantById(Long merchantId) {
-        return toMerchantDTO(merchantAccountMapper.selectById(merchantId));
+        return toSafeMerchantDTO(merchantAccountMapper.selectById(merchantId));
     }
 
     @Override
@@ -63,11 +68,9 @@ public class ShopServiceImpl implements ShopService {
         if (ids == null || ids.isEmpty()) {
             return new ArrayList<>();
         }
-        return merchantAccountMapper.selectBatchIds(ids).stream().map(account -> {
-            MerchantAccountDTO dto = toMerchantDTO(account);
-            dto.setPassword(null);
-            return dto;
-        }).toList();
+        return merchantAccountMapper.selectBatchIds(ids).stream()
+                .map(this::toSafeMerchantDTO)
+                .toList();
     }
 
     @Override
@@ -79,9 +82,7 @@ public class ShopServiceImpl implements ShopService {
         if (account == null) {
             return null;
         }
-        MerchantAccountDTO dto = toMerchantDTO(account);
-        dto.setPassword(null);
-        return dto;
+        return toSafeMerchantDTO(account);
     }
 
     @Override
@@ -187,7 +188,9 @@ public class ShopServiceImpl implements ShopService {
                 .eq(auditStatus != null, MerchantAccount::getAuditStatus, auditStatus)
                 .orderByDesc(MerchantAccount::getId);
         Page<MerchantAccount> result = merchantAccountMapper.selectPage(page, wrapper);
-        List<MerchantAccountDTO> list = result.getRecords().stream().map(this::toMerchantDTO).toList();
+        List<MerchantAccountDTO> list = result.getRecords().stream()
+                .map(this::toSafeMerchantDTO)
+                .toList();
         return PageResult.of(list, result.getTotal(), pageNum, pageSize);
     }
 
@@ -259,6 +262,7 @@ public class ShopServiceImpl implements ShopService {
     }
 
     @Override
+    @CacheInvalidate(name = CacheNames.SHOP_INFO, key = "#shopId")
     public void updateShopStatus(Long shopId, Integer status) {
         Shop shop = shopMapper.selectById(shopId);
         if (shop == null) {
@@ -269,6 +273,7 @@ public class ShopServiceImpl implements ShopService {
     }
 
     @Override
+    @CacheInvalidate(name = CacheNames.SHOP_INFO, key = "#shopDTO.id")
     public void updateShop(ShopDTO shopDTO) {
         if (shopDTO.getId() == null) {
             throw new BusinessException("店铺ID不能为空");
@@ -295,11 +300,9 @@ public class ShopServiceImpl implements ShopService {
                 .eq(MerchantAccount::getParentId, parentId)
                 .orderByDesc(MerchantAccount::getId);
         Page<MerchantAccount> result = merchantAccountMapper.selectPage(page, wrapper);
-        List<MerchantAccountDTO> list = result.getRecords().stream().map(account -> {
-            MerchantAccountDTO dto = toMerchantDTO(account);
-            dto.setPassword(null);
-            return dto;
-        }).toList();
+        List<MerchantAccountDTO> list = result.getRecords().stream()
+                .map(this::toSafeMerchantDTO)
+                .toList();
         return PageResult.of(list, result.getTotal(), pageNum, pageSize);
     }
 
@@ -313,11 +316,9 @@ public class ShopServiceImpl implements ShopService {
                         .eq(MerchantAccount::getStatus, 1)
                         .orderByDesc(MerchantAccount::getId)
                         .last("limit " + max));
-        return accounts.stream().map(account -> {
-            MerchantAccountDTO dto = toMerchantDTO(account);
-            dto.setPassword(null);
-            return dto;
-        }).toList();
+        return accounts.stream()
+                .map(this::toSafeMerchantDTO)
+                .toList();
     }
 
     @Override
@@ -381,12 +382,27 @@ public class ShopServiceImpl implements ShopService {
         return dto;
     }
 
+    /**
+     * 服务间/登录校验用：包含 password 哈希。
+     * 仅 {@link #getMerchantByUsername(String)}（商家登录）与 applyMerchant 的密码比对需要它。
+     */
     private MerchantAccountDTO toMerchantDTO(MerchantAccount account) {
         if (account == null) {
             return null;
         }
         MerchantAccountDTO dto = new MerchantAccountDTO();
         BeanUtils.copyProperties(account, dto);
+        return dto;
+    }
+
+    /**
+     * 出网前抹掉密码哈希：商家列表/详情、店铺主页、员工列表等一律不得外传 BCrypt 串。
+     */
+    private MerchantAccountDTO toSafeMerchantDTO(MerchantAccount account) {
+        MerchantAccountDTO dto = toMerchantDTO(account);
+        if (dto != null) {
+            dto.setPassword(null);
+        }
         return dto;
     }
 }

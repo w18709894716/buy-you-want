@@ -1,5 +1,6 @@
 package com.byw.admin.controller;
 
+import jakarta.validation.Valid;
 import com.byw.api.promotion.PromotionFeignClient;
 import com.byw.api.promotion.PromotionFeignClient.SeckillActivityDTO;
 import com.byw.api.promotion.dto.CouponDTO;
@@ -36,13 +37,13 @@ public class AdminPromotionController {
 
     @PostMapping("/coupon")
     @RequirePerm("coupon:manage")
-    public R<Long> createCoupon(@RequestBody CouponDTO couponDTO) {
+    public R<Long> createCoupon(@Valid @RequestBody CouponDTO couponDTO) {
         return promotionFeignClient.createCoupon(couponDTO);
     }
 
     @PutMapping("/coupon/{couponId}")
     @RequirePerm("coupon:manage")
-    public R<Boolean> updateCoupon(@PathVariable Long couponId, @RequestBody CouponDTO couponDTO) {
+    public R<Boolean> updateCoupon(@PathVariable Long couponId, @Valid @RequestBody CouponDTO couponDTO) {
         return promotionFeignClient.updateCoupon(couponId, couponDTO);
     }
 
@@ -68,13 +69,13 @@ public class AdminPromotionController {
 
     @PostMapping("/seckill")
     @RequirePerm("seckill:manage")
-    public R<Long> createSeckillActivity(@RequestBody SeckillActivityDTO activityDTO) {
+    public R<Long> createSeckillActivity(@Valid @RequestBody SeckillActivityDTO activityDTO) {
         return promotionFeignClient.createSeckillActivity(activityDTO);
     }
 
     @PutMapping("/seckill/{activityId}")
     @RequirePerm("seckill:manage")
-    public R<Boolean> updateSeckillActivity(@PathVariable Long activityId, @RequestBody SeckillActivityDTO activityDTO) {
+    public R<Boolean> updateSeckillActivity(@PathVariable Long activityId, @Valid @RequestBody SeckillActivityDTO activityDTO) {
         return promotionFeignClient.updateSeckillActivity(activityId, activityDTO);
     }
 

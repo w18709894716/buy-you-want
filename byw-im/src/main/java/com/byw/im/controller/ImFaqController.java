@@ -1,5 +1,6 @@
 package com.byw.im.controller;
 
+import jakarta.validation.Valid;
 import com.byw.common.core.result.R;
 import com.byw.common.security.annotation.RequireLogin;
 import com.byw.common.security.context.UserContext;
@@ -57,7 +58,7 @@ public class ImFaqController {
     @Operation(summary = "新增FAQ")
     @RequireLogin
     @PostMapping
-    public R<Faq> create(@RequestBody Faq faq) {
+    public R<Faq> create(@Valid @RequestBody Faq faq) {
         Long shopId = UserContext.getShopId();
         if (shopId == null) return R.fail("仅商家端可用");
         faq.setShopId(shopId);
@@ -67,7 +68,7 @@ public class ImFaqController {
     @Operation(summary = "更新FAQ")
     @RequireLogin
     @PutMapping
-    public R<Faq> update(@RequestBody Faq faq) {
+    public R<Faq> update(@Valid @RequestBody Faq faq) {
         Long shopId = UserContext.getShopId();
         if (shopId == null) return R.fail("仅商家端可用");
         faq.setShopId(shopId);

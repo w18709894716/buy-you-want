@@ -1,5 +1,8 @@
 package com.byw.im.entity;
 
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 
@@ -20,9 +23,12 @@ public class DispatchGroup {
     private Long shopId;
 
     /** 分流分组名称（售前/售后…） */
+    @NotBlank(message = "分组名称不能为空")
+    @Size(max = 50, message = "分组名称过长")
     private String groupName;
 
     /** 组内客服同时接待最大人数（按未结束服务数计） */
+    @Min(value = 1, message = "组内最大接待人数至少为 1")
     private Integer maxConcurrent;
 
     /** 状态 0禁用 1启用 */

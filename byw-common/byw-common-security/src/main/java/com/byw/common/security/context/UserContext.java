@@ -67,6 +67,23 @@ public class UserContext {
     }
 
     /**
+     * 是否具备操作指定店铺资源的资格（fail-closed）。
+     *
+     * <p>规则：商家账号必须与资源同店；平台管理员放行；**既无店铺上下文又非管理员一律拒绝**。
+     * 早期实现写成"shopId 为空则跳过校验"，导致不带身份头的请求（含直连服务端口、
+     * 或经内部接口伪造身份失败被降级为游客的场景）可以直接操作任意店铺资源。
+     */
+    public static boolean canAccessShop(Long resourceShopId) {
+        Long shopId = SHOP_ID.get();
+        // shopId <= 0 视为"没有店铺上下文"（0 是早期 refresh 写入的历史哨兵值），与 null 等价处理
+        if (shopId != null && shopId > 0) {
+            return shopId.equals(resourceShopId);
+        }
+        // Boolean.TRUE.equals：IS_ADMIN 未设置时是 null，直接拆箱会 NPE（变成 500 而不是干净的拒绝）
+        return Boolean.TRUE.equals(isAdmin());
+    }
+
+    /**
      * 是否商家角色（店主或员工）。
      */
     public static boolean isMerchant() {

@@ -1,5 +1,6 @@
 package com.byw.shop.controller;
 
+import jakarta.validation.Valid;
 import com.byw.api.shop.dto.MerchantAccountDTO;
 import com.byw.api.shop.dto.ShopDTO;
 import com.byw.common.core.result.PageResult;
@@ -36,7 +37,7 @@ public class ShopController {
      */
     @Public
     @PostMapping("/merchant/apply")
-    public R<Long> applyMerchant(@RequestBody MerchantAccountDTO dto) {
+    public R<Long> applyMerchant(@Valid @RequestBody MerchantAccountDTO dto) {
         MerchantAccount account = new MerchantAccount();
         BeanUtils.copyProperties(dto, account);
         return R.ok(shopService.applyMerchant(account));
@@ -47,7 +48,7 @@ public class ShopController {
      */
     @Public
     @PostMapping("/merchant/apply-query")
-    public R<MerchantAccountDTO> queryApply(@RequestBody MerchantAccountDTO dto) {
+    public R<MerchantAccountDTO> queryApply(@Valid @RequestBody MerchantAccountDTO dto) {
         return R.ok(shopService.getApplyByAccount(dto.getUsername(), dto.getPassword()));
     }
 
@@ -134,7 +135,7 @@ public class ShopController {
      */
     @RequireRole({CommonConstants.ROLE_MERCHANT_OWNER, CommonConstants.ROLE_MERCHANT_STAFF})
     @PutMapping("/merchant/update")
-    public R<Void> updateShop(@RequestBody ShopDTO shopDTO) {
+    public R<Void> updateShop(@Valid @RequestBody ShopDTO shopDTO) {
         shopDTO.setId(UserContext.getShopId());
         shopService.updateShop(shopDTO);
         return R.ok();

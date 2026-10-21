@@ -16,9 +16,11 @@ import com.byw.common.core.constant.CommonConstants;
 import com.byw.common.core.exception.BusinessException;
 import com.byw.common.core.exception.ResultCode;
 import com.byw.common.core.result.R;
+import com.byw.common.core.util.LoginIds;
 import com.byw.common.redis.util.RedisUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -36,7 +38,17 @@ public class AuthServiceImpl implements AuthService {
     private final RbacFeignClient rbacFeignClient;
     private final ShopFeignClient shopFeignClient;
     private final RedisUtil redisUtil;
+    /** 登录失败计数用 String 模板：计数器由 Redis INCR 写入的是裸数字，避免 JSON 序列化歧义 */
+    private final StringRedisTemplate stringRedisTemplate;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+
+    // ========== 登录安全阈值 ==========
+    /** 连续凭据失败达到该次数即临时锁定 */
+    private static final int MAX_LOGIN_FAILURES = 5;
+    /** 失败计数存活时长（分钟），同时作为锁定时长；计数不刷新 TTL，锁定时长固定 */
+    private static final long LOGIN_FAILURE_TTL_MINUTES = 15;
+    /** 同一手机号发送验证码的冷却时长（秒） */
+    private static final long SMS_COOLDOWN_SECONDS = 60;
 
     /** user_type：平台员工 */
     private static final int USER_TYPE_SYS = 1;
@@ -45,9 +57,12 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public LoginResponse login(LoginRequest request) {
+        String failureKey = loginFailureKey(CommonConstants.USER_TYPE_C, request.getUsername());
+        assertNotLocked(failureKey);
         // Fetch user info (including password) via single Feign call
         R<UserDTO> result = userFeignClient.getUserByUsername(request.getUsername());
         if (!result.isSuccess() || result.getData() == null) {
+            recordLoginFailure(failureKey);
             throw new BusinessException(ResultCode.USER_NOT_FOUND);
         }
 
@@ -58,12 +73,16 @@ public class AuthServiceImpl implements AuthService {
 
         // Local password verification
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+            recordLoginFailure(failureKey);
             throw new BusinessException(ResultCode.PASSWORD_ERROR);
         }
+        clearLoginFailures(failureKey);
 
         // t_user 已回归纯 C 端会员（无 role 字段），固定角色 user、userType=c，不写权限集
         String role = CommonConstants.ROLE_USER;
-        StpUtil.login(user.getId());
+        // loginId 加账号类型前缀：t_user / t_sys_user / t_merchant_account 主键空间重叠，
+        // 直接用主键会让三端共用同一个 Sa-Token 会话（互相覆盖 + 旧 token 读到他人角色）。
+        StpUtil.login(LoginIds.of(CommonConstants.USER_TYPE_C, user.getId()));
         writeAuthSession(user.getUsername(), role, null, CommonConstants.USER_TYPE_C);
         String token = StpUtil.getTokenValue();
 
@@ -74,9 +93,12 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public LoginResponse adminLogin(LoginRequest request) {
+        String failureKey = loginFailureKey(CommonConstants.USER_TYPE_SYS, request.getUsername());
+        assertNotLocked(failureKey);
         // 平台员工登录主体为 t_sys_user（与 C 端会员彻底分离）
         R<SysUserDTO> result = rbacFeignClient.getSysUserByUsername(request.getUsername());
         if (!result.isSuccess() || result.getData() == null) {
+            recordLoginFailure(failureKey);
             throw new BusinessException(ResultCode.USER_NOT_FOUND);
         }
 
@@ -86,11 +108,13 @@ public class AuthServiceImpl implements AuthService {
         }
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+            recordLoginFailure(failureKey);
             throw new BusinessException(ResultCode.PASSWORD_ERROR);
         }
+        clearLoginFailures(failureKey);
 
         // role 统一为平台管理员（标识平台员工身份），细粒度权限由 @RequirePerm + userType 驱动
-        StpUtil.login(user.getId());
+        StpUtil.login(LoginIds.of(CommonConstants.USER_TYPE_SYS, user.getId()));
         writeAuthSession(user.getUsername(), CommonConstants.ROLE_PLATFORM_ADMIN, null, CommonConstants.USER_TYPE_SYS);
         String token = StpUtil.getTokenValue();
 
@@ -104,8 +128,11 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public LoginResponse merchantLogin(LoginRequest request) {
+        String failureKey = loginFailureKey(CommonConstants.USER_TYPE_MERCHANT, request.getUsername());
+        assertNotLocked(failureKey);
         R<MerchantAccountDTO> result = shopFeignClient.getMerchantByUsername(request.getUsername());
         if (!result.isSuccess() || result.getData() == null) {
+            recordLoginFailure(failureKey);
             throw new BusinessException(ResultCode.USER_NOT_FOUND);
         }
 
@@ -113,8 +140,10 @@ public class AuthServiceImpl implements AuthService {
 
         // 密码校验
         if (!passwordEncoder.matches(request.getPassword(), merchant.getPassword())) {
+            recordLoginFailure(failureKey);
             throw new BusinessException(ResultCode.PASSWORD_ERROR);
         }
+        clearLoginFailures(failureKey);
 
         // 入驻审核必须通过
         if (merchant.getAuditStatus() == null || merchant.getAuditStatus() != 1) {
@@ -129,7 +158,7 @@ public class AuthServiceImpl implements AuthService {
         }
 
         String role = merchant.getRole() != null ? merchant.getRole() : CommonConstants.ROLE_MERCHANT_OWNER;
-        StpUtil.login(merchant.getId());
+        StpUtil.login(LoginIds.of(CommonConstants.USER_TYPE_MERCHANT, merchant.getId()));
         writeAuthSession(merchant.getUsername(), role, merchant.getShopId(), CommonConstants.USER_TYPE_MERCHANT);
         String token = StpUtil.getTokenValue();
 
@@ -179,27 +208,50 @@ public class AuthServiceImpl implements AuthService {
         log.info("用户注册成功: username={}", request.getUsername());
     }
 
+    /** 与 Sa-Token 的 SaTokenDao.NOT_VALUE_EXPIRE 一致：Token 不存在或已失效 */
+    private static final long TOKEN_INVALID = -2L;
+
+    @Override
+    public long getTokenTtl(String authHeader) {
+        if (authHeader == null || authHeader.isBlank()) {
+            return TOKEN_INVALID;
+        }
+        String token = authHeader.startsWith("Bearer ") ? authHeader.substring(7).trim() : authHeader.trim();
+        if (token.isEmpty() || StpUtil.getLoginIdByToken(token) == null) {
+            // 已登出/已过期/伪造：明确告诉前端"需要重新登录"，而不是返回 0（0 会被误判为马上过期）
+            return TOKEN_INVALID;
+        }
+        // 必须按"上面刚校验过的那个 token"取剩余时间。无参重载读的是当前请求上下文的 token，
+        // 两者解析路径不同：上下文取不到值时会返回 -2，把仍然有效的登录判成失效，
+        // 前端 ttl<=0 分支随即 clearToken()，表现为登录后第一个请求就被登出。
+        return StpUtil.getTokenTimeout(token);
+    }
+
     @Override
     public LoginResponse refreshToken(String authHeader) {
         String token = authHeader.startsWith("Bearer ") ? authHeader.substring(7) : authHeader;
 
         Object loginId = StpUtil.getLoginIdByToken(token);
-        if (loginId == null) {
+        Long userId = LoginIds.userId(loginId);
+        if (loginId == null || userId == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED);
         }
-        Long userId = Long.valueOf(loginId.toString());
-        SaSession session = StpUtil.getSessionByLoginId(userId);
+        SaSession session = StpUtil.getSessionByLoginId(loginId);
         if (session == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED);
         }
         String username = session.getString(CommonConstants.SESSION_USERNAME);
         String role = session.getString(CommonConstants.SESSION_ROLE);
-        Long shopId = session.getLong(CommonConstants.SESSION_SHOP_ID);
+        // 注意：SaSession.getLong() 是原始类型，键不存在时返回 0 而不是 null。
+        // 用它读 shopId 会把平台管理员/C 端会员"没有店铺"变成"店铺 0"，
+        // 于是 refresh 之后所有店铺级校验都变成"0 != 资源店铺"而被拒绝（真实踩过）。
+        Object rawShopId = session.get(CommonConstants.SESSION_SHOP_ID);
+        Long shopId = rawShopId instanceof Number number ? number.longValue() : null;
         String userType = session.getString(CommonConstants.SESSION_USER_TYPE);
 
-        // 旧 token 换新：注销旧 token 后重新登录并写回会话
+        // 旧 token 换新：注销旧 token 后按原 loginId 重新登录并写回会话
         StpUtil.logoutByTokenValue(token);
-        StpUtil.login(userId);
+        StpUtil.login(loginId);
         writeAuthSession(username, role, shopId, userType);
         String newToken = StpUtil.getTokenValue();
 
@@ -225,8 +277,8 @@ public class AuthServiceImpl implements AuthService {
             // token 已失效（已登出/过期），无需重复处理
             return;
         }
-        Long userId = Long.valueOf(loginId.toString());
-        SaSession session = StpUtil.getSessionByLoginId(userId);
+        Long userId = LoginIds.userId(loginId);
+        SaSession session = StpUtil.getSessionByLoginId(loginId);
         String userType = session == null ? null : session.getString(CommonConstants.SESSION_USER_TYPE);
 
         // 登出：删除 Redis 会话，旧 token 立即失效
@@ -245,6 +297,10 @@ public class AuthServiceImpl implements AuthService {
         session.set(CommonConstants.SESSION_ROLE, role);
         if (shopId != null) {
             session.set(CommonConstants.SESSION_SHOP_ID, shopId);
+        } else {
+            // 缺省即"无店铺上下文"。必须显式删除：会话是复用的，
+            // 历史遗留的 0 不清掉会一直被网关注入成 X-Shop-Id: 0。
+            session.delete(CommonConstants.SESSION_SHOP_ID);
         }
         session.set(CommonConstants.SESSION_USER_TYPE, userType);
     }
@@ -261,13 +317,67 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public void sendSmsCode(String phone) {
+        if (phone == null || phone.isBlank()) {
+            throw new BusinessException("手机号不能为空");
+        }
+        // 冷却：防止该接口被当成短信轰炸器（接入真实通道后尤其重要）
+        String cooldownKey = "sms:cooldown:" + phone;
+        if (!Boolean.TRUE.equals(redisUtil.setIfAbsent(cooldownKey, "1", SMS_COOLDOWN_SECONDS, TimeUnit.SECONDS))) {
+            throw new BusinessException("验证码发送过于频繁，请稍后再试");
+        }
+
         // Generate 6-digit code
         String code = String.format("%06d", ThreadLocalRandom.current().nextInt(1000000));
 
         // Store in Redis with 5-minute TTL
         redisUtil.set("sms:code:" + phone, code, 5, TimeUnit.MINUTES);
 
-        // In production, integrate with SMS provider here
-        log.info("短信验证码已发送: phone={}, code={}", phone, code);
+        // In production, integrate with SMS provider here.
+        // 不在 info 级别打印验证码明文：日志会长期留存，等价于把凭据泄露给所有能看日志的人
+        log.info("短信验证码已发送: phone={}", maskPhone(phone));
+        log.debug("短信验证码（仅本地联调可见）: phone={}, code={}", maskPhone(phone), code);
+    }
+
+    // ==================== 登录安全辅助 ====================
+
+    /** 失败计数 key：按"端 + 账号"隔离，同名账号不会互相锁定 */
+    private String loginFailureKey(String userType, String username) {
+        return "auth:login:fail:" + userType + ":" + username;
+    }
+
+    private void assertNotLocked(String failureKey) {
+        String value = stringRedisTemplate.opsForValue().get(failureKey);
+        if (value != null && parseCount(value) >= MAX_LOGIN_FAILURES) {
+            throw new BusinessException("登录失败次数过多，账号已临时锁定，请 "
+                    + LOGIN_FAILURE_TTL_MINUTES + " 分钟后再试");
+        }
+    }
+
+    /** 记录一次凭据失败；仅在首次写入时设置 TTL，使锁定时长固定而不是被持续刷新 */
+    private void recordLoginFailure(String failureKey) {
+        Long count = stringRedisTemplate.opsForValue().increment(failureKey);
+        if (count != null && count == 1L) {
+            stringRedisTemplate.expire(failureKey, LOGIN_FAILURE_TTL_MINUTES, TimeUnit.MINUTES);
+        }
+    }
+
+    private void clearLoginFailures(String failureKey) {
+        stringRedisTemplate.delete(failureKey);
+    }
+
+    private long parseCount(String value) {
+        try {
+            return Long.parseLong(value.trim());
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
+    }
+
+    /** 日志脱敏：只保留前 3 位与后 4 位 */
+    private String maskPhone(String phone) {
+        if (phone == null || phone.length() < 7) {
+            return "***";
+        }
+        return phone.substring(0, 3) + "****" + phone.substring(phone.length() - 4);
     }
 }

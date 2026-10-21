@@ -18,6 +18,9 @@ public class Order {
     /** 父订单号（子订单指向父订单；父订单本身为空） */
     private String parentOrderNo;
 
+    /** 业务幂等键（如秒杀:条目:用户）：非空时唯一，用于消息重复投递时去重；普通下单为 null */
+    private String bizKey;
+
     /** 是否父订单：0子/普通订单 1父订单(仅聚合支付) */
     private Integer isParent;
 

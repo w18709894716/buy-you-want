@@ -1,5 +1,9 @@
 package com.byw.im.controller;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.byw.common.core.result.R;
 import com.byw.common.security.annotation.RequireLogin;
@@ -31,7 +35,7 @@ public class ImSatisfactionController {
     @Operation(summary = "提交评价（买家端）")
     @RequireLogin
     @PostMapping
-    public R<ServiceRecord> submit(@RequestBody SubmitRequest request) {
+    public R<ServiceRecord> submit(@Valid @RequestBody SubmitRequest request) {
         // 校验
         if (request.getConversationId() == null || request.getRating() == null) {
             return R.fail("会话ID和评分不能为空");
@@ -84,7 +88,11 @@ public class ImSatisfactionController {
 
     @Data
     public static class SubmitRequest {
+        @NotNull(message = "会话ID不能为空")
         private Long conversationId;
+        @NotNull(message = "请给出评分")
+        @Min(value = 1, message = "评分只能是 1~5")
+        @Max(value = 5, message = "评分只能是 1~5")
         private Integer rating;
         private String tags;
         private String comment;

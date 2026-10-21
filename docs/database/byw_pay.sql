@@ -29,10 +29,12 @@ CREATE TABLE t_refund_record (
     user_id BIGINT NOT NULL,
     refund_amount DECIMAL(10,2) NOT NULL,
     reason VARCHAR(200),
+    ref_no VARCHAR(64) COMMENT '退款幂等业务键(售后单号等)，重复请求据此幂等',
     status TINYINT DEFAULT 0 COMMENT '0处理中 1成功 2失败',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted TINYINT DEFAULT 0,
+    UNIQUE KEY uk_ref_no (ref_no),
     INDEX idx_order_no (order_no)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

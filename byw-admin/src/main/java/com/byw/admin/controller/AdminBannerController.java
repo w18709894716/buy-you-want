@@ -1,5 +1,6 @@
 package com.byw.admin.controller;
 
+import jakarta.validation.Valid;
 import com.byw.api.product.ProductFeignClient;
 import com.byw.api.product.dto.BannerDTO;
 import com.byw.common.core.result.R;
@@ -28,13 +29,13 @@ public class AdminBannerController {
 
     @Operation(summary = "新增轮播图")
     @PostMapping("/create")
-    public R<Void> create(@RequestBody BannerDTO dto) {
+    public R<Void> create(@Valid @RequestBody BannerDTO dto) {
         return productFeignClient.createBanner(dto);
     }
 
     @Operation(summary = "更新轮播图")
     @PutMapping("/{id}")
-    public R<Void> update(@PathVariable Long id, @RequestBody BannerDTO dto) {
+    public R<Void> update(@PathVariable Long id, @Valid @RequestBody BannerDTO dto) {
         return productFeignClient.updateBanner(id, dto);
     }
 

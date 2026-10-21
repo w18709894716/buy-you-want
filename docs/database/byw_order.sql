@@ -6,6 +6,7 @@ CREATE TABLE t_order (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     order_no VARCHAR(64) NOT NULL UNIQUE,
     parent_order_no VARCHAR(64) COMMENT '父订单号(子订单指向父订单;父订单为空)',
+    biz_key VARCHAR(64) COMMENT '业务幂等键(如秒杀:活动:条目:用户)，NULL=普通下单，唯一索引防重复建单',
     is_parent TINYINT NOT NULL DEFAULT 0 COMMENT '是否父订单 0子/普通订单 1父订单(仅聚合支付)',
     user_id BIGINT NOT NULL,
     shop_id BIGINT NOT NULL DEFAULT 1 COMMENT '归属店铺ID(拆单后每子订单归属单一店铺)',
@@ -29,6 +30,7 @@ CREATE TABLE t_order (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted TINYINT DEFAULT 0,
+    UNIQUE KEY uk_biz_key (biz_key),
     INDEX idx_user_id (user_id),
     INDEX idx_shop_id (shop_id),
     INDEX idx_parent_order_no (parent_order_no),
@@ -98,10 +100,17 @@ CREATE TABLE t_after_sale (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted TINYINT DEFAULT 0,
+    -- 同一订单明细同时只允许存在一条"进行中"售后单（0待审核/1待买家寄回/5待商家收货/6退款中）。
+    -- MySQL 不支持部分唯一索引，这里用"进行中=1、其余=NULL"的虚拟生成列 + 唯一键实现：
+    -- 唯一索引不约束 NULL，因此已拒绝/已撤销/已完成以及逻辑删除的行都可以有多条。
+    active_flag TINYINT GENERATED ALWAYS AS (
+        CASE WHEN deleted = 0 AND status IN (0, 1, 5, 6) THEN 1 ELSE NULL END
+    ) VIRTUAL,
     INDEX idx_order_no (order_no),
     INDEX idx_order_item_id (order_item_id),
     INDEX idx_user_id (user_id),
-    INDEX idx_shop_id (shop_id)
+    INDEX idx_shop_id (shop_id),
+    UNIQUE KEY uk_item_active (order_item_id, active_flag)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ========== 清空数据 ==========

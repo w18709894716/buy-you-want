@@ -201,7 +201,7 @@ public class ProductController {
     @SentinelResource(value = "product:detail", fallback = "productDetailFallback")
     @GetMapping("/{productId}")
     public R<ProductDTO> getProductDetail(@PathVariable Long productId) {
-        Product product = productService.getById(productId);
+        Product product = productService.getProductDetail(productId);
         if (product == null) return R.fail("商品不存在");
         // 仅对买家展示已上架且审核通过的商品
         if (product.getStatus() == null || product.getStatus() != 1

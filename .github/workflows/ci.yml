@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MAVEN_ARGS: -B -ntp
+
+jobs:
+  backend:
+    name: 后端（编译 / 打包）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      # 项目当前没有自动化测试（集成测试脚本已移除），因此只做编译 + 打包；
+      # 后续补单测后把 -DskipTests 去掉即可。
+      - name: 编译并打包
+        run: mvn ${{ env.MAVEN_ARGS }} -DskipTests package
+
+      - name: 上传各服务 jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jars
+          path: "*/target/*.jar"
+          if-no-files-found: error
+          retention-days: 7
+
+  frontend:
+    name: 前端（${{ matrix.app }}）
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [ byw-web, byw-admin-web, byw-merchant-web ]
+    defaults:
+      run:
+        working-directory: byw-frontend/${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: byw-frontend/${{ matrix.app }}/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run build
+
+  compose:
+    name: 编排文件校验
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 只校验语法与变量插值，不真正构建镜像（16 个镜像的构建放在发布流水线里按需触发）
+      - name: docker compose config
+        run: |
+          docker compose -f deploy/docker-compose.yml config -q
+          docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.app.yml config -q

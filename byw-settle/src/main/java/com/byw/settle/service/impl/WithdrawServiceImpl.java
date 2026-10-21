@@ -100,11 +100,19 @@ public class WithdrawServiceImpl implements WithdrawService {
         }
 
         boolean approved = Boolean.TRUE.equals(pass);
-        record.setStatus(approved ? 1 : 2);
-        record.setAuditTime(LocalDateTime.now());
-        record.setAuditor(auditor);
-        record.setRejectReason(approved ? null : rejectReason);
-        withdrawRecordMapper.updateById(record);
+        WithdrawRecord update = new WithdrawRecord();
+        update.setId(withdrawId);
+        update.setStatus(approved ? 1 : 2);
+        update.setAuditTime(LocalDateTime.now());
+        update.setAuditor(auditor);
+        update.setRejectReason(approved ? null : rejectReason);
+        // CAS：仅待审批(0)可流转，两个管理员并发点击时只有一个能生效，避免重复打款/重复解冻
+        int rows = withdrawRecordMapper.update(update, new LambdaQueryWrapper<WithdrawRecord>()
+                .eq(WithdrawRecord::getId, withdrawId)
+                .eq(WithdrawRecord::getStatus, 0));
+        if (rows == 0) {
+            throw new BusinessException("提现单已被其他管理员审批，请刷新后重试");
+        }
 
         if (approved) {
             balanceService.withdrawSuccess(record.getShopId(), record.getAmount(),

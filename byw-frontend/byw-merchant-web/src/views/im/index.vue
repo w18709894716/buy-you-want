@@ -303,6 +303,7 @@
 </template>
 
 <script setup lang="ts">
+import { getToken } from '../../utils/token'
 import { ref, reactive, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { ChatDotRound, Close, Picture } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -456,7 +457,7 @@ const lastCard = computed<ImMessage | undefined>(() => {
 
 const uploadAction = '/api/file/upload?folder=im'
 const uploadHeaders = computed(() => {
-  const token = localStorage.getItem('merchant_token')
+  const token = getToken()
   return token ? { Authorization: `Bearer ${token}` } : {}
 })
 

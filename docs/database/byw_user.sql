@@ -162,6 +162,30 @@ CREATE TABLE t_sys_role_menu (
     INDEX idx_role (role_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='角色菜单关联';
 
+-- 操作审计日志：各业务的 @OperationLog 切面经 RocketMQ 异步写入本表，管理端可查
+DROP TABLE IF EXISTS t_operation_log;
+CREATE TABLE t_operation_log (
+    id             BIGINT PRIMARY KEY AUTO_INCREMENT,
+    module         VARCHAR(50)  NOT NULL COMMENT '模块：商品/订单/售后/营销/权限/用户…',
+    operation      VARCHAR(50)  NOT NULL COMMENT '操作：新增/修改/删除/审核/发货…',
+    description    VARCHAR(200) COMMENT '操作描述',
+    operator_id    BIGINT       COMMENT '操作人ID',
+    operator_type  VARCHAR(20)  COMMENT '操作人类型：sys/merchant/user/unknown',
+    operator_name  VARCHAR(50)  COMMENT '操作人账号名（尽力填充）',
+    method         VARCHAR(200) COMMENT '类名.方法名',
+    request_uri    VARCHAR(300) COMMENT '请求地址',
+    request_method VARCHAR(10)  COMMENT 'HTTP 方法',
+    client_ip      VARCHAR(64)  COMMENT '客户端IP',
+    success        TINYINT      NOT NULL DEFAULT 1 COMMENT '1成功 0失败',
+    error_msg      VARCHAR(500) COMMENT '失败原因',
+    cost_ms        BIGINT       COMMENT '耗时(毫秒)',
+    trace_id       VARCHAR(64)  COMMENT '链路ID，便于与日志文件对照',
+    created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_created_at (created_at),
+    INDEX idx_module (module),
+    INDEX idx_operator (operator_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='操作审计日志';
+
 -- ========== 清空数据 ==========
 TRUNCATE TABLE t_user_address;
 TRUNCATE TABLE t_user;
@@ -223,7 +247,8 @@ INSERT INTO t_sys_menu (id, parent_id, menu_name, menu_type, scope, path, perm_c
 (190, 0,   '系统管理',   1, 'platform', NULL,                  NULL,               'Tools',       90),
 (191, 190, '员工管理',   2, 'platform', '/system/user',        'sys:user',         NULL,          91),
 (192, 190, '角色管理',   2, 'platform', '/system/role',        'sys:role',         NULL,          92),
-(193, 190, '菜单管理',   2, 'platform', '/system/menu',        'sys:menu',         'Menu',         93);
+(193, 190, '菜单管理',   2, 'platform', '/system/menu',        'sys:menu',         'Menu',         93),
+(194, 190, '操作日志',   2, 'platform', '/system/operation-log','sys:log',         'Document',     94);
 
 -- ========== 商家菜单树（scope=merchant） ==========
 INSERT INTO t_sys_menu (id, parent_id, menu_name, menu_type, scope, path, perm_code, icon, sort_order) VALUES
@@ -275,7 +300,7 @@ INSERT INTO t_sys_role_menu (role_id, menu_id) VALUES
 INSERT INTO t_sys_user_role (user_type, user_id, role_id) VALUES
 (1, 1, 1);
 
--- 测试用户 (密码都是 123456)
+-- 测试用户（密码均为 admin123 —— 与平台员工账号 admin 使用同一 BCrypt 值，实测可登录）
 INSERT INTO t_user (username, password, phone, nickname, avatar, gender, status, user_level) VALUES
 ('zhangsan', '$2a$10$mG4HpWhYdqOSYql91nc17OrmYxpwkchw/0Vbs5oR.txUEHBmEiVem', '13800001111', '张三', 'https://api.dicebear.com/7.0/persona/svg?seed=zhangsan', 1, 1, 1),
 ('lisi', '$2a$10$mG4HpWhYdqOSYql91nc17OrmYxpwkchw/0Vbs5oR.txUEHBmEiVem', '13800002222', '李四', 'https://api.dicebear.com/7.0/persona/svg?seed=lisi', 2, 1, 2),

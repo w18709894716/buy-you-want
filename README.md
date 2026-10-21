@@ -48,6 +48,8 @@
 |------|------|
 | [API 规范](docs/development/api-conventions.md) | 统一响应格式、错误码一览、认证方式、路由规则 |
 | [编码规范](docs/development/coding-standards.md) | 包结构、命名规范、异常处理、日志规范 |
+| [可观测性](docs/development/observability.md) | traceId 日志追踪、SQL 日志降级、健康检查 |
+| [安全加固与上线检查](docs/development/security-hardening.md) | 已修复的安全项、上线必设环境变量、残留风险 |
 
 ### 🚢 部署运维（即将更新）
 
@@ -62,7 +64,7 @@
 | 层面 | 技术 |
 |------|------|
 | 后端框架 | Spring Boot 3.2.5 + Spring Cloud 2023.0.1 |
-| 微服务治理 | Spring Cloud Alibaba（Nacos + Sentinel + Seata） |
+| 微服务治理 | Spring Cloud Alibaba（Nacos + Sentinel） |
 | 数据层 | MyBatis-Plus 3.5.6 + MySQL 8.0 |
 | 缓存 | Redis 7.x（Redisson 3.28.0） |
 | 消息队列 | RocketMQ 5.x |
@@ -80,7 +82,7 @@
 - 🏪 **多商家平台** — 店铺入驻审核、商品审核工作流、shop_id 多租户隔离、商家端工作台
 - ✂️ **多商家拆单** — 购物车按店铺分组，父订单聚合支付 + 子订单按店铺独立履约
 - 💰 **结算分账** — 按分类佣金率计算、T+N 冷静期入账、商家提现与平台审批
-- 🔐 **分布式事务** — Seata AT 模式保障下单核心链路数据一致性
+- 🔐 **一致性保障** — 本地事务 + 事务回滚补偿 + 超时对账 + RocketMQ 事务消息（支付结果）
 - ⚡ **高性能库存** — Redis Lua 预扣 + RocketMQ 异步落库
 - 🔍 **全文搜索** — Elasticsearch + IK 分词，支持多维度筛选
 - 📨 **事件驱动** — RocketMQ 消息驱动实现最终一致性

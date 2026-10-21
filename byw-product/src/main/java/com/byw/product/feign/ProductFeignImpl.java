@@ -1,5 +1,8 @@
 package com.byw.product.feign;
 
+import jakarta.validation.Valid;
+import com.byw.common.log.annotation.OperationLog;
+import com.alicp.jetcache.anno.CacheInvalidate;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -12,9 +15,11 @@ import com.byw.api.product.dto.SkuDTO;
 import com.byw.api.product.dto.SkuStockDeductDTO;
 import com.byw.api.shop.ShopFeignClient;
 import com.byw.api.shop.dto.ShopDTO;
+import com.byw.common.core.constant.CacheNames;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.Public;
+import com.byw.common.security.annotation.InternalApi;
+import com.byw.common.security.context.UserContext;
 import com.byw.product.entity.Brand;
 import com.byw.product.entity.Banner;
 import com.byw.product.entity.Category;
@@ -44,7 +49,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @RestController
 @RequestMapping("/feign/product")
 @RequiredArgsConstructor
-@Public
+@InternalApi
 public class ProductFeignImpl implements ProductFeignClient {
 
     private final ProductService productService;
@@ -111,7 +116,7 @@ public class ProductFeignImpl implements ProductFeignClient {
 
     @Override
     @PostMapping("/sku/deduct-stock")
-    public R<Boolean> deductStock(@RequestBody List<SkuStockDeductDTO> deductList) {
+    public R<Boolean> deductStock(@Valid @RequestBody List<SkuStockDeductDTO> deductList) {
         try {
             return R.ok(skuService.deductStock(deductList));
         } catch (Exception e) {
@@ -121,7 +126,7 @@ public class ProductFeignImpl implements ProductFeignClient {
 
     @Override
     @PostMapping("/increase-sales")
-    public R<Boolean> increaseSales(@RequestBody List<SkuStockDeductDTO> items) {
+    public R<Boolean> increaseSales(@Valid @RequestBody List<SkuStockDeductDTO> items) {
         // 支付成功后累加商品销量：按 SKU 归属商品聚合数量后累加
         java.util.Map<Long, Integer> productQty = new java.util.HashMap<>();
         for (SkuStockDeductDTO dto : items) {
@@ -144,7 +149,7 @@ public class ProductFeignImpl implements ProductFeignClient {
 
     @Override
     @PostMapping("/sku/release-stock")
-    public R<Boolean> releaseStock(@RequestBody List<SkuStockDeductDTO> deductList) {
+    public R<Boolean> releaseStock(@Valid @RequestBody List<SkuStockDeductDTO> deductList) {
         try {
             return R.ok(skuService.releaseStock(deductList));
         } catch (Exception e) {
@@ -154,9 +159,29 @@ public class ProductFeignImpl implements ProductFeignClient {
 
     @Override
     @PostMapping("/sku/lock-stock")
-    public R<Boolean> lockStock(@RequestBody List<SkuStockDeductDTO> deductList) {
+    public R<Boolean> lockStock(@Valid @RequestBody List<SkuStockDeductDTO> deductList) {
         try {
             return R.ok(skuService.lockStock(deductList));
+        } catch (Exception e) {
+            return R.fail(e.getMessage());
+        }
+    }
+
+    @Override
+    @PostMapping("/sku/consume-stock")
+    public R<Boolean> consumeStock(@Valid @RequestBody List<SkuStockDeductDTO> deductList) {
+        try {
+            return R.ok(skuService.consumeStock(deductList));
+        } catch (Exception e) {
+            return R.fail(e.getMessage());
+        }
+    }
+
+    @Override
+    @PostMapping("/sku/restore-stock")
+    public R<Boolean> restoreStock(@Valid @RequestBody List<SkuStockDeductDTO> deductList) {
+        try {
+            return R.ok(skuService.restoreStock(deductList));
         } catch (Exception e) {
             return R.fail(e.getMessage());
         }
@@ -171,7 +196,7 @@ public class ProductFeignImpl implements ProductFeignClient {
                                                   @RequestParam(value = "auditStatus", required = false) Integer auditStatus) {
         LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
         // 商家上下文：仅返回本店商品；平台管理员 shopId 为空则不过滤
-        Long shopId = com.byw.common.security.context.UserContext.getShopId();
+        Long shopId = UserContext.getShopId();
         wrapper.eq(shopId != null, Product::getShopId, shopId);
         if (keyword != null && !keyword.isEmpty()) {
             wrapper.like(Product::getName, keyword);
@@ -211,8 +236,9 @@ public class ProductFeignImpl implements ProductFeignClient {
     }
 
     @Override
+    @OperationLog(module = "商品", operation = "新增", description = "新增商品")
     @PostMapping
-    public R<Long> createProduct(@RequestBody ProductDTO productDTO) {
+    public R<Long> createProduct(@Valid @RequestBody ProductDTO productDTO) {
         Product product = new Product();
         BeanUtils.copyProperties(productDTO, product);
         // 新建商品统一进入待审核，且强制下架，审核通过后商家方可上架
@@ -227,13 +253,16 @@ public class ProductFeignImpl implements ProductFeignClient {
     }
 
     @Override
+    @OperationLog(module = "商品", operation = "修改", description = "修改商品")
     @PutMapping("/{productId}")
-    public R<Boolean> updateProduct(@PathVariable("productId") Long productId, @RequestBody ProductDTO productDTO) {
+    @CacheInvalidate(name = CacheNames.PRODUCT_DETAIL, key = "#productId")
+    public R<Boolean> updateProduct(@PathVariable("productId") Long productId, @Valid @RequestBody ProductDTO productDTO) {
         Product product = productService.getById(productId);
         if (product == null) return R.fail("商品不存在");
-        // 商家上下文：只能改本店商品，且不允许篡改归属店铺
-        Long ctxShopId = com.byw.common.security.context.UserContext.getShopId();
-        if (ctxShopId != null && !ctxShopId.equals(product.getShopId())) {
+        // 商家上下文：只能改本店商品，且不允许篡改归属店铺。
+        // fail-closed：既无店铺上下文又非平台管理员（例如伪造身份头被降级为游客）一律拒绝。
+        Long ctxShopId = UserContext.getShopId();
+        if (!UserContext.canAccessShop(product.getShopId())) {
             return R.fail("无权操作其他店铺的商品");
         }
         Long originalShopId = product.getShopId();
@@ -375,15 +404,15 @@ public class ProductFeignImpl implements ProductFeignClient {
     }
 
     @Override
+    @OperationLog(module = "商品", operation = "删除", description = "删除商品")
     @DeleteMapping("/{productId}")
+    @CacheInvalidate(name = CacheNames.PRODUCT_DETAIL, key = "#productId")
     public R<Boolean> deleteProduct(@PathVariable("productId") Long productId) {
-        Long ctxShopId = com.byw.common.security.context.UserContext.getShopId();
-        if (ctxShopId != null) {
-            Product product = productService.getById(productId);
-            if (product == null) return R.fail("商品不存在");
-            if (!ctxShopId.equals(product.getShopId())) {
-                return R.fail("无权操作其他店铺的商品");
-            }
+        Product product = productService.getById(productId);
+        if (product == null) return R.fail("商品不存在");
+        // fail-closed：无店铺上下文且非平台管理员时拒绝，避免游客直连内部接口删除任意商品
+        if (!UserContext.canAccessShop(product.getShopId())) {
+            return R.fail("无权操作其他店铺的商品");
         }
         boolean removed = productService.removeById(productId);
         if (removed) productEsService.remove(productId);
@@ -391,12 +420,13 @@ public class ProductFeignImpl implements ProductFeignClient {
     }
 
     @Override
+    @OperationLog(module = "商品", operation = "上下架", description = "修改商品上架状态")
     @PutMapping("/{productId}/status")
+    @CacheInvalidate(name = CacheNames.PRODUCT_DETAIL, key = "#productId")
     public R<Void> toggleProductStatus(@PathVariable("productId") Long productId) {
         Product product = productService.getById(productId);
         if (product == null) return R.fail("商品不存在");
-        Long ctxShopId = com.byw.common.security.context.UserContext.getShopId();
-        if (ctxShopId != null && !ctxShopId.equals(product.getShopId())) {
+        if (!UserContext.canAccessShop(product.getShopId())) {
             return R.fail("无权操作其他店铺的商品");
         }
         // 1=上架 -> 2=下架, 其他 -> 1=上架
@@ -437,7 +467,9 @@ public class ProductFeignImpl implements ProductFeignClient {
     }
 
     @Override
+    @OperationLog(module = "商品", operation = "审核", description = "审核商品（通过/拒绝）")
     @PutMapping("/{productId}/audit")
+    @CacheInvalidate(name = CacheNames.PRODUCT_DETAIL, key = "#productId")
     public R<Boolean> auditProduct(@PathVariable("productId") Long productId,
                                    @RequestParam("auditStatus") Integer auditStatus,
                                    @RequestParam(value = "rejectReason", required = false) String rejectReason) {
@@ -461,12 +493,13 @@ public class ProductFeignImpl implements ProductFeignClient {
     }
 
     @Override
+    @OperationLog(module = "商品", operation = "提交审核", description = "提交商品审核")
     @PutMapping("/{productId}/submit")
+    @CacheInvalidate(name = CacheNames.PRODUCT_DETAIL, key = "#productId")
     public R<Boolean> submitProductForAudit(@PathVariable("productId") Long productId) {
         Product product = productService.getById(productId);
         if (product == null) return R.fail("商品不存在");
-        Long ctxShopId = com.byw.common.security.context.UserContext.getShopId();
-        if (ctxShopId != null && !ctxShopId.equals(product.getShopId())) {
+        if (!UserContext.canAccessShop(product.getShopId())) {
             return R.fail("无权操作其他店铺的商品");
         }
         // 重新提交审核：重置为待审核，清空驳回原因（保持下架直至审核通过后上架）
@@ -499,8 +532,10 @@ public class ProductFeignImpl implements ProductFeignClient {
     }
 
     @Override
+    @OperationLog(module = "分类", operation = "新增", description = "新增商品分类")
     @PostMapping("/category")
-    public R<Void> createCategory(@RequestBody CategoryDTO dto) {
+    @CacheInvalidate(name = CacheNames.CATEGORY_TREE, key = "'all'")
+    public R<Void> createCategory(@Valid @RequestBody CategoryDTO dto) {
         Category category = new Category();
         BeanUtils.copyProperties(dto, category);
         // 根据 parentId 计算 level
@@ -517,8 +552,10 @@ public class ProductFeignImpl implements ProductFeignClient {
     }
 
     @Override
+    @OperationLog(module = "分类", operation = "修改", description = "修改商品分类")
     @PutMapping("/category/{categoryId}")
-    public R<Void> updateCategory(@PathVariable("categoryId") Long categoryId, @RequestBody CategoryDTO dto) {
+    @CacheInvalidate(name = CacheNames.CATEGORY_TREE, key = "'all'")
+    public R<Void> updateCategory(@PathVariable("categoryId") Long categoryId, @Valid @RequestBody CategoryDTO dto) {
         Category category = categoryService.getById(categoryId);
         if (category == null) return R.fail("分类不存在");
         BeanUtils.copyProperties(dto, category);
@@ -528,7 +565,9 @@ public class ProductFeignImpl implements ProductFeignClient {
     }
 
     @Override
+    @OperationLog(module = "分类", operation = "删除", description = "删除商品分类")
     @DeleteMapping("/category/{categoryId}")
+    @CacheInvalidate(name = CacheNames.CATEGORY_TREE, key = "'all'")
     public R<Void> deleteCategory(@PathVariable("categoryId") Long categoryId) {
         // 检查是否有子分类
         long childCount = categoryService.count(new LambdaQueryWrapper<Category>()
@@ -562,8 +601,10 @@ public class ProductFeignImpl implements ProductFeignClient {
     }
 
     @Override
+    @OperationLog(module = "品牌", operation = "新增", description = "新增品牌")
     @PostMapping("/brand")
-    public R<Void> createBrand(@RequestBody BrandDTO dto) {
+    @CacheInvalidate(name = CacheNames.BRAND_ALL, key = "'all'")
+    public R<Void> createBrand(@Valid @RequestBody BrandDTO dto) {
         Brand brand = new Brand();
         BeanUtils.copyProperties(dto, brand);
         brandService.save(brand);
@@ -571,8 +612,10 @@ public class ProductFeignImpl implements ProductFeignClient {
     }
 
     @Override
+    @OperationLog(module = "品牌", operation = "修改", description = "修改品牌")
     @PutMapping("/brand/{brandId}")
-    public R<Void> updateBrand(@PathVariable("brandId") Long brandId, @RequestBody BrandDTO dto) {
+    @CacheInvalidate(name = CacheNames.BRAND_ALL, key = "'all'")
+    public R<Void> updateBrand(@PathVariable("brandId") Long brandId, @Valid @RequestBody BrandDTO dto) {
         Brand brand = brandService.getById(brandId);
         if (brand == null) return R.fail("品牌不存在");
         BeanUtils.copyProperties(dto, brand);
@@ -582,14 +625,18 @@ public class ProductFeignImpl implements ProductFeignClient {
     }
 
     @Override
+    @OperationLog(module = "品牌", operation = "删除", description = "删除品牌")
     @DeleteMapping("/brand/{brandId}")
+    @CacheInvalidate(name = CacheNames.BRAND_ALL, key = "'all'")
     public R<Void> deleteBrand(@PathVariable("brandId") Long brandId) {
         brandService.removeById(brandId);
         return R.ok();
     }
 
     @Override
+    @OperationLog(module = "品牌", operation = "状态变更", description = "修改品牌状态")
     @PutMapping("/brand/{brandId}/status")
+    @CacheInvalidate(name = CacheNames.BRAND_ALL, key = "'all'")
     public R<Void> toggleBrandStatus(@PathVariable("brandId") Long brandId) {
         Brand brand = brandService.getById(brandId);
         if (brand == null) return R.fail("品牌不存在");
@@ -615,8 +662,9 @@ public class ProductFeignImpl implements ProductFeignClient {
     }
 
     @Override
+    @OperationLog(module = "轮播图", operation = "新增", description = "新增轮播图")
     @PostMapping("/banner")
-    public R<Void> createBanner(@RequestBody BannerDTO dto) {
+    public R<Void> createBanner(@Valid @RequestBody BannerDTO dto) {
         Banner banner = new Banner();
         BeanUtils.copyProperties(dto, banner);
         bannerService.save(banner);
@@ -624,8 +672,9 @@ public class ProductFeignImpl implements ProductFeignClient {
     }
 
     @Override
+    @OperationLog(module = "轮播图", operation = "修改", description = "修改轮播图")
     @PutMapping("/banner/{bannerId}")
-    public R<Void> updateBanner(@PathVariable("bannerId") Long bannerId, @RequestBody BannerDTO dto) {
+    public R<Void> updateBanner(@PathVariable("bannerId") Long bannerId, @Valid @RequestBody BannerDTO dto) {
         Banner banner = bannerService.getById(bannerId);
         if (banner == null) return R.fail("Banner不存在");
         BeanUtils.copyProperties(dto, banner);
@@ -635,6 +684,7 @@ public class ProductFeignImpl implements ProductFeignClient {
     }
 
     @Override
+    @OperationLog(module = "轮播图", operation = "删除", description = "删除轮播图")
     @DeleteMapping("/banner/{bannerId}")
     public R<Void> deleteBanner(@PathVariable("bannerId") Long bannerId) {
         bannerService.removeById(bannerId);
@@ -642,6 +692,7 @@ public class ProductFeignImpl implements ProductFeignClient {
     }
 
     @Override
+    @OperationLog(module = "轮播图", operation = "状态变更", description = "修改轮播图状态")
     @PutMapping("/banner/{bannerId}/status")
     public R<Void> toggleBannerStatus(@PathVariable("bannerId") Long bannerId) {
         Banner banner = bannerService.getById(bannerId);

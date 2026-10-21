@@ -9,6 +9,7 @@ import com.byw.common.security.context.UserContext;
 import com.byw.user.entity.UserAddress;
 import com.byw.user.mapper.UserAddressMapper;
 import io.swagger.v3.oas.annotations.Operation;
+import jakarta.validation.Valid;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -36,7 +37,7 @@ public class UserAddressController {
 
     @Operation(summary = "新增地址")
     @PostMapping
-    public R<Void> add(@RequestBody UserAddress address) {
+    public R<Void> add(@Valid @RequestBody UserAddress address) {
         Long userId = UserContext.getUserId();
         address.setUserId(userId);
         // 若新增地址设为默认，先清除该用户其他默认地址，避免出现多个默认
@@ -49,7 +50,7 @@ public class UserAddressController {
 
     @Operation(summary = "更新地址")
     @PutMapping
-    public R<Void> update(@RequestBody UserAddress address) {
+    public R<Void> update(@Valid @RequestBody UserAddress address) {
         Long userId = UserContext.getUserId();
         address.setUserId(userId);
         // 若更新为默认地址，先清除该用户其他默认地址，避免出现多个默认

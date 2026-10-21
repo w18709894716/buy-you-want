@@ -1,5 +1,6 @@
 package com.byw.admin.controller;
 
+import jakarta.validation.Valid;
 import com.byw.api.product.ProductFeignClient;
 import com.byw.api.product.dto.BrandDTO;
 import com.byw.api.product.dto.CategoryDTO;
@@ -68,13 +69,13 @@ public class AdminProductController {
 
     @PostMapping("/category/create")
     @RequirePerm("category:manage")
-    public R<Void> createCategory(@RequestBody CategoryDTO dto) {
+    public R<Void> createCategory(@Valid @RequestBody CategoryDTO dto) {
         return productFeignClient.createCategory(dto);
     }
 
     @PutMapping("/category/{id}")
     @RequirePerm("category:manage")
-    public R<Void> updateCategory(@PathVariable Long id, @RequestBody CategoryDTO dto) {
+    public R<Void> updateCategory(@PathVariable Long id, @Valid @RequestBody CategoryDTO dto) {
         return productFeignClient.updateCategory(id, dto);
     }
 
@@ -94,13 +95,13 @@ public class AdminProductController {
 
     @PostMapping("/brand/create")
     @RequirePerm("brand:manage")
-    public R<Void> createBrand(@RequestBody BrandDTO dto) {
+    public R<Void> createBrand(@Valid @RequestBody BrandDTO dto) {
         return productFeignClient.createBrand(dto);
     }
 
     @PutMapping("/brand/{id}")
     @RequirePerm("brand:manage")
-    public R<Void> updateBrand(@PathVariable Long id, @RequestBody BrandDTO dto) {
+    public R<Void> updateBrand(@PathVariable Long id, @Valid @RequestBody BrandDTO dto) {
         return productFeignClient.updateBrand(id, dto);
     }
 

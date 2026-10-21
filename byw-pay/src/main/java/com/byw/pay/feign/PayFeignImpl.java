@@ -4,7 +4,7 @@ import com.byw.api.pay.PayFeignClient;
 import com.byw.api.pay.dto.PayOrderDTO;
 import com.byw.api.pay.dto.RefundInfoDTO;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.Public;
+import com.byw.common.security.annotation.InternalApi;
 import com.byw.pay.service.PayService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -14,7 +14,7 @@ import java.math.BigDecimal;
 @RestController
 @RequestMapping("/feign/pay")
 @RequiredArgsConstructor
-@Public
+@InternalApi
 public class PayFeignImpl implements PayFeignClient {
 
     private final PayService payService;
@@ -38,8 +38,9 @@ public class PayFeignImpl implements PayFeignClient {
     @PostMapping("/refund")
     public R<Boolean> refund(@RequestParam("orderNo") String orderNo,
                              @RequestParam("amount") BigDecimal amount,
-                             @RequestParam("reason") String reason) {
-        payService.refund(orderNo, amount, reason);
+                             @RequestParam("reason") String reason,
+                             @RequestParam(value = "refNo", required = false) String refNo) {
+        payService.refund(orderNo, amount, reason, refNo);
         return R.ok(true);
     }
 

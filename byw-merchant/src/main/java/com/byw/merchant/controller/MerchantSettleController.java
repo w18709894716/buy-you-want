@@ -1,5 +1,6 @@
 package com.byw.merchant.controller;
 
+import jakarta.validation.Valid;
 import com.byw.api.settle.SettleFeignClient;
 import com.byw.api.settle.dto.BalanceFlowDTO;
 import com.byw.api.settle.dto.SettleRecordDTO;
@@ -47,7 +48,7 @@ public class MerchantSettleController {
 
     /** 发起提现申请 */
     @PostMapping("/withdraw/apply")
-    public R<String> applyWithdraw(@RequestBody WithdrawApplyDTO applyDTO) {
+    public R<String> applyWithdraw(@Valid @RequestBody WithdrawApplyDTO applyDTO) {
         return settleFeignClient.applyWithdraw(UserContext.getShopId(), applyDTO);
     }
 

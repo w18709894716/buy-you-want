@@ -1,5 +1,7 @@
 package com.byw.api.user.dto;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.io.Serializable;
@@ -13,11 +15,17 @@ import java.util.List;
 public class SysUserDTO implements Serializable {
 
     private Long id;
+    @NotBlank(message = "登录用户名不能为空")
+    @Size(max = 50, message = "登录用户名过长")
     private String username;
     private String password;
+    @Size(max = 50, message = "姓名过长")
     private String nickname;
+    @Size(max = 20, message = "联系电话过长")
     private String phone;
+    @Size(max = 100, message = "邮箱过长")
     private String email;
+    @Size(max = 500, message = "头像地址过长")
     private String avatar;
     private Integer status;
     private LocalDateTime lastLoginAt;

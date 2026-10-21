@@ -1,6 +1,7 @@
 package com.byw.order.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byw.api.cart.CartFeignClient;
 import com.byw.api.logistics.LogisticsFeignClient;
@@ -9,6 +10,7 @@ import com.byw.api.logistics.dto.ShipRequestDTO;
 import com.byw.api.order.dto.OrderCreateDTO;
 import com.byw.api.order.dto.OrderDetailDTO;
 import com.byw.api.product.ProductFeignClient;
+import com.byw.api.product.dto.ProductDTO;
 import com.byw.api.product.dto.SkuDTO;
 import com.byw.api.product.dto.SkuStockDeductDTO;
 import com.byw.api.promotion.PromotionFeignClient;
@@ -28,24 +30,46 @@ import com.byw.order.mapper.OrderMapper;
 import com.byw.order.mapper.OrderStatusLogMapper;
 import com.byw.order.mapper.AfterSaleMapper;
 import com.byw.common.core.util.SnowflakeIdGenerator;
+import com.byw.common.redis.util.RedisUtil;
 import com.byw.order.producer.OrderEventProducer;
 import com.byw.order.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.util.DigestUtils;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class OrderServiceImpl implements OrderService {
+
+    /** 秒杀订单标识：SeckillOrderConsumer 创建秒杀单时固定写入的 remark，用于跳过 DB 库存操作 */
+    private static final String SECKILL_ORDER_REMARK = "秒杀活动订单";
+
+    /** 幂等键"首单处理中"占位值：抢到键但订单尚未落库时写入，重复请求据此判断是"处理中"而非"已完成" */
+    private static final String IDEMPOTENT_PENDING = "PENDING";
+
+    /** 单个 SKU 单次下单数量上限，同时也是数量下界校验的锚点（负数会反向增加库存） */
+    private static final int MAX_ITEM_QUANTITY = 999;
+
+    /** 商品未回填店铺时的兜底自营店铺ID（与 t_order.shop_id 建表默认值一致） */
+    private static final long DEFAULT_SELF_SHOP_ID = 1L;
 
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
@@ -58,6 +82,11 @@ public class OrderServiceImpl implements OrderService {
     private final LogisticsFeignClient logisticsFeignClient;
     private final OrderEventProducer orderEventProducer;
     private final ShopFeignClient shopFeignClient;
+    private final RedisUtil redisUtil;
+
+    /** 幂等键存活时长（秒）：覆盖用户连点/网络重试的时间窗，过期后允许同内容重新下单 */
+    @Value("${byw.order.idempotent-ttl-seconds:30}")
+    private long idempotentTtlSeconds;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -67,9 +96,29 @@ public class OrderServiceImpl implements OrderService {
         if (items == null || items.isEmpty()) {
             throw new BusinessException("订单商品不能为空");
         }
+        validateItemQuantities(items);
 
-        // 1. 回填每个下单项的店铺ID（前端可不传，从商品服务批量查询回填）
-        backfillShopId(items);
+        // 0. 幂等闸门（R12）：连点/前端重试/网络重发会送来内容完全相同的请求，
+        // 必须在下单前挡住，否则每份重复请求都会各自核销券、各自预占库存。
+        // 用"请求指纹"而非前端令牌：Agent/小程序等非页面调用方拿不到令牌，服务端算指纹天然覆盖全部入口。
+        String idempotentKey = buildIdempotentKey(userId, createDTO, items);
+        if (!Boolean.TRUE.equals(redisUtil.setIfAbsent(idempotentKey, IDEMPOTENT_PENDING,
+                idempotentTtlSeconds, TimeUnit.SECONDS))) {
+            Object stored = redisUtil.get(idempotentKey);
+            if (stored != null && !IDEMPOTENT_PENDING.equals(stored)) {
+                // 首单已成功落库：把首单订单号原样返回，对前端与 Agent 都是"下单成功"，零改造
+                log.warn("重复下单命中幂等键，返回首单: key={}, orderNo={}", idempotentKey, stored);
+                return stored.toString();
+            }
+            // 首单仍在处理中（或已失败但键尚未清理）：拒绝本次，让用户稍后重试
+            throw new BusinessException("订单正在处理中，请勿重复提交");
+        }
+        // 抢到幂等键 = 本次是首单。若首单失败必须把键删掉，否则用户改不动内容、只能干等 TTL 过期。
+        registerRollbackCompensation(() -> releaseIdempotentKey(idempotentKey));
+
+        // 1. 以商品服务为准回填价格/归属店铺/商品快照：客户端传入的 price 只参与"是否已变更"的比对，
+        //    绝不作为下单金额（否则可直接构造 price=0.01 下单）
+        applyAuthoritativeSkuInfo(items);
 
         // 2. 按店铺分组（LinkedHashMap 保序，便于末店取余额分摊优惠）
         java.util.Map<Long, List<OrderCreateDTO.OrderItemDTO>> shopGroups = items.stream()
@@ -116,9 +165,25 @@ public class OrderServiceImpl implements OrderService {
             if (couponUsable) {
                 R<BigDecimal> couponResult = promotionFeignClient.useCoupon(
                         createDTO.getCouponId(), userId, couponBase);
-                if (couponResult.isSuccess() && couponResult.getData() != null) {
-                    totalDiscount = couponResult.getData();
+                if (!couponResult.isSuccess()) {
+                    // 券业务失败（已过期/已使用/已下线/未达门槛等）：拒绝下单并原样返回原因。
+                    // 原先这里是"静默跳过"——订单照常提交，用户按原价扣款却没有任何提示。
+                    // 这类失败由券服务明确判定"未核销"，因此无需补偿。
+                    String reason = couponResult.getMessage();
+                    throw new BusinessException(reason != null && !reason.isBlank()
+                            ? reason : "优惠券不可用，请重新选择");
                 }
+                // 券已核销：登记回滚补偿，本单后续任何一步失败（含提交阶段失败）都要把券还给用户。
+                // 只在"确认核销成功"时登记 —— 调用超时导致结果未知时不敢盲撤，
+                // 否则会把用户另一笔订单已用掉的券误恢复成未使用。
+                Long usedCouponId = createDTO.getCouponId();
+                registerRollbackCompensation(() -> releaseCouponQuietly(usedCouponId, userId));
+                if (couponResult.getData() == null) {
+                    // 核销已成功却没返回优惠金额：不能按"0 优惠"继续（用户会多付钱），
+                    // 抛错让事务回滚，上面登记的补偿会把券退回。
+                    throw new BusinessException("优惠券核销异常，请稍后重试");
+                }
+                totalDiscount = couponResult.getData();
             }
         }
 
@@ -127,6 +192,8 @@ public class OrderServiceImpl implements OrderService {
 
         // 6. 生成父订单号并创建父订单（聚合支付，无明细，不归属单一店铺）
         String parentOrderNo = generateOrderNo();
+        // 幂等键从占位更新为首单订单号：此后的重复请求将直接拿到这个号
+        redisUtil.set(idempotentKey, parentOrderNo, idempotentTtlSeconds, TimeUnit.SECONDS);
         BigDecimal parentPayAmount = grandTotal.subtract(totalDiscount).max(BigDecimal.ZERO);
         Order parent = new Order();
         parent.setOrderNo(parentOrderNo);
@@ -213,59 +280,148 @@ public class OrderServiceImpl implements OrderService {
             saveStatusLog(child.getId(), null, 0, "系统", "创建子订单");
         }
 
-        // 8. 扣减库存（全部明细一次性扣减）
+        // 8. 锁定库存（下单预占：stock 减、lock_stock 加；支付成功再核销，未付取消则释放）
         List<SkuStockDeductDTO> deductList = items.stream()
                 .map(item -> new SkuStockDeductDTO(item.getSkuId(), item.getQuantity()))
                 .collect(Collectors.toList());
-        R<Boolean> stockResult = productFeignClient.deductStock(deductList);
+        R<Boolean> stockResult = productFeignClient.lockStock(deductList);
         if (!stockResult.isSuccess()) {
             // 使用商品服务返回的具体错误信息（如“库存不足”）
-            String msg = stockResult.getMessage() != null ? stockResult.getMessage() : "库存扣减失败";
+            String msg = stockResult.getMessage() != null ? stockResult.getMessage() : "库存锁定失败";
             throw new BusinessException(msg);
         }
+        // 预占已生效：登记回滚补偿。lockStock 抛错时走不到这里，也不必补偿 ——
+        // 库存不足是高频路径，此时上面登记的优惠券补偿会把券还给用户。
+        registerRollbackCompensation(() -> releaseStockQuietly(deductList, parentOrderNo));
 
-        // 9. 清除购物车中已下单商品
+        // 9. 清除购物车中已下单商品：属于可以后补的副作用，不是订单成立的必要条件。
+        // 失败只告警不回滚 —— 若让它把整单事务拖垮，会连带撤掉刚核销的券与刚预占的库存，
+        // 用户拿到的却只是一个"下单失败"。
         List<Long> skuIds = items.stream()
                 .map(OrderCreateDTO.OrderItemDTO::getSkuId)
                 .collect(Collectors.toList());
-        cartFeignClient.clearCartItems(userId, skuIds);
+        try {
+            cartFeignClient.clearCartItems(userId, skuIds);
+        } catch (Exception e) {
+            log.warn("清除购物车失败，不影响下单: userId={}, skuIds={}, error={}", userId, skuIds, e.getMessage());
+        }
 
-        // 10. 发送订单创建事件 + 超时未支付自动取消延迟消息（均以父订单为维度）
+        // 10. 发送订单创建事件 + 超时未支付自动取消延迟消息（均以父订单为维度）。
         orderEventProducer.sendOrderCreateEvent(parentOrderNo, userId);
+        // 超时取消延迟消息不用事务消息：本地回滚而消息已投递时，消费者按 orderNo 查不到订单会直接跳过，
+        // 反方向是安全的；消息真丢了由 OrderScheduler 的超时对账任务兜底。
         orderEventProducer.sendOrderTimeoutCancelEvent(parentOrderNo);
 
         log.info("订单创建成功: parentOrderNo={}, userId={}, 拆分店铺数={}", parentOrderNo, userId, shopCount);
         return parentOrderNo;
     }
 
-    /** 回填下单项店铺ID：前端未传时从商品服务批量查询；仍缺失则兜底为自营店铺1 */
-    private void backfillShopId(List<OrderCreateDTO.OrderItemDTO> items) {
-        List<Long> missingSkuIds = items.stream()
-                .filter(i -> i.getShopId() == null)
+    /**
+     * 单次下单每个 SKU 的数量边界：必须为正整数且不超过上限。
+     *
+     * <p>数量不校验时，{@code quantity = -N} 会让 stock 扣减表达式变成 {@code stock + N}
+     * （库存反向增加），必须在下单入口挡住。
+     */
+    private void validateItemQuantities(List<OrderCreateDTO.OrderItemDTO> items) {
+        for (OrderCreateDTO.OrderItemDTO item : items) {
+            Integer quantity = item.getQuantity();
+            if (quantity == null || quantity < 1) {
+                throw new BusinessException("商品数量必须大于 0");
+            }
+            if (quantity > MAX_ITEM_QUANTITY) {
+                throw new BusinessException("单个商品数量不能超过 " + MAX_ITEM_QUANTITY);
+            }
+        }
+    }
+
+    /**
+     * 服务端权威回填：价格、归属店铺、SKU 名称与图片一律取自商品服务。
+     *
+     * <p>客户端提交的 price 只用于比对"商品价格是否已变更"，不参与任何金额计算；
+     * 不一致时直接拒绝，让用户刷新后重新提交，避免静默按新价成交。
+     * 归属店铺同样以 SKU 为准，防止伪造 shopId 影响拆单与结算归属。
+     */
+    private void applyAuthoritativeSkuInfo(List<OrderCreateDTO.OrderItemDTO> items) {
+        if (items.stream().anyMatch(i -> i.getSkuId() == null)) {
+            throw new BusinessException("订单商品信息不完整，请返回购物车重新提交");
+        }
+        List<Long> skuIds = items.stream()
                 .map(OrderCreateDTO.OrderItemDTO::getSkuId)
                 .distinct()
                 .collect(Collectors.toList());
-        if (!missingSkuIds.isEmpty()) {
-            try {
-                R<List<SkuDTO>> skuResult = productFeignClient.getSkuByIds(missingSkuIds);
-                if (skuResult.isSuccess() && skuResult.getData() != null) {
-                    java.util.Map<Long, Long> skuShopMap = skuResult.getData().stream()
-                            .filter(s -> s.getShopId() != null)
-                            .collect(Collectors.toMap(SkuDTO::getId, SkuDTO::getShopId, (a, b) -> a));
-                    for (OrderCreateDTO.OrderItemDTO item : items) {
-                        if (item.getShopId() == null) {
-                            item.setShopId(skuShopMap.get(item.getSkuId()));
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("回填订单项店铺ID失败: {}", e.getMessage());
+        if (skuIds.size() != items.size()) {
+            throw new BusinessException("同一商品请合并数量后提交");
+        }
+
+        R<List<SkuDTO>> skuResult = productFeignClient.getSkuByIds(skuIds);
+        if (skuResult == null || !skuResult.isSuccess() || skuResult.getData() == null) {
+            throw new BusinessException("商品信息查询失败，请稍后重试");
+        }
+        Map<Long, SkuDTO> skuMap = skuResult.getData().stream()
+                .filter(s -> s.getId() != null)
+                .collect(Collectors.toMap(SkuDTO::getId, s -> s, (a, b) -> a));
+
+        for (OrderCreateDTO.OrderItemDTO item : items) {
+            SkuDTO sku = skuMap.get(item.getSkuId());
+            if (sku == null) {
+                throw new BusinessException("商品不存在或已下架，请返回购物车重新提交");
+            }
+            if (sku.getPrice() == null || sku.getPrice().signum() < 0) {
+                throw new BusinessException("商品价格异常，请稍后重试");
+            }
+            if (item.getPrice() != null && item.getPrice().compareTo(sku.getPrice()) != 0) {
+                log.warn("下单价格与商品服务不一致，拒绝提交: skuId={}, clientPrice={}, serverPrice={}",
+                        item.getSkuId(), item.getPrice(), sku.getPrice());
+                throw new BusinessException("商品价格已更新，请返回购物车刷新后重新提交");
+            }
+            item.setPrice(sku.getPrice());
+            item.setProductId(sku.getProductId());
+            item.setShopId(sku.getShopId() != null ? sku.getShopId() : DEFAULT_SELF_SHOP_ID);
+            if (sku.getSkuName() != null && !sku.getSkuName().isBlank()) {
+                item.setSkuName(sku.getSkuName());
+            }
+            if (sku.getImage() != null && !sku.getImage().isBlank()) {
+                item.setProductImage(sku.getImage());
             }
         }
-        // 兜底：仍为空的默认归属自营店铺1，避免分组时 NPE
+        fillProductSnapshots(items);
+    }
+
+    /** 商品名称与主图快照：按商品维度补齐，失败退化为商品ID占位（仅影响展示，不影响金额） */
+    private void fillProductSnapshots(List<OrderCreateDTO.OrderItemDTO> items) {
+        Map<Long, ProductDTO> productCache = new HashMap<>();
         for (OrderCreateDTO.OrderItemDTO item : items) {
-            if (item.getShopId() == null) {
-                item.setShopId(1L);
+            Long productId = item.getProductId();
+            if (productId == null) {
+                continue;
+            }
+            if (!productCache.containsKey(productId)) {
+                ProductDTO product = null;
+                try {
+                    R<ProductDTO> result = productFeignClient.getProductById(productId);
+                    if (result != null && result.isSuccess()) {
+                        product = result.getData();
+                    }
+                } catch (Exception e) {
+                    log.warn("回填商品快照失败: productId={}, err={}", productId, e.getMessage());
+                }
+                productCache.put(productId, product);
+            }
+            ProductDTO product = productCache.get(productId);
+            if (product == null) {
+                continue;
+            }
+            if (product.getName() != null && !product.getName().isBlank()) {
+                item.setProductName(product.getName());
+            }
+            if ((item.getProductImage() == null || item.getProductImage().isBlank())
+                    && product.getMainImage() != null) {
+                item.setProductImage(product.getMainImage());
+            }
+        }
+        for (OrderCreateDTO.OrderItemDTO item : items) {
+            if (item.getProductName() == null || item.getProductName().isBlank()) {
+                item.setProductName("商品 " + item.getProductId());
             }
         }
     }
@@ -394,20 +550,37 @@ public class OrderServiceImpl implements OrderService {
     /** 取消单个子订单/独立订单：释放本单明细库存与自持优惠券 */
     private void doCancelChild(Order order, String reason, String operator) {
         Integer fromStatus = order.getStatus();
-        order.setStatus(4); // 已取消
-        order.setCancelTime(LocalDateTime.now());
-        order.setCancelReason(reason);
-        order.setCloseType(1); // 取消关闭
-        orderMapper.updateById(order);
+        // CAS：仅当状态仍是读取到的值时才置为已取消。
+        // 防止"超时取消"与"支付回调"并发时双双落库（后者会让库存被退回而订单又显示已支付）。
+        int rows = orderMapper.update(null, new LambdaUpdateWrapper<Order>()
+                .eq(Order::getId, order.getId())
+                .eq(Order::getStatus, fromStatus)
+                .set(Order::getStatus, 4)
+                .set(Order::getCancelTime, LocalDateTime.now())
+                .set(Order::getCancelReason, reason)
+                .set(Order::getCloseType, 1));
+        if (rows == 0) {
+            log.warn("订单状态已变更，取消放弃: orderNo={}, fromStatus={}", order.getOrderNo(), fromStatus);
+            throw new BusinessException("订单状态已变更，请刷新后重试");
+        }
+        order.setStatus(4);
 
-        // 释放本单明细库存
+        // 释放本单明细库存：未支付取消 → 释放下单预占；已支付待发货取消 → 退回可售库存
         List<OrderItem> items = orderItemMapper.selectList(
                 new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderNo, order.getOrderNo()));
         if (!items.isEmpty()) {
-            List<SkuStockDeductDTO> releaseList = items.stream()
+            List<SkuStockDeductDTO> stockList = items.stream()
                     .map(item -> new SkuStockDeductDTO(item.getSkuId(), item.getQuantity()))
                     .collect(Collectors.toList());
-            productFeignClient.releaseStock(releaseList);
+            if (isSeckillOrder(order)) {
+                log.info("秒杀订单取消跳过DB库存操作（Redis侧管理）: orderNo={}", order.getOrderNo());
+            } else if (fromStatus != null && fromStatus == 1) {
+                // 已支付：下单预占已在支付时核销，退回可售库存
+                productFeignClient.restoreStock(stockList);
+            } else {
+                // 未支付：释放下单预占（stock 加回、lock_stock 减回）
+                productFeignClient.releaseStock(stockList);
+            }
         }
 
         // 释放优惠券：仅独立订单自身持券时释放；拆单子订单优惠券归属父订单，不在此处理
@@ -423,11 +596,18 @@ public class OrderServiceImpl implements OrderService {
     /** 取消父订单记录本身：父订单无明细，仅释放整单优惠券 */
     private void cancelParentRecord(Order parent, String reason, String operator) {
         Integer fromStatus = parent.getStatus();
+        int rows = orderMapper.update(null, new LambdaUpdateWrapper<Order>()
+                .eq(Order::getId, parent.getId())
+                .eq(Order::getStatus, fromStatus)
+                .set(Order::getStatus, 4)
+                .set(Order::getCancelTime, LocalDateTime.now())
+                .set(Order::getCancelReason, reason)
+                .set(Order::getCloseType, 1));
+        if (rows == 0) {
+            log.warn("父订单状态已变更，取消放弃: parentOrderNo={}, fromStatus={}", parent.getOrderNo(), fromStatus);
+            throw new BusinessException("订单状态已变更，请刷新后重试");
+        }
         parent.setStatus(4);
-        parent.setCancelTime(LocalDateTime.now());
-        parent.setCancelReason(reason);
-        parent.setCloseType(1); // 取消关闭
-        orderMapper.updateById(parent);
 
         if (parent.getCouponId() != null) {
             promotionFeignClient.releaseCoupon(parent.getCouponId(), parent.getUserId());
@@ -446,9 +626,17 @@ public class OrderServiceImpl implements OrderService {
         }
 
         Integer fromStatus = order.getStatus();
-        order.setStatus(3); // 已完成
-        order.setReceiveTime(LocalDateTime.now());
-        orderMapper.updateById(order);
+        LocalDateTime receiveTime = LocalDateTime.now();
+        int rows = orderMapper.update(null, new LambdaUpdateWrapper<Order>()
+                .eq(Order::getId, order.getId())
+                .eq(Order::getStatus, 2)
+                .set(Order::getStatus, 3)
+                .set(Order::getReceiveTime, receiveTime));
+        if (rows == 0) {
+            throw new BusinessException("订单状态已变更，请刷新后重试");
+        }
+        order.setStatus(3);
+        order.setReceiveTime(receiveTime);
 
         saveStatusLog(order.getId(), fromStatus, 3, "用户", "确认收货");
         orderEventProducer.sendOrderStatusChangeEvent(orderNo, fromStatus, 3);
@@ -485,7 +673,20 @@ public class OrderServiceImpl implements OrderService {
                 && (fromStatus == 5 || fromStatus == 1 || fromStatus == 2 || fromStatus == 7)) {
             order.setCloseType(2);
         }
-        orderMapper.updateById(order);
+        // CAS：WHERE 带上读取到的原状态，并发下只有一个流转能成功。
+        // 这是「支付回调 0→1」与「超时取消 0→4」竞态的收口闸门 ——
+        // 两者都成功会出现"订单已支付、库存却已被 releaseStock 退回"的超卖。
+        int rows = orderMapper.update(null, new LambdaUpdateWrapper<Order>()
+                .eq(Order::getId, order.getId())
+                .eq(Order::getStatus, fromStatus)
+                .set(Order::getStatus, status)
+                .set(status == 1, Order::getPayTime, order.getPayTime())
+                .set(status == 2, Order::getShipTime, order.getShipTime())
+                .set(order.getCloseType() != null, Order::getCloseType, order.getCloseType()));
+        if (rows == 0) {
+            log.warn("订单状态已被并发流转，本次放弃: orderNo={}, {} -> {}", orderNo, fromStatus, status);
+            throw new BusinessException("订单状态已变更，请刷新后重试");
+        }
 
         saveStatusLog(order.getId(), fromStatus, status, "系统", "状态更新");
         orderEventProducer.sendOrderStatusChangeEvent(orderNo, fromStatus, status);
@@ -500,9 +701,19 @@ public class OrderServiceImpl implements OrderService {
                     continue; // 已流转的子订单不重复处理
                 }
                 Integer childFrom = child.getStatus();
+                // CAS：子订单若被并发取消(0→4)，不再把它拉回待发货
+                int childRows = orderMapper.update(null, new LambdaUpdateWrapper<Order>()
+                        .eq(Order::getId, child.getId())
+                        .eq(Order::getStatus, 0)
+                        .set(Order::getStatus, 1)
+                        .set(Order::getPayTime, payTime));
+                if (childRows == 0) {
+                    log.warn("子订单状态已变更，跳过支付联动: childOrderNo={}, fromStatus={}",
+                            child.getOrderNo(), childFrom);
+                    continue;
+                }
                 child.setStatus(1);
                 child.setPayTime(payTime);
-                orderMapper.updateById(child);
                 saveStatusLog(child.getId(), childFrom, 1, "系统", "父订单支付成功");
                 orderEventProducer.sendOrderStatusChangeEvent(child.getOrderNo(), childFrom, 1);
             }
@@ -510,12 +721,51 @@ public class OrderServiceImpl implements OrderService {
 
             // 销量累加：仅首次 0->1 生效，明细在子订单上
             if (fromStatus == null || fromStatus == 0) {
-                increaseProductSales(children.stream().map(Order::getOrderNo).collect(Collectors.toList()));
+                List<String> childOrderNos = children.stream().map(Order::getOrderNo).collect(Collectors.toList());
+                consumeLockedStock(childOrderNos, order);
+                increaseProductSales(childOrderNos);
             }
         } else if (status != null && status == 1 && (fromStatus == null || fromStatus == 0)) {
-            // 非父订单（如秒杀单）支付成功：直接按自身明细累加销量
+            // 非父订单（如秒杀单）支付成功：核销预占库存并按自身明细累加销量
+            consumeLockedStock(List.of(orderNo), order);
             increaseProductSales(List.of(orderNo));
         }
+    }
+
+    /**
+     * 支付成功核销下单预占的库存（lock_stock -= qty）；失败仅记日志不阻断支付主流程。
+     * 秒杀订单库存在 promotion 服务的 Redis 侧预扣，从不写 product 库，故跳过 DB 核销。
+     */
+    private void consumeLockedStock(List<String> orderNos, Order paidOrder) {
+        if (orderNos == null || orderNos.isEmpty()) {
+            return;
+        }
+        if (isSeckillOrder(paidOrder)) {
+            log.info("秒杀订单跳过DB库存核销（Redis侧预扣）: orderNo={}", paidOrder.getOrderNo());
+            return;
+        }
+        try {
+            List<OrderItem> items = orderItemMapper.selectList(
+                    new LambdaQueryWrapper<OrderItem>().in(OrderItem::getOrderNo, orderNos));
+            if (items.isEmpty()) {
+                return;
+            }
+            List<SkuStockDeductDTO> consumeList = items.stream()
+                    .map(i -> new SkuStockDeductDTO(i.getSkuId(), i.getQuantity()))
+                    .collect(Collectors.toList());
+            R<Boolean> result = productFeignClient.consumeStock(consumeList);
+            if (result == null || !result.isSuccess()) {
+                log.warn("库存核销失败: orderNos={}, msg={}", orderNos,
+                        result == null ? "null" : result.getMessage());
+            }
+        } catch (Exception e) {
+            log.warn("库存核销异常: orderNos={}, err={}", orderNos, e.getMessage());
+        }
+    }
+
+    /** 秒杀订单判定：SeckillOrderConsumer 创建时固定写入 remark="秒杀活动订单"，且无独立类型字段 */
+    private boolean isSeckillOrder(Order order) {
+        return order != null && SECKILL_ORDER_REMARK.equals(order.getRemark());
     }
 
     /**
@@ -612,7 +862,15 @@ public class OrderServiceImpl implements OrderService {
         if (allShipped) {
             order.setShipTime(now);
         }
-        orderMapper.updateById(order);
+        // CAS：发货期间若订单被并发流转（如售后退款关单），不覆盖对方结果
+        int shipRows = orderMapper.update(null, new LambdaUpdateWrapper<Order>()
+                .eq(Order::getId, order.getId())
+                .eq(Order::getStatus, fromStatus)
+                .set(Order::getStatus, toStatus)
+                .set(allShipped, Order::getShipTime, now));
+        if (shipRows == 0) {
+            throw new BusinessException("订单状态已变更，请刷新后重试");
+        }
 
         // 6. 记录状态日志与事件
         saveStatusLog(order.getId(), fromStatus, toStatus, "admin",
@@ -672,8 +930,11 @@ public class OrderServiceImpl implements OrderService {
     @Transactional(rollbackFor = Exception.class)
     public void updateReviewed(String orderNo, Integer reviewed) {
         Order order = getOrderByNo(orderNo);
-        order.setReviewed(reviewed);
-        orderMapper.updateById(order);
+        // 只更新 reviewed 列：整行回写(orderMapper.updateById)会把读到的旧 status 一起写回，
+        // 与并发的支付/退款流转互相覆盖
+        orderMapper.update(null, new LambdaUpdateWrapper<Order>()
+                .eq(Order::getId, order.getId())
+                .set(Order::getReviewed, reviewed));
         log.info("订单评价状态更新: orderNo={}, reviewed={}", orderNo, reviewed);
     }
 
@@ -691,9 +952,16 @@ public class OrderServiceImpl implements OrderService {
         for (Order order : orders) {
             try {
                 Integer fromStatus = order.getStatus();
-                order.setStatus(3); // 交易完成
-                order.setReceiveTime(LocalDateTime.now());
-                orderMapper.updateById(order);
+                // CAS：多实例/重跑时同一订单只被自动确认收货一次
+                int rows = orderMapper.update(null, new LambdaUpdateWrapper<Order>()
+                        .eq(Order::getId, order.getId())
+                        .eq(Order::getStatus, 2)
+                        .set(Order::getStatus, 3)
+                        .set(Order::getReceiveTime, LocalDateTime.now()));
+                if (rows == 0) {
+                    continue;
+                }
+                order.setStatus(3);
                 saveStatusLog(order.getId(), fromStatus, 3, "系统", "超时未确认，系统自动确认收货");
                 orderEventProducer.sendOrderStatusChangeEvent(order.getOrderNo(), fromStatus, 3);
                 count++;
@@ -707,7 +975,95 @@ public class OrderServiceImpl implements OrderService {
         return count;
     }
 
+    @Override
+    public List<String> listTimeoutUnpaidOrderNos(int timeoutMinutes, int limit) {
+        // 对账兜底：超时取消依赖 RocketMQ 延迟消息，broker 抖动或消息进了死信时，
+        // 订单会永久停在待付款且库存永久预占，此处扫出交由调用方逐个取消。
+        // 只返回子订单/独立订单（父订单无明细，取消由子订单联动），且仅待付款(0)，天然幂等。
+        LocalDateTime deadline = LocalDateTime.now().minusMinutes(timeoutMinutes);
+        return orderMapper.selectList(new LambdaQueryWrapper<Order>()
+                        .eq(Order::getIsParent, 0)
+                        .eq(Order::getStatus, 0)
+                        .le(Order::getCreatedAt, deadline)
+                        .orderByAsc(Order::getId)
+                        .last("LIMIT " + Math.max(limit, 1)))
+                .stream()
+                .map(Order::getOrderNo)
+                .collect(Collectors.toList());
+    }
+
     // ==================== 私有方法 ====================
+
+    /**
+     * 登记"本地事务回滚后"的远端写补偿（R4）。
+     *
+     * <p>createOrder 里已完成的远端写（券核销、库存预占）不会随本地事务回滚，
+     * 必须显式撤回，否则券被白扣、库存被永久预占。放在事务回调而不是 catch 里，
+     * 是为了同时覆盖"方法内抛异常"与"提交阶段失败"两种回滚 —— 后者发生在方法返回之后，catch 看不到。
+     */
+    private void registerRollbackCompensation(Runnable compensation) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return; // 非事务上下文（异常调用路径），只能依赖对账任务兜底
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status != TransactionSynchronization.STATUS_COMMITTED) {
+                    compensation.run();
+                }
+            }
+        });
+    }
+
+    /** 回滚补偿：把本单核销掉的券恢复为未使用 */
+    private void releaseCouponQuietly(Long couponId, Long userId) {
+        try {
+            promotionFeignClient.releaseCoupon(couponId, userId);
+            log.warn("订单创建回滚，已撤回优惠券核销: couponId={}, userId={}", couponId, userId);
+        } catch (Exception e) {
+            log.error("订单创建回滚后撤回优惠券失败，需人工处理: couponId={}, userId={}", couponId, userId, e);
+        }
+    }
+
+    /** 回滚补偿：把本单预占的库存退回可售（releaseStock 不满足 lock_stock>=qty 时会抛错，不会误加） */
+    private void releaseStockQuietly(List<SkuStockDeductDTO> stockList, String parentOrderNo) {
+        try {
+            productFeignClient.releaseStock(stockList);
+            log.warn("订单创建回滚，已撤回库存预占: orderNo={}", parentOrderNo);
+        } catch (Exception e) {
+            log.error("订单创建回滚后撤回库存预占失败，需人工处理: orderNo={}, items={}", parentOrderNo, stockList, e);
+        }
+    }
+
+    /**
+     * 计算下单幂等键（R12）：同一用户 + 同一收货地址 + 同一券 + 同一备注 + 同一 SKU 数量集合，
+     * 视为"同一笔下单请求"，只允许落库一次。
+     *
+     * <p>只取这些"用户意图"字段，不含 price/商品名等派生值 —— 它们由服务端重算，
+     * 若纳入指纹反而会因展示精度差异把同一请求判成两笔。
+     */
+    private String buildIdempotentKey(Long userId, OrderCreateDTO createDTO, List<OrderCreateDTO.OrderItemDTO> items) {
+        StringBuilder sb = new StringBuilder()
+                .append(userId).append('|')
+                .append(createDTO.getAddressId()).append('|')
+                .append(createDTO.getCouponId()).append('|')
+                .append(createDTO.getRemark());
+        items.stream()
+                .map(i -> i.getSkuId() + ":" + i.getQuantity())
+                .sorted()
+                .forEach(s -> sb.append('|').append(s));
+        String hash = DigestUtils.md5DigestAsHex(sb.toString().getBytes(StandardCharsets.UTF_8));
+        return "order:idem:" + userId + ":" + hash;
+    }
+
+    /** 回滚补偿：删除幂等键，让用户能带着同样内容重试（否则要干等 TTL 过期） */
+    private void releaseIdempotentKey(String key) {
+        try {
+            redisUtil.delete(key);
+        } catch (Exception e) {
+            log.error("下单回滚后清理幂等键失败，需等待 TTL 自然过期: key={}", key, e);
+        }
+    }
 
     /**
      * 订单状态机：校验状态流转是否合法。终态为 交易完成(3)、交易关闭(4)。

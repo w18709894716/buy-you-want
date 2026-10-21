@@ -5,6 +5,7 @@ import com.byw.order.dto.RefundDetailDTO;
 import com.byw.order.entity.AfterSale;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 public interface AfterSaleService {
 
@@ -43,8 +44,19 @@ public interface AfterSaleService {
     /** 买家填写寄回物流单号（需校验归属与待买家寄回状态），推进为待商家收货 */
     void fillReturnShipping(Long id, Long userId, String company, String trackingNo);
 
-    /** 商家确认收货（需校验本店归属与待商家收货状态），触发退款 */
+    /** 商家确认收货（需校验本店归属与待商家收货状态），置为「退款中」，退款由 {@link #driveRefundIfPending} 驱动 */
     void confirmReturnReceived(Long id);
+
+    /**
+     * 驱动「退款中」(6) 的售后单完成退款并落终态。
+     *
+     * <p>必须在 approve / confirmReturnReceived 的事务提交之后调用：远程退款与本地事务解耦，
+     * 且以售后单号作为幂等业务键，可在事务外与定时对账任务中重复调用。
+     */
+    void driveRefundIfPending(Long id);
+
+    /** 扫描停留在「退款中」(6) 超过指定分钟数的售后单ID，供对账任务重试（limit 限制单轮处理量） */
+    List<Long> listStuckRefundIds(int olderThanMinutes, int limit);
 
     /** 组装退款明细（退款流程时间线 + 到账信息，需校验归属）；itemId 非空时定位商品级售后，为空取最新一条（兼容历史） */
     RefundDetailDTO getRefundDetail(String orderNo, Long userId, Long itemId);

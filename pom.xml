@@ -47,12 +47,14 @@
         <mybatis-plus.version>3.5.6</mybatis-plus.version>
         <mysql.version>8.3.0</mysql.version>
         <redisson.version>3.28.0</redisson.version>
+        <jetcache.version>2.7.9</jetcache.version>
+        <!-- JetCache 配置里显式指定了 FASTJSON2 键转换/编解码，必须显式引入（starter 不含该可选依赖） -->
+        <fastjson2.version>2.0.57</fastjson2.version>
 
         <!-- Tools -->
         <hutool.version>5.8.27</hutool.version>
         <sa-token.version>1.38.0</sa-token.version>
         <knife4j.version>4.4.0</knife4j.version>
-        <seata.version>2.0.0</seata.version>
 
         <!-- Plugins -->
         <maven-compiler-plugin.version>3.12.1</maven-compiler-plugin.version>
@@ -108,6 +110,19 @@
                 <version>${redisson.version}</version>
             </dependency>
 
+            <!-- JetCache（复用 spring.data.redis 连接，不新建连接池） -->
+            <dependency>
+                <groupId>com.alicp.jetcache</groupId>
+                <artifactId>jetcache-starter-redis-springdata</artifactId>
+                <version>${jetcache.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.fastjson2</groupId>
+                <artifactId>fastjson2</artifactId>
+                <version>${fastjson2.version}</version>
+            </dependency>
+
+
             <!-- Hutool -->
             <dependency>
                 <groupId>cn.hutool</groupId>
@@ -137,13 +152,6 @@
                 <groupId>com.github.xiaoymin</groupId>
                 <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
                 <version>${knife4j.version}</version>
-            </dependency>
-
-            <!-- Seata -->
-            <dependency>
-                <groupId>io.seata</groupId>
-                <artifactId>seata-spring-boot-starter</artifactId>
-                <version>${seata.version}</version>
             </dependency>
 
             <!-- Internal modules -->
@@ -247,9 +255,26 @@
         </dependencies>
     </dependencyManagement>
 
+    <!--
+      测试依赖：仅为将来需要写测试时开箱可用；test 作用域，不进入运行期依赖树，
+      也不影响任何服务的产物（当前仓库没有测试用例）。
+    -->
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
     <build>
         <pluginManagement>
             <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.2.5</version>
+                </plugin>
                 <plugin>
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-maven-plugin</artifactId>
@@ -276,4 +301,5 @@
             </plugins>
         </pluginManagement>
     </build>
+
 </project>

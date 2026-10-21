@@ -22,6 +22,11 @@
             <groupId>com.byw</groupId>
             <artifactId>byw-common-security</artifactId>
         </dependency>
+        <!-- 操作日志经 RocketMQ 异步落库（@OperationLog 切面是生产者） -->
+        <dependency>
+            <groupId>com.byw</groupId>
+            <artifactId>byw-common-rocketmq</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>

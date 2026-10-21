@@ -1,5 +1,6 @@
 package com.byw.admin.controller;
 
+import jakarta.validation.Valid;
 import com.byw.api.user.RbacFeignClient;
 import com.byw.api.user.dto.SysMenuDTO;
 import com.byw.common.core.result.R;
@@ -28,13 +29,13 @@ public class AdminSysMenuController {
 
     /** 新增菜单（目录/菜单/按钮） */
     @PostMapping
-    public R<Long> create(@RequestBody SysMenuDTO dto) {
+    public R<Long> create(@Valid @RequestBody SysMenuDTO dto) {
         return rbacFeignClient.createMenu(dto);
     }
 
     /** 编辑菜单（类型不可变更；permCode 变更时联动清理权限缓存） */
     @PutMapping
-    public R<Boolean> update(@RequestBody SysMenuDTO dto) {
+    public R<Boolean> update(@Valid @RequestBody SysMenuDTO dto) {
         return rbacFeignClient.updateMenu(dto);
     }
 

@@ -22,6 +22,11 @@ public class RedisUtil {
         redisTemplate.opsForValue().set(key, value, timeout, unit);
     }
 
+    /** 仅在 key 不存在时写入（SETNX），返回 true 表示本次写入成功即"抢到" */
+    public Boolean setIfAbsent(String key, Object value, long timeout, TimeUnit unit) {
+        return redisTemplate.opsForValue().setIfAbsent(key, value, timeout, unit);
+    }
+
     public Object get(String key) {
         return redisTemplate.opsForValue().get(key);
     }

@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router'
+import { getToken } from '../utils/token'
 import { hasPerm } from '../utils/permission'
 import { useUserStore } from '../stores/user'
 
@@ -131,6 +132,12 @@ const routes: RouteRecordRaw[] = [
         name: 'SystemMenu',
         component: () => import('../views/system/menu.vue'),
         meta: { title: '菜单管理', perm: 'sys:menu' }
+      },
+      {
+        path: 'system/operation-log',
+        name: 'SystemOperationLog',
+        component: () => import('../views/system/operation-log.vue'),
+        meta: { title: '操作日志', perm: 'sys:log' }
       }
     ]
   }
@@ -143,7 +150,7 @@ const router = createRouter({
 
 // 路由守卫：登录校验 + 页面级权限校验
 router.beforeEach(async (to, from, next) => {
-  const token = localStorage.getItem('admin_token')
+  const token = getToken()
   if (to.path !== '/login' && !token) {
     next('/login')
     return

@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byw.api.order.OrderFeignClient;
 import com.byw.api.order.dto.OrderDetailDTO;
 import com.byw.api.settle.dto.SettleRecordDTO;
+import com.byw.common.core.exception.BusinessException;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
 import com.byw.settle.entity.SettleRecord;
@@ -57,8 +58,9 @@ public class SettleServiceImpl implements SettleService {
 
         R<OrderDetailDTO> resp = orderFeignClient.getOrderDetail(orderNo);
         if (resp == null || !resp.isSuccess() || resp.getData() == null) {
-            log.warn("获取订单详情失败，无法结算: orderNo={}", orderNo);
-            return;
+            // 抛出让 MQ 重试：这里多为订单服务抖动/网络超时，静默 return 会让结算单永久丢失
+            throw new BusinessException("获取订单详情失败，无法结算: orderNo=" + orderNo
+                    + (resp == null ? "" : ", resp=" + resp.getMessage()));
         }
         OrderDetailDTO order = resp.getData();
 

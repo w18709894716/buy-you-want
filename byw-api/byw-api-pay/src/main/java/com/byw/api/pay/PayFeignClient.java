@@ -18,10 +18,15 @@ public interface PayFeignClient {
     @GetMapping("/feign/pay/status/{payNo}")
     R<Integer> getPayStatus(@PathVariable("payNo") String payNo);
 
+    /**
+     * 退款。refNo 为业务幂等键（售后单号），同一 refNo 重复调用只退一次；
+     * 管理端手工退款可不传。
+     */
     @PostMapping("/feign/pay/refund")
     R<Boolean> refund(@RequestParam("orderNo") String orderNo,
                       @RequestParam("amount") java.math.BigDecimal amount,
-                      @RequestParam("reason") String reason);
+                      @RequestParam("reason") String reason,
+                      @RequestParam(value = "refNo", required = false) String refNo);
 
     @GetMapping("/feign/pay/refund-detail")
     R<RefundInfoDTO> getRefundByOrderNo(@RequestParam("orderNo") String orderNo);

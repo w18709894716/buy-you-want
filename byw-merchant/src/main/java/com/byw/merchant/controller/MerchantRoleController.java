@@ -1,5 +1,6 @@
 package com.byw.merchant.controller;
 
+import jakarta.validation.Valid;
 import com.byw.api.shop.ShopFeignClient;
 import com.byw.api.shop.dto.MerchantAccountDTO;
 import com.byw.api.user.RbacFeignClient;
@@ -72,7 +73,7 @@ public class MerchantRoleController {
 
     /** 新建本店自定义角色（roleCode 由后端自动生成） */
     @PostMapping
-    public R<Long> create(@RequestBody SysRoleDTO dto) {
+    public R<Long> create(@Valid @RequestBody SysRoleDTO dto) {
         dto.setScope(SCOPE_MERCHANT);
         dto.setShopId(UserContext.getShopId());
         dto.setIsPreset(0);
@@ -82,7 +83,7 @@ public class MerchantRoleController {
 
     /** 编辑本店自定义角色 */
     @PutMapping
-    public R<Boolean> update(@RequestBody SysRoleDTO dto) {
+    public R<Boolean> update(@Valid @RequestBody SysRoleDTO dto) {
         verifyOwn(dto.getId());
         return rbacFeignClient.updateRole(dto);
     }
@@ -110,7 +111,7 @@ public class MerchantRoleController {
 
     /** 复制角色（含预设模板）：以源角色为蓝本创建本店自定义角色并继承其菜单授权 */
     @PostMapping("/{roleId}/copy")
-    public R<Long> copy(@PathVariable Long roleId, @RequestBody SysRoleDTO dto) {
+    public R<Long> copy(@PathVariable Long roleId, @Valid @RequestBody SysRoleDTO dto) {
         verifyViewable(roleId);
         dto.setScope(SCOPE_MERCHANT);
         dto.setShopId(UserContext.getShopId());

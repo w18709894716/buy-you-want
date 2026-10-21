@@ -11,6 +11,7 @@ import com.byw.common.security.annotation.RequireLogin;
 import com.byw.common.security.context.UserContext;
 import com.byw.order.service.OrderService;
 import io.swagger.v3.oas.annotations.Operation;
+import jakarta.validation.Valid;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,7 +30,7 @@ public class OrderController {
     @Operation(summary = "创建订单")
     @SentinelResource(value = "order:create", fallback = "createOrderFallback")
     @PostMapping("/create")
-    public R<String> create(@RequestBody OrderCreateDTO createDTO) {
+    public R<String> create(@Valid @RequestBody OrderCreateDTO createDTO) {
         createDTO.setUserId(UserContext.getUserId());
         String orderNo = orderService.createOrder(createDTO);
         return R.ok(orderNo);

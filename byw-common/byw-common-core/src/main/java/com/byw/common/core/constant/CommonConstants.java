@@ -7,6 +7,31 @@ public class CommonConstants {
     public static final String HEADER_USER_ROLE = "X-User-Role";
     public static final String HEADER_SHOP_ID = "X-Shop-Id";
     public static final String HEADER_USER_TYPE = "X-User-Type";
+    // 身份头签名：网关注入身份头时写入，服务端凭它认定身份头来自网关而非直连伪造
+    public static final String HEADER_IDENTITY_SIGNATURE = "X-Identity-Signature";
+
+    /**
+     * 承载 token 的 HttpOnly Cookie 名（与 Authorization 头**双模式**并存）。
+     * 写在 Cookie 里的好处是前端 JS 读不到，降低 XSS 直接窃取 token 的风险。
+     *
+     * <p><b>必须按端分开命名</b>：三个前端通常部署在同一个 host（本地都是 localhost，只是端口不同），
+     * 而 Cookie 不区分端口 —— 用同一个名字会互相覆盖，导致"先登 C 端、再开管理端就被 403"。
+     */
+    public static final String AUTH_COOKIE_ADMIN = "byw_token_admin";
+    public static final String AUTH_COOKIE_MERCHANT = "byw_token_merchant";
+    /** C 端（Nuxt）用；名字保持历史值，避免存量会话失效 */
+    public static final String AUTH_COOKIE_NAME = "byw_token";
+
+    /**
+     * 前端显式声明"我是哪一端"，用于在同一个浏览器里同时登录三端时选对 Cookie。
+     * 取值：{@code admin} / {@code merchant} / {@code web}（C 端可省略）。
+     */
+    public static final String HEADER_CLIENT_APP = "X-Client-App";
+    public static final String CLIENT_APP_ADMIN = "admin";
+    public static final String CLIENT_APP_MERCHANT = "merchant";
+    public static final String CLIENT_APP_WEB = "web";
+    // 服务间调用凭证：Feign 调用时写入，服务端凭它认定请求来自内部服务（与用户身份无关）
+    public static final String HEADER_INTERNAL_SIGNATURE = "X-Internal-Signature";
 
     // ========== RBAC 角色 ==========
     public static final String ROLE_USER = "user";

@@ -3,7 +3,7 @@
     class="image-upload"
     :class="{ 'is-full': isFull }"
     :action="uploadAction"
-    :headers="headers"
+    :with-credentials="true"
     :file-list="fileList"
     :limit="limit"
     :on-success="handleSuccess"
@@ -57,11 +57,6 @@ const uploadAction = computed(() => `${props.action}?folder=${props.folder}`)
 const emit = defineEmits<{
   'update:modelValue': [value: string[]]
 }>()
-
-const headers = computed(() => {
-  const token = localStorage.getItem('merchant_token')
-  return token ? { Authorization: `Bearer ${token}` } : {}
-})
 
 const fileList = ref<UploadUserFile[]>(
   props.modelValue.map(url => ({ name: '', url }))

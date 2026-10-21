@@ -1,5 +1,7 @@
 package com.byw.im.entity;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 
@@ -19,9 +21,13 @@ public class Faq {
     private Long shopId;
 
     /** 问题 */
+    @NotBlank(message = "问题不能为空")
+    @Size(max = 500, message = "问题过长")
     private String question;
 
     /** 答案 */
+    @NotBlank(message = "答案不能为空")
+    @Size(max = 2000, message = "答案过长")
     private String answer;
 
     /** 状态 1启用 0禁用 */

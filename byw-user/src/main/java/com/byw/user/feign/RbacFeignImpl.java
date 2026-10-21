@@ -1,12 +1,14 @@
 package com.byw.user.feign;
 
+import jakarta.validation.Valid;
+import com.byw.common.log.annotation.OperationLog;
 import com.byw.api.user.RbacFeignClient;
 import com.byw.api.user.dto.SysMenuDTO;
 import com.byw.api.user.dto.SysRoleDTO;
 import com.byw.api.user.dto.SysUserDTO;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
-import com.byw.common.security.annotation.Public;
+import com.byw.common.security.annotation.InternalApi;
 import com.byw.user.service.RbacService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -19,7 +21,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/feign/rbac")
 @RequiredArgsConstructor
-@Public
+@InternalApi
 public class RbacFeignImpl implements RbacFeignClient {
 
     private final RbacService rbacService;
@@ -39,30 +41,35 @@ public class RbacFeignImpl implements RbacFeignClient {
     }
 
     @Override
+    @OperationLog(module = "权限", operation = "新增系统用户", description = "新增后台系统用户")
     @PostMapping("/sys-user")
-    public R<Long> createSysUser(@RequestBody SysUserDTO dto) {
+    public R<Long> createSysUser(@Valid @RequestBody SysUserDTO dto) {
         return R.ok(rbacService.createSysUser(dto));
     }
 
     @Override
+    @OperationLog(module = "权限", operation = "修改系统用户", description = "修改后台系统用户")
     @PutMapping("/sys-user")
-    public R<Boolean> updateSysUser(@RequestBody SysUserDTO dto) {
+    public R<Boolean> updateSysUser(@Valid @RequestBody SysUserDTO dto) {
         return R.ok(rbacService.updateSysUser(dto));
     }
 
     @Override
+    @OperationLog(module = "权限", operation = "用户状态", description = "启用/禁用系统用户")
     @PutMapping("/sys-user/{userId}/status")
     public R<Boolean> updateSysUserStatus(@PathVariable("userId") Long userId, @RequestParam("status") Integer status) {
         return R.ok(rbacService.updateSysUserStatus(userId, status));
     }
 
     @Override
+    @OperationLog(module = "权限", operation = "重置密码", description = "重置系统用户密码")
     @PutMapping("/sys-user/{userId}/password")
     public R<Boolean> resetSysUserPassword(@PathVariable("userId") Long userId, @RequestParam("password") String password) {
         return R.ok(rbacService.resetSysUserPassword(userId, password));
     }
 
     @Override
+    @OperationLog(module = "权限", operation = "分配角色", description = "给用户分配角色")
     @PostMapping("/user/{userId}/roles")
     public R<Boolean> assignRoles(@PathVariable("userId") Long userId,
                                   @RequestParam("userType") Integer userType,
@@ -78,6 +85,7 @@ public class RbacFeignImpl implements RbacFeignClient {
     }
 
     @Override
+    @OperationLog(module = "权限", operation = "移除角色", description = "移除用户角色")
     @DeleteMapping("/user/{userId}/roles/{roleId}")
     public R<Boolean> unbindUserRole(@PathVariable("userId") Long userId,
                                      @RequestParam("userType") Integer userType,
@@ -104,14 +112,16 @@ public class RbacFeignImpl implements RbacFeignClient {
     }
 
     @Override
+    @OperationLog(module = "权限", operation = "新增角色", description = "新增角色")
     @PostMapping("/role")
-    public R<Long> createRole(@RequestBody SysRoleDTO dto) {
+    public R<Long> createRole(@Valid @RequestBody SysRoleDTO dto) {
         return R.ok(rbacService.createRole(dto));
     }
 
     @Override
+    @OperationLog(module = "权限", operation = "复制角色", description = "复制角色及其权限")
     @PostMapping("/role/copy/{sourceRoleId}")
-    public R<Long> copyRole(@PathVariable("sourceRoleId") Long sourceRoleId, @RequestBody SysRoleDTO dto) {
+    public R<Long> copyRole(@PathVariable("sourceRoleId") Long sourceRoleId, @Valid @RequestBody SysRoleDTO dto) {
         return R.ok(rbacService.copyRole(sourceRoleId, dto));
     }
 
@@ -122,12 +132,14 @@ public class RbacFeignImpl implements RbacFeignClient {
     }
 
     @Override
+    @OperationLog(module = "权限", operation = "修改角色", description = "修改角色")
     @PutMapping("/role")
-    public R<Boolean> updateRole(@RequestBody SysRoleDTO dto) {
+    public R<Boolean> updateRole(@Valid @RequestBody SysRoleDTO dto) {
         return R.ok(rbacService.updateRole(dto));
     }
 
     @Override
+    @OperationLog(module = "权限", operation = "删除角色", description = "删除角色")
     @DeleteMapping("/role/{roleId}")
     public R<Boolean> deleteRole(@PathVariable("roleId") Long roleId) {
         return R.ok(rbacService.deleteRole(roleId));
@@ -140,6 +152,7 @@ public class RbacFeignImpl implements RbacFeignClient {
     }
 
     @Override
+    @OperationLog(module = "权限", operation = "角色授权", description = "设置角色菜单权限")
     @PostMapping("/role/{roleId}/menus")
     public R<Boolean> bindRoleMenus(@PathVariable("roleId") Long roleId, @RequestBody List<Long> menuIds) {
         return R.ok(rbacService.bindRoleMenus(roleId, menuIds));
@@ -180,18 +193,21 @@ public class RbacFeignImpl implements RbacFeignClient {
     }
 
     @Override
+    @OperationLog(module = "权限", operation = "新增菜单", description = "新增菜单")
     @PostMapping("/menu")
-    public R<Long> createMenu(@RequestBody SysMenuDTO dto) {
+    public R<Long> createMenu(@Valid @RequestBody SysMenuDTO dto) {
         return R.ok(rbacService.createMenu(dto));
     }
 
     @Override
+    @OperationLog(module = "权限", operation = "修改菜单", description = "修改菜单")
     @PutMapping("/menu")
-    public R<Boolean> updateMenu(@RequestBody SysMenuDTO dto) {
+    public R<Boolean> updateMenu(@Valid @RequestBody SysMenuDTO dto) {
         return R.ok(rbacService.updateMenu(dto));
     }
 
     @Override
+    @OperationLog(module = "权限", operation = "删除菜单", description = "删除菜单")
     @DeleteMapping("/menu/{menuId}")
     public R<Boolean> deleteMenu(@PathVariable("menuId") Long menuId) {
         return R.ok(rbacService.deleteMenu(menuId));

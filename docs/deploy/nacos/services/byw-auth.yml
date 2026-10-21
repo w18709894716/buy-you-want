@@ -1,0 +1,25 @@
+# Per-service configuration for byw-auth (Nacos data-id: byw-auth.yml, group: DEFAULT_GROUP)
+# Loaded automatically by Spring Cloud Alibaba (spring.cloud.nacos.config.file-extension=yml).
+# Repo mirror of this file: docs/deploy/nacos/services/byw-auth.yml
+#
+# KEEP ASCII-ONLY: non-ASCII content makes the nacos client parse the whole config to EMPTY silently.
+# Secrets are jasypt ENC(...) values; the master key comes from env JASYPT_ENCRYPTOR_PASSWORD.
+
+sa-token:
+  token-name: Authorization
+  token-prefix: Bearer
+  timeout: 86400
+  is-concurrent: true
+  is-share: false
+  is-read-cookie: false
+  is-read-header: true
+  token-style: uuid
+
+# Token is delivered as an HttpOnly cookie (dual mode: Authorization header still accepted).
+# secure must be true in production (HTTPS); keep false for local http debugging.
+byw:
+  auth:
+    cookie:
+      secure: ${BYW_AUTH_COOKIE_SECURE:false}
+      same-site: ${BYW_AUTH_COOKIE_SAME_SITE:Lax}
+      max-age: ${BYW_AUTH_COOKIE_MAX_AGE:86400}

@@ -1,0 +1,63 @@
+# Shared config for all services.
+# data-id: byw-common.yml   group: DEFAULT_GROUP   (repo copy: docs/deploy/nacos/byw-common.yml)
+#
+# Referenced from each service bootstrap.yml via spring.cloud.nacos.config.shared-configs,
+# so the common blocks no longer live in 16 local bootstrap.yml files.
+#
+# !! KEEP THIS FILE ASCII-ONLY !!
+# Non-ASCII (e.g. Chinese) characters in the content make the whole property source
+# parse to EMPTY without any error (verified 2026-10-19 on nacos-client 2.x / Windows),
+# i.e. the config silently does not apply. Keep explanations in the README, not here.
+#
+# NOT included on purpose:
+#   logging.*    - logging initializes before remote config is available
+#   management.* - endpoint exposure is per-service
+#   datasource   - database name differs per service
+#   rocketmq / jetcache / sa-token / minio / mongodb / elasticsearch / server.port
+#                - service specific
+
+spring:
+  cloud:
+    sentinel:
+      transport:
+        dashboard: ${SENTINEL_DASHBOARD:localhost:8858}
+      datasource:
+        flow:
+          nacos:
+            server-addr: ${NACOS_ADDR:localhost:8848}
+            namespace: ${NACOS_NAMESPACE:}
+            data-id: ${spring.application.name}-flow-rules
+            group-id: SENTINEL_GROUP
+            rule-type: flow
+        degrade:
+          nacos:
+            server-addr: ${NACOS_ADDR:localhost:8848}
+            namespace: ${NACOS_NAMESPACE:}
+            data-id: ${spring.application.name}-degrade-rules
+            group-id: SENTINEL_GROUP
+            rule-type: degrade
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+
+# Gateway <-> service identity HMAC secret. Rotated off the source-code default (DEFAULT_SECRET
+# in InternalSignature is public in the repo, so it must never be the live value).
+# Encrypted with jasypt; master key comes from env JASYPT_ENCRYPTOR_PASSWORD (never stored here).
+# To read the plaintext back: docs/deploy/jasypt/encrypt.ps1 -Text '<the ENC(...) value>' -Mode decrypt
+byw:
+  security:
+    internal-secret: 'ENC(cMmO+LmhXXEnggbZTqR02BUZVcMD/67XohHzBq0yevSAdPr+ZEstEnixhY1EOk9eDWQLUJ2Wo50RU1k11mkGRl/WxILIixu/GVDDFzMAZESlOWySOgxXUBvebS2q3rtFBQecS+U7kub0L97SQoMwIg==)'
