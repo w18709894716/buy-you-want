@@ -26,15 +26,20 @@ public interface ImService {
     /** 会话列表：买家查自己(role=user, 传 userId)，商家查本店(role=merchant, 传 shopId) */
     List<ConversationView> listConversations(Long userId, Long shopId, String role);
 
-    /** 会话历史消息分页（按时间倒序） */
-    PageResult<MessageView> listMessages(Long conversationId, int page, int size);
+    /**
+     * 会话历史消息分页（按时间倒序）。
+     * 传调用者身份做参与者校验：买家仅本人会话，商家仅本店会话（口径同 listConversations）。
+     */
+    PageResult<MessageView> listMessages(Long conversationId, String role, Long operatorId, Long shopId,
+                                         int page, int size);
 
     /**
      * 标记会话已读：清对应未读 + 广播 read 信令。
+     * 先做参与者校验（买家仅本人会话，商家仅本店会话），再按角色处理：
      * 商家侧仅接待者/介入者的已读生效（标记用户消息 read、清店铺共享未读并广播 receipt=true）；
      * 其他商家成员旁观打开会话不做任何处理（不清未读不广播，避免清掉接待客服的角标）。
      */
-    void markRead(Long conversationId, String readerRole, Long operatorId);
+    void markRead(Long conversationId, String readerRole, Long operatorId, Long shopId);
 
     /** 未读总数（角标）：买家汇总 userUnread，商家汇总本店 shopUnread */
     long unreadTotal(Long userId, Long shopId, String role);

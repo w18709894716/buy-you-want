@@ -7,9 +7,12 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byw.api.order.OrderFeignClient;
 import com.byw.api.order.dto.OrderCreateDTO;
 import com.byw.api.order.dto.OrderDetailDTO;
+import com.byw.common.core.exception.BusinessException;
+import com.byw.common.core.exception.ResultCode;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
 import com.byw.common.security.annotation.InternalApi;
+import com.byw.common.security.context.UserContext;
 import com.byw.order.entity.Order;
 import com.byw.order.entity.OrderItem;
 import com.byw.order.mapper.OrderItemMapper;
@@ -46,12 +49,14 @@ public class OrderFeignImpl implements OrderFeignClient {
     @Override
     @GetMapping("/{orderNo}")
     public R<OrderDetailDTO> getOrderDetail(@PathVariable("orderNo") String orderNo) {
+        requireShopAccess(orderNo);
         return R.ok(orderService.getOrderDetail(orderNo));
     }
 
     @Override
     @PostMapping("/cancel/{orderNo}")
     public R<Boolean> cancelOrder(@PathVariable("orderNo") String orderNo) {
+        requireShopAccess(orderNo);
         orderService.cancelOrder(orderNo, "系统取消");
         return R.ok(true);
     }
@@ -59,6 +64,7 @@ public class OrderFeignImpl implements OrderFeignClient {
     @Override
     @PostMapping("/update-status")
     public R<Boolean> updateOrderStatus(@RequestParam("orderNo") String orderNo, @RequestParam("status") Integer status) {
+        requireShopAccess(orderNo);
         orderService.updateStatus(orderNo, status);
         return R.ok(true);
     }
@@ -70,6 +76,7 @@ public class OrderFeignImpl implements OrderFeignClient {
                                 @RequestParam("companyName") String companyName,
                                 @RequestParam(value = "trackingNo", required = false) String trackingNo,
                                 @RequestBody List<Long> itemIds) {
+        requireShopAccess(orderNo);
         orderService.shipItems(orderNo, itemIds, companyName, trackingNo);
         return R.ok(true);
     }
@@ -82,7 +89,7 @@ public class OrderFeignImpl implements OrderFeignClient {
                                                     @RequestParam(value = "orderNo", required = false) String orderNo) {
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
         // 商家上下文：仅返回本店订单；平台管理员 shopId 为空则不过滤
-        Long shopId = com.byw.common.security.context.UserContext.getShopId();
+        Long shopId = UserContext.getShopId();
         wrapper.eq(shopId != null, Order::getShopId, shopId);
         // 仅返回子订单/独立订单，排除仅聚合支付的父订单
         wrapper.eq(Order::getIsParent, 0);
@@ -160,6 +167,31 @@ public class OrderFeignImpl implements OrderFeignClient {
         Long count = orderMapper.selectCount(
                 new LambdaQueryWrapper<Order>().eq(Order::getUserId, userId));
         return R.ok(count);
+    }
+
+    /**
+     * 商家上下文的租户校验：X-Shop-Id 非空时只能操作本店订单。
+     *
+     * <p>按 orderNo 读写的端点原先只有 list 做了店铺过滤，detail/发货没有——
+     * 商家 A 的员工凭 m:order:* 权限就能读商家 B 的订单详情（含买家收货信息）并替其发货。
+     *
+     * <p>口径与 listOrders 一致：shopId 为空表示平台管理员、C 端用户或后台任务
+     * （库存回补、结算、支付回调、IM 分流都没有店铺上下文），不做限制。
+     * 因此这里**不能**用 {@code UserContext.canAccessShop}——那个方法对"无店铺上下文且非管理员"
+     * 一律拒绝，会把服务间调用与定时任务全部打死。
+     *
+     * <p>订单不存在时不在此处报错，交给下游按原有语义返回"订单不存在"。
+     */
+    private void requireShopAccess(String orderNo) {
+        Long ctxShopId = UserContext.getShopId();
+        if (ctxShopId == null || ctxShopId <= 0) {
+            return;
+        }
+        Order order = orderMapper.selectOne(
+                new LambdaQueryWrapper<Order>().eq(Order::getOrderNo, orderNo));
+        if (order != null && !ctxShopId.equals(order.getShopId())) {
+            throw new BusinessException(ResultCode.FORBIDDEN);
+        }
     }
 
     private OrderDetailDTO buildOrderDetailDTO(Order order, List<OrderItem> items) {

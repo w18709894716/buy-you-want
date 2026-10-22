@@ -65,7 +65,10 @@ public class ImController {
             @RequestParam Long conversationId,
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "20") Integer pageSize) {
-        return R.ok(imService.listMessages(conversationId, page, pageSize));
+        // 传调用者身份做参与者校验：买家仅本人会话，商家仅本店会话
+        String role = UserContext.isMerchant() ? "merchant" : "user";
+        return R.ok(imService.listMessages(conversationId, role,
+                UserContext.getUserId(), UserContext.getShopId(), page, pageSize));
     }
 
     @Operation(summary = "标记会话已读")
@@ -76,8 +79,9 @@ public class ImController {
             return R.fail("conversationId 不能为空");
         }
         String role = UserContext.isMerchant() ? "merchant" : "user";
-        // 传操作者ID：商家侧仅接待者/介入者产生已读回执（后端校验）
-        imService.markRead(request.getConversationId(), role, UserContext.getUserId());
+        // 传操作者ID与店铺ID：先校验会话参与者，商家侧再限定仅接待者/介入者产生已读回执（后端校验）
+        imService.markRead(request.getConversationId(), role,
+                UserContext.getUserId(), UserContext.getShopId());
         return R.ok();
     }
 

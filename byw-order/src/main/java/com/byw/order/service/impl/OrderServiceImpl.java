@@ -187,8 +187,8 @@ public class OrderServiceImpl implements OrderService {
             }
         }
 
-        // 5. 解析收货地址（父订单与各子订单共用）
-        String[] receiver = resolveReceiver(createDTO.getAddressId());
+        // 5. 解析收货地址（父订单与各子订单共用），并校验地址归属下单人
+        String[] receiver = resolveReceiver(createDTO.getAddressId(), userId);
 
         // 6. 生成父订单号并创建父订单（聚合支付，无明细，不归属单一店铺）
         String parentOrderNo = generateOrderNo();
@@ -427,25 +427,37 @@ public class OrderServiceImpl implements OrderService {
     }
 
     /** 解析收货地址，返回 [收货人, 电话, 完整地址]；获取失败时返回全 null 数组 */
-    private String[] resolveReceiver(Long addressId) {
+    private String[] resolveReceiver(Long addressId, Long userId) {
         String[] receiver = new String[3];
         if (addressId == null) {
             return receiver;
         }
+        AddressDTO addr = null;
         try {
             R<AddressDTO> addrResult = userFeignClient.getAddressById(addressId);
-            if (addrResult.isSuccess() && addrResult.getData() != null) {
-                AddressDTO addr = addrResult.getData();
-                receiver[0] = addr.getReceiverName();
-                receiver[1] = addr.getReceiverPhone();
-                receiver[2] = (addr.getProvince() != null ? addr.getProvince() : "") +
-                        (addr.getCity() != null ? addr.getCity() : "") +
-                        (addr.getDistrict() != null ? addr.getDistrict() : "") +
-                        (addr.getDetailAddress() != null ? addr.getDetailAddress() : "");
+            if (addrResult.isSuccess()) {
+                addr = addrResult.getData();
             }
         } catch (Exception e) {
             log.warn("获取收货地址失败，addressId={}: {}", addressId, e.getMessage());
         }
+        if (addr == null) {
+            return receiver;
+        }
+        // addressId 由前端透传，不校验归属就能把他人地址的收货人/手机号/详址写进自己的订单
+        // （下单后在订单详情里直接可读）。秒杀链路 SeckillOrderConsumer 已有同样的校验，这里补齐普通下单。
+        // 抛错而非静默回退默认地址：回退会让攻击者以为成功，也会让正常用户收货到错误地址却毫无提示。
+        if (!userId.equals(addr.getUserId())) {
+            log.warn("下单地址归属校验失败：userId={}, addressId={}, addressUserId={}",
+                    userId, addressId, addr.getUserId());
+            throw new BusinessException("收货地址不可用，请重新选择");
+        }
+        receiver[0] = addr.getReceiverName();
+        receiver[1] = addr.getReceiverPhone();
+        receiver[2] = (addr.getProvince() != null ? addr.getProvince() : "") +
+                (addr.getCity() != null ? addr.getCity() : "") +
+                (addr.getDistrict() != null ? addr.getDistrict() : "") +
+                (addr.getDetailAddress() != null ? addr.getDetailAddress() : "");
         return receiver;
     }
 

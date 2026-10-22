@@ -175,8 +175,8 @@ public class ImWebSocketHandler extends TextWebSocketHandler {
                 case "read" -> {
                     Long conversationId = toLong(frame.get("conversationId"));
                     if (conversationId != null) {
-                        // 传操作者ID：商家侧仅接待者/介入者产生已读回执（后端校验）
-                        imService.markRead(conversationId, senderRole, userId);
+                        // 传操作者ID与会话店铺ID：先校验参与者，商家侧再限定仅接待者/介入者产生已读回执（后端校验）
+                        imService.markRead(conversationId, senderRole, userId, sessionShopId);
                     }
                 }
                 case "take" -> {

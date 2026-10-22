@@ -9,6 +9,8 @@ import com.byw.api.shop.dto.MerchantAccountDTO;
 import com.byw.api.shop.dto.ShopDTO;
 import com.byw.api.user.UserFeignClient;
 import com.byw.api.user.dto.UserDTO;
+import com.byw.common.core.exception.BusinessException;
+import com.byw.common.core.exception.ResultCode;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
 import com.byw.im.dto.ConversationView;
@@ -532,9 +534,16 @@ public class ImServiceImpl implements ImService {
     }
 
     @Override
-    public PageResult<MessageView> listMessages(Long conversationId, int page, int size) {
+    public PageResult<MessageView> listMessages(Long conversationId, String role, Long operatorId, Long shopId,
+                                                int page, int size) {
         int pageNum = page < 1 ? 1 : page;
         int pageSize = size < 1 ? 20 : size;
+        // 会话不存在时返回空页而非报错：避免用 conversationId 探测他人会话是否存在
+        Conversation conversation = conversationMapper.selectById(conversationId);
+        if (conversation == null) {
+            return PageResult.of(new ArrayList<>(), 0L, pageNum, pageSize);
+        }
+        requireConversationAccess(conversation, role, operatorId, shopId);
         Criteria criteria = Criteria.where("conversationId").is(conversationId);
         Query countQuery = new Query(criteria);
         long total = mongoTemplate.count(countQuery, ImMessage.class);
@@ -574,11 +583,12 @@ public class ImServiceImpl implements ImService {
     }
 
     @Override
-    public void markRead(Long conversationId, String readerRole, Long operatorId) {
+    public void markRead(Long conversationId, String readerRole, Long operatorId, Long shopId) {
         Conversation conversation = conversationMapper.selectById(conversationId);
         if (conversation == null) {
             return;
         }
+        requireConversationAccess(conversation, readerRole, operatorId, shopId);
         boolean readerIsUser = ROLE_USER.equals(readerRole);
         // 商家侧仅接待者/介入者的已读生效：标记消息已读 + 清店铺共享未读 + 广播回执；
         // 其他成员（主账号/非接待客服）旁观打开会话不影响未读，避免清掉接待客服的未读角标
@@ -639,6 +649,25 @@ public class ImServiceImpl implements ImService {
     private boolean isMine(Conversation c, Long staffId) {
         return (c.getAssigneeId() != null && c.getAssigneeId().equals(staffId))
                 || parseJoiners(c.getJoiners()).contains(staffId);
+    }
+
+    /**
+     * 会话参与者校验：买家仅本人会话，商家仅本店会话。
+     *
+     * <p>口径与 {@link #listConversations} 的过滤条件、{@link #sendMessage} 的发言校验保持一致——
+     * 读单个会话的历史消息不能比看会话列表更宽，否则只要拿到 conversationId（自增、可枚举）
+     * 就能读他人聊天记录，正文里含收货地址、手机号、订单号。
+     *
+     * <p>调用方须先确保 conversation 非空。
+     */
+    private void requireConversationAccess(Conversation conversation, String role, Long operatorId, Long shopId) {
+        if (ROLE_MERCHANT.equals(role)) {
+            if (shopId == null || !shopId.equals(conversation.getShopId())) {
+                throw new BusinessException(ResultCode.FORBIDDEN);
+            }
+        } else if (operatorId == null || !operatorId.equals(conversation.getUserId())) {
+            throw new BusinessException(ResultCode.FORBIDDEN);
+        }
     }
 
     @Override

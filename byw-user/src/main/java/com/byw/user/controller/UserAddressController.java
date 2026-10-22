@@ -52,6 +52,8 @@ public class UserAddressController {
     @PutMapping
     public R<Void> update(@Valid @RequestBody UserAddress address) {
         Long userId = UserContext.getUserId();
+        // 归属校验：入参 id 由前端传，先 setUserId(当前用户) 再 updateById 会把他人地址整条改挂到自己名下
+        requireOwned(address.getId());
         address.setUserId(userId);
         // 若更新为默认地址，先清除该用户其他默认地址，避免出现多个默认
         if (address.getIsDefault() != null && address.getIsDefault() == 1) {
@@ -79,6 +81,8 @@ public class UserAddressController {
     @PutMapping("/{id}/default")
     public R<Void> setDefault(@PathVariable Long id) {
         Long userId = UserContext.getUserId();
+        // 归属校验：否则可以把他人地址的 userId 覆写成自己，等于把地址据为己有
+        requireOwned(id);
         // Clear existing default
         clearDefault(userId);
         // Set new default
@@ -88,6 +92,18 @@ public class UserAddressController {
         setDefault.setUserId(userId);
         userAddressMapper.updateById(setDefault);
         return R.ok();
+    }
+
+    /**
+     * 校验地址归属当前登录用户。
+     *
+     * <p>地址不存在也按 FORBIDDEN 处理，与"存在但不属于你"表现一致，避免用 id 探测他人地址是否存在。
+     */
+    private void requireOwned(Long id) {
+        UserAddress address = id == null ? null : userAddressMapper.selectById(id);
+        if (address == null || !UserContext.getUserId().equals(address.getUserId())) {
+            throw new BusinessException(ResultCode.FORBIDDEN);
+        }
     }
 
     /** 清除指定用户的所有默认地址标记 */

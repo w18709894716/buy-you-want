@@ -4,6 +4,7 @@ import com.byw.api.user.RbacFeignClient;
 import com.byw.api.user.dto.SysMenuDTO;
 import com.byw.common.core.constant.CommonConstants;
 import com.byw.common.core.result.R;
+import com.byw.common.security.annotation.RequireRole;
 import com.byw.common.security.context.UserContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,11 +17,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 商家端：当前登录账号的菜单树与权限集（仅需登录）。
+ * 商家端：当前登录账号的菜单树与权限集。
  * 主账号（merchant_owner）拥有全部商家菜单与通配权限；子账号按其角色过滤。
+ *
+ * <p>限商家角色：下面的 else 分支把 UserContext 的 userId 当作商家子账号 id 去查 RBAC，
+ * 而 C 端会员与商家账号的 id 来自不同的表、取值区间重叠，
+ * 只要求"已登录"会让会员 token 拿到某个同 id 商家员工的菜单与权限集。
  */
 @RestController
 @RequestMapping("/merchant/me")
+@RequireRole({CommonConstants.ROLE_MERCHANT_OWNER, CommonConstants.ROLE_MERCHANT_STAFF})
 @RequiredArgsConstructor
 public class MerchantMeController {
 
