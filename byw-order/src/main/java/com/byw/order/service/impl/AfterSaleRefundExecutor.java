@@ -35,9 +35,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AfterSaleRefundExecutor {
 
-    /** 秒杀订单标识：库存在 promotion 服务的 Redis 侧预扣，从不写 product 库，售后不回补 DB 库存 */
-    private static final String SECKILL_ORDER_REMARK = "秒杀活动订单";
-
     private final AfterSaleMapper afterSaleMapper;
     private final OrderItemMapper orderItemMapper;
     private final OrderMapper orderMapper;
@@ -96,7 +93,9 @@ public class AfterSaleRefundExecutor {
         }
         Order order = orderMapper.selectOne(new LambdaQueryWrapper<Order>()
                 .eq(Order::getOrderNo, afterSale.getOrderNo()));
-        if (order != null && SECKILL_ORDER_REMARK.equals(order.getRemark())) {
+        // 秒杀订单库存在 promotion 服务的 Redis 侧预扣，从不写 product 库，售后不回补 DB 库存。
+        // 判定依据是 biz_key 而非用户可控的 remark，见 SeckillOrderCreator.BIZ_KEY_PREFIX。
+        if (order != null && SeckillOrderCreator.isSeckillBizKey(order.getBizKey())) {
             log.info("秒杀订单售后跳过DB库存回补（Redis侧管理）: afterSaleNo={}", afterSale.getAfterSaleNo());
             return;
         }

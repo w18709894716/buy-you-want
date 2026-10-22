@@ -2,6 +2,8 @@ package com.byw.order.controller;
 
 import com.byw.api.order.dto.OrderCreateDTO;
 import com.byw.api.order.dto.OrderDetailDTO;
+import com.byw.api.pay.PayFeignClient;
+import com.byw.api.pay.dto.PayOrderDTO;
 import com.byw.common.core.exception.BusinessException;
 import com.byw.common.core.exception.ResultCode;
 import com.byw.common.core.result.PageResult;
@@ -26,6 +28,10 @@ import org.springframework.web.bind.annotation.*;
 public class OrderController {
 
     private final OrderService orderService;
+    private final PayFeignClient payFeignClient;
+
+    /** 模拟支付渠道：两个模拟策略的 queryStatus 恒返回已支付，取哪个都一样 */
+    private static final String MOCK_PAY_CHANNEL = "wechat";
 
     @Operation(summary = "创建订单")
     @SentinelResource(value = "order:create", fallback = "createOrderFallback")
@@ -75,9 +81,20 @@ public class OrderController {
     @Operation(summary = "支付订单（模拟）")
     @PostMapping("/pay/{orderNo}")
     public R<Void> pay(@PathVariable String orderNo) {
+        Long userId = UserContext.getUserId();
         assertOrderOwner(orderNo);
-        // TODO: 接入真实支付流程
-        orderService.updateStatus(orderNo, 1);
+        // 模拟支付必须经 byw-pay：原先直接 updateStatus(orderNo, 1) 不会生成 t_pay_order，
+        // 这类订单后续取消/售后退款会因"未找到已支付的订单"永远退不出钱，
+        // 同时还绕开了 byw.pay.mock-enabled 开关与支付事务消息落库路径。
+        // 注意订单状态由支付结果消息异步流转到待发货，本接口返回成功不等于状态已变更。
+        R<PayOrderDTO> payOrderResult = payFeignClient.createPayOrder(orderNo, userId, null, MOCK_PAY_CHANNEL);
+        if (payOrderResult == null || !payOrderResult.isSuccess() || payOrderResult.getData() == null) {
+            throw new BusinessException(message(payOrderResult, "发起支付失败"));
+        }
+        R<Boolean> mockResult = payFeignClient.mockPay(payOrderResult.getData().getPayNo(), userId);
+        if (mockResult == null || !mockResult.isSuccess()) {
+            throw new BusinessException(message(mockResult, "支付失败"));
+        }
         return R.ok();
     }
 
@@ -106,6 +123,14 @@ public class OrderController {
         if (ownerId == null || !ownerId.equals(UserContext.getUserId())) {
             throw new BusinessException(ResultCode.FORBIDDEN);
         }
+    }
+
+    /** 透传下游失败原因（如"订单当前状态不可支付"），下游没给原因时用兜底文案 */
+    private String message(R<?> result, String fallback) {
+        if (result == null || result.getMessage() == null || result.getMessage().isEmpty()) {
+            return fallback;
+        }
+        return result.getMessage();
     }
 
     // ========== Sentinel fallback ==========

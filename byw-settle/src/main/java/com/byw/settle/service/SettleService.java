@@ -14,6 +14,18 @@ public interface SettleService {
     /** T+N 到期：将已过冷静期的待结算单转入可用余额。返回本次入账笔数。 */
     int settleDueRecords();
 
+    /**
+     * 退款联动冲减结算：买家退款成功后按商家应得占比把这笔钱从结算里扣回来。
+     *
+     * <p>不冲减的后果是"同一笔钱付两次"——买家拿到退款，冷静期一到
+     * {@link #settleDueRecords()} 仍把全额打进商家可用余额。
+     *
+     * @param orderNo      子订单号（结算单以子订单为维度）
+     * @param refundAmount 本次退给买家的金额
+     * @param refNo        业务幂等键（售后单号）；重复调用只冲减一次
+     */
+    void adjustOnRefund(String orderNo, java.math.BigDecimal refundAmount, String refNo);
+
     /** 结算单分页查询（shopId 为空表示平台查全部）。 */
     PageResult<SettleRecordDTO> listSettleRecords(Long shopId, Integer status, Integer pageNum, Integer pageSize);
 }

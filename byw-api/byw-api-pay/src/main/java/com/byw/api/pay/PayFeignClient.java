@@ -19,6 +19,14 @@ public interface PayFeignClient {
     R<Integer> getPayStatus(@PathVariable("payNo") String payNo);
 
     /**
+     * 模拟支付：把已建好的支付单置为已支付，走与真实回调相同的落库 + 事务消息路径。
+     * 仅 {@code byw.pay.mock-enabled=true} 时可用，生产关掉开关后返回 403。
+     */
+    @PostMapping("/feign/pay/mock-pay")
+    R<Boolean> mockPay(@RequestParam("payNo") String payNo,
+                       @RequestParam("userId") Long userId);
+
+    /**
      * 退款。refNo 为业务幂等键（售后单号），同一 refNo 重复调用只退一次；
      * 管理端手工退款可不传。
      */

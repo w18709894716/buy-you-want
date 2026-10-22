@@ -40,8 +40,11 @@ public class BalanceServiceImpl implements BalanceService {
     private final BalanceFlowMapper balanceFlowMapper;
 
     private static final String[] FLOW_TYPE_DESC = {
-            "", "结算待入账", "结算入账", "提现冻结", "提现成功", "提现驳回解冻"
+            "", "结算待入账", "结算入账", "提现冻结", "提现成功", "提现驳回解冻", "退款冲减"
     };
+
+    /** 退款冲减流水类型 */
+    private static final int FLOW_TYPE_REFUND_DEDUCT = 6;
 
     @Override
     public ShopBalance getOrCreate(Long shopId) {
@@ -149,6 +152,38 @@ public class BalanceServiceImpl implements BalanceService {
         requireApplied(shopBalanceMapper.unfreezeForReject(shopId, amount),
                 "提现解冻失败：冻结金额不足或已处理");
         writeFlow(shopId, 5, amount, currentAvailable(shopId), refNo, remark);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deductPendingForRefund(Long shopId, BigDecimal amount, String refNo, String remark) {
+        assertPositive(amount);
+        getOrCreate(shopId);
+        requireApplied(shopBalanceMapper.reducePending(shopId, amount),
+                "退款冲减待结算失败：待结算金额不足");
+        writeFlow(shopId, FLOW_TYPE_REFUND_DEDUCT, amount.negate(), currentAvailable(shopId), refNo, remark);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deductAvailableForRefund(Long shopId, BigDecimal amount, String refNo, String remark) {
+        assertPositive(amount);
+        getOrCreate(shopId);
+        // 扣不动说明商家已把钱提现走了，显式失败让调用方告警人工追偿，不把余额扣成负数
+        requireApplied(shopBalanceMapper.reduceAvailable(shopId, amount),
+                "退款冲减可用余额失败：余额不足（可能已提现），需人工追偿");
+        writeFlow(shopId, FLOW_TYPE_REFUND_DEDUCT, amount.negate(), currentAvailable(shopId), refNo, remark);
+    }
+
+    @Override
+    public boolean hasRefundDeduction(String refNo) {
+        if (refNo == null || refNo.isEmpty()) {
+            return false;
+        }
+        Long count = balanceFlowMapper.selectCount(new LambdaQueryWrapper<BalanceFlow>()
+                .eq(BalanceFlow::getType, FLOW_TYPE_REFUND_DEDUCT)
+                .eq(BalanceFlow::getRefNo, refNo));
+        return count != null && count > 0;
     }
 
     /**

@@ -35,4 +35,17 @@ public interface BalanceService {
 
     /** 提现驳回解冻：frozen -= amount，available += amount（flow type=5） */
     void unfreezeForReject(Long shopId, BigDecimal amount, String refNo, String remark);
+
+    /** 退款冲减待结算：pending -= amount（结算单仍在冷静期，flow type=6） */
+    void deductPendingForRefund(Long shopId, BigDecimal amount, String refNo, String remark);
+
+    /**
+     * 退款冲减可用余额：available -= amount，total_income -= amount（结算单已入账，flow type=6）。
+     *
+     * <p>商家可能已把这笔钱提现走，扣不动时抛错交由调用方告警人工追偿，不把余额扣成负数。
+     */
+    void deductAvailableForRefund(Long shopId, BigDecimal amount, String refNo, String remark);
+
+    /** 该业务键是否已产生过退款冲减流水（flow type=6），用于跨服务重复驱动的幂等判定 */
+    boolean hasRefundDeduction(String refNo);
 }

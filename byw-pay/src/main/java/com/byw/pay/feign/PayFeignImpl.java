@@ -23,7 +23,9 @@ public class PayFeignImpl implements PayFeignClient {
     @PostMapping("/create")
     public R<PayOrderDTO> createPayOrder(@RequestParam("orderNo") String orderNo,
                                          @RequestParam("userId") Long userId,
-                                         @RequestParam("amount") BigDecimal amount,
+                                         // 可缺省：金额一律以订单 payAmount 为准，传了才做一致性核对。
+                                         // Feign 侧传 null 会直接省略该查询参数，服务端必须允许缺省。
+                                         @RequestParam(value = "amount", required = false) BigDecimal amount,
                                          @RequestParam("channel") String channel) {
         return R.ok(payService.createPayOrder(orderNo, userId, amount, channel));
     }
@@ -32,6 +34,14 @@ public class PayFeignImpl implements PayFeignClient {
     @GetMapping("/status/{payNo}")
     public R<Integer> getPayStatus(@PathVariable("payNo") String payNo) {
         return R.ok(payService.getPayStatus(payNo));
+    }
+
+    @Override
+    @PostMapping("/mock-pay")
+    public R<Boolean> mockPay(@RequestParam("payNo") String payNo,
+                              @RequestParam("userId") Long userId) {
+        payService.mockPay(payNo, userId);
+        return R.ok(true);
     }
 
     @Override

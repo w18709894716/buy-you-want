@@ -151,17 +151,41 @@ public class PayServiceImpl implements PayService {
      */
     @Override
     public void handleMockCallback(String channel, String payNo, String tradeNo) {
+        requireMockEnabled(payNo);
+        requirePayOrderOwner(payNo, UserContext.getUserId());
+        applyCallbackResult(channel, payNo, tradeNo, null);
+    }
+
+    /**
+     * 模拟支付（服务间）：与 {@link #handleMockCallback} 共用同一道闸门，走同一条落库 + 事务消息路径。
+     *
+     * <p>userId 显式入参而不读 {@code UserContext}：调用方是 byw-order 的 Feign，
+     * 依赖上下文透传等于把资金动作建立在"身份头一定在"的假设上。
+     */
+    @Override
+    public void mockPay(String payNo, Long userId) {
+        requireMockEnabled(payNo);
+        PayOrder payOrder = requirePayOrderOwner(payNo, userId);
+        // 渠道以支付单自身为准，不由调用方指定，避免拿另一个渠道的策略处理这张单
+        applyCallbackResult(payOrder.getPayChannel(), payNo, "MOCK" + payNo, null);
+    }
+
+    /** 模拟通道开关：未显式打开一律拒绝（生产置 false 后所有模拟支付路径彻底关闭） */
+    private void requireMockEnabled(String payNo) {
         if (!mockEnabled) {
             log.warn("模拟支付回调未开启，拒绝: payNo={}", payNo);
             throw new BusinessException(ResultCode.FORBIDDEN, "模拟支付回调未开启");
         }
+    }
+
+    /** 模拟通道无渠道验签，归属校验是唯一门槛：非支付单归属用户一律拒绝 */
+    private PayOrder requirePayOrderOwner(String payNo, Long userId) {
         PayOrder payOrder = getPayOrderByNo(payNo);
-        Long currentUserId = UserContext.getUserId();
-        if (currentUserId == null || !currentUserId.equals(payOrder.getUserId())) {
-            log.warn("模拟支付回调被拒绝：调用方非支付单归属用户, payNo={}, caller={}", payNo, currentUserId);
+        if (userId == null || !userId.equals(payOrder.getUserId())) {
+            log.warn("模拟支付回调被拒绝：调用方非支付单归属用户, payNo={}, caller={}", payNo, userId);
             throw new BusinessException(ResultCode.FORBIDDEN);
         }
-        applyCallbackResult(channel, payNo, tradeNo, null);
+        return payOrder;
     }
 
     /** 回调结果的公共处理：状态幂等判断 + 支付状态查询 + 事务消息/落库 */

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byw.api.pay.PayFeignClient;
 import com.byw.api.pay.dto.RefundInfoDTO;
+import com.byw.api.settle.SettleFeignClient;
 import com.byw.common.core.exception.BusinessException;
 import com.byw.common.core.util.SnowflakeIdGenerator;
 import com.byw.common.core.result.PageResult;
@@ -25,9 +26,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -40,6 +43,7 @@ public class AfterSaleServiceImpl implements AfterSaleService {
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
     private final PayFeignClient payFeignClient;
+    private final SettleFeignClient settleFeignClient;
     private final OrderService orderService;
     private final AfterSaleRefundExecutor refundExecutor;
 
@@ -93,13 +97,16 @@ public class AfterSaleServiceImpl implements AfterSaleService {
         if (refunded != null && refunded > 0) {
             throw new BusinessException("该商品已完成退款");
         }
-        // 退款类售后校验金额：必填且不能超过该商品明细小计
+        // 退款类售后校验金额：必填，且不得超过该明细的可退上限
         if (REFUND_TYPES.contains(type)) {
             if (refundAmount == null || refundAmount.compareTo(BigDecimal.ZERO) <= 0) {
                 throw new BusinessException("请填写退款金额");
             }
-            if (item.getSubtotal() != null && refundAmount.compareTo(item.getSubtotal()) > 0) {
-                throw new BusinessException("退款金额不能超过该商品实付小计");
+            BigDecimal maxRefundable = calcMaxRefundable(order, item);
+            if (refundAmount.compareTo(maxRefundable) > 0) {
+                log.warn("退款金额超出可退上限: orderNo={}, orderItemId={}, applyAmount={}, maxRefundable={}",
+                        orderNo, orderItemId, refundAmount, maxRefundable);
+                throw new BusinessException("退款金额不能超过该商品实付金额");
             }
         } else {
             refundAmount = null;
@@ -208,15 +215,17 @@ public class AfterSaleServiceImpl implements AfterSaleService {
         AfterSale update = new AfterSale();
         update.setId(id);
         update.setApproveTime(now);
-        if (type != null && type == 1) {
-            // 仅退款：先置「退款中」并提交事务，远程退款由 driveRefundIfPending 在事务外驱动，
-            // 避免"远程已退款、本地回滚"造成钱退了但售后单回到待审核
+        if (type != null && (type == 1 || type == 6)) {
+            // 仅退款 / 价保：都是纯退款、买家无需寄回，先置「退款中」并提交事务，
+            // 远程退款由 driveRefundIfPending 在事务外驱动，
+            // 避免"远程已退款、本地回滚"造成钱退了但售后单回到待审核。
+            // 价保此前落在这里之外的 else 分支（审核同意即"已完成"），钱一分都没退。
             update.setStatus(6);
         } else if (type != null && type == 2) {
             // 退货退款：审核通过转「待买家寄回」
             update.setStatus(1);
         } else {
-            // 换货/维修/补寄/价保：审核同意即完成，不触发关单退款
+            // 换货/维修/补寄：审核同意即完成，不涉及资金，不触发退款
             update.setStatus(3);
             update.setFinishTime(now);
         }
@@ -407,6 +416,37 @@ public class AfterSaleServiceImpl implements AfterSaleService {
         if (finalized) {
             // 库存回补放在终态事务提交之后：避免"远程回补成功 + 本地回滚"被重试放大成重复回补
             refundExecutor.restoreStockIfUnshipped(afterSale);
+            // 结算冲减同样放在事务外，以售后单号为幂等键。不冲减的后果是"同一笔钱付两次"：
+            // 买家拿到退款，冷静期一到 settleDueRecords 仍把全额打进商家可用余额。
+            notifySettleAdjust(afterSale);
+        }
+    }
+
+    /**
+     * 通知结算服务冲减商家应得份额。
+     *
+     * <p>与库存回补同理放在终态事务提交之后、best-effort：失败只 error 不回滚终态
+     * （退款已经发生，售后单必须收敛到已完成），并留全 afterSaleNo/orderNo/amount
+     * 供人工核对商家余额。refNo 幂等，重驱安全。
+     */
+    private void notifySettleAdjust(AfterSale afterSale) {
+        BigDecimal amount = afterSale.getRefundAmount();
+        if (amount == null || amount.signum() <= 0) {
+            return;
+        }
+        String afterSaleNo = afterSale.getAfterSaleNo();
+        String orderNo = afterSale.getOrderNo();
+        try {
+            R<Boolean> result = settleFeignClient.adjustOnRefund(orderNo, amount, afterSaleNo);
+            if (result == null || !result.isSuccess()) {
+                log.error("退款结算冲减失败，需人工核对商家余额: afterSaleNo={}, orderNo={}, amount={}, msg={}",
+                        afterSaleNo, orderNo, amount, result == null ? "null" : result.getMessage());
+                return;
+            }
+            log.info("退款结算冲减完成: afterSaleNo={}, orderNo={}, amount={}", afterSaleNo, orderNo, amount);
+        } catch (Exception e) {
+            log.error("退款结算冲减异常，需人工核对商家余额: afterSaleNo={}, orderNo={}, amount={}",
+                    afterSaleNo, orderNo, amount, e);
         }
     }
 
@@ -443,6 +483,41 @@ public class AfterSaleServiceImpl implements AfterSaleService {
         if (order != null && order.getStatus() != null && order.getStatus() == 5) {
             orderService.updateStatus(afterSale.getOrderNo(), 3);
         }
+    }
+
+    /**
+     * 该明细当前最多可退金额 = min(明细实付, 订单剩余可退)。
+     *
+     * <p>明细实付不能直接取 {@code t_order_item.subtotal}：那是 {@code price * quantity} 的税前小计，
+     * 不含优惠券分摊（建单时按占比把 discountAmount 摊到各子订单）。用券订单按 subtotal 退，
+     * 首笔就能把同单其他商品享受的优惠一并退走 —— byw-pay 的"累计退款 ≤ 实付"只能兜住总额，
+     * 兜不住这种把别人的额度退给自己的串额。
+     *
+     * <p>再扣掉本单已完成的退款金额，避免多笔售后叠加超出实付。分摊各自四舍五入可能差一分，
+     * 由这个剩余可退上限兜住。
+     */
+    private BigDecimal calcMaxRefundable(Order order, OrderItem item) {
+        BigDecimal subtotal = item.getSubtotal() == null ? BigDecimal.ZERO : item.getSubtotal();
+        BigDecimal orderTotal = order.getTotalAmount();
+        BigDecimal discount = order.getDiscountAmount();
+        BigDecimal itemPaid = subtotal;
+        if (discount != null && discount.signum() > 0
+                && orderTotal != null && orderTotal.signum() > 0) {
+            BigDecimal discountShare = discount.multiply(subtotal)
+                    .divide(orderTotal, 2, RoundingMode.HALF_UP);
+            itemPaid = subtotal.subtract(discountShare).max(BigDecimal.ZERO);
+        }
+        BigDecimal payAmount = order.getPayAmount() == null ? BigDecimal.ZERO : order.getPayAmount();
+        BigDecimal refunded = afterSaleMapper.selectList(new LambdaQueryWrapper<AfterSale>()
+                        .eq(AfterSale::getOrderNo, order.getOrderNo())
+                        .in(AfterSale::getType, REFUND_TYPES)
+                        .eq(AfterSale::getStatus, 3))
+                .stream()
+                .map(AfterSale::getRefundAmount)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal remaining = payAmount.subtract(refunded).max(BigDecimal.ZERO);
+        return itemPaid.min(remaining);
     }
 
     /** 加载售后单并校验商家本店归属（平台管理员 shopId 为空则跳过校验） */

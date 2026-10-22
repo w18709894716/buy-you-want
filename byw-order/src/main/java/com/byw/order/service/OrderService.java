@@ -78,6 +78,19 @@ public interface OrderService {
     List<String> listTimeoutUnpaidOrderNos(int timeoutMinutes, int limit);
 
     /**
+     * 支付成功但订单已被取消关闭时的原路退款。
+     *
+     * <p>「支付回调 0→1」与「超时取消 0→4」竞态下，{@link #updateStatus} 会按状态机拒绝
+     * 「已关闭 → 待发货」并抛异常，此时钱已收、货不会发。调用方不能把异常继续抛给 MQ 重试 ——
+     * 重试耗尽进死信后这笔退款永远不会发生。
+     *
+     * <p>退款幂等键为 {@code CANCEL:{orderNo}}，与取消链路共用，两条路径都触发也只退一次。
+     *
+     * @return true 表示订单确为"取消关闭"并已发起退款；false 表示不属于该场景，调用方应按原逻辑处理异常
+     */
+    boolean refundCancelledOnPaid(String orderNo);
+
+    /**
      * 生成订单号
      */
     String generateOrderNo();

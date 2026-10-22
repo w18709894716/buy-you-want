@@ -9,6 +9,7 @@ import com.byw.api.logistics.dto.LogisticsDTO;
 import com.byw.api.logistics.dto.ShipRequestDTO;
 import com.byw.api.order.dto.OrderCreateDTO;
 import com.byw.api.order.dto.OrderDetailDTO;
+import com.byw.api.pay.PayFeignClient;
 import com.byw.api.product.ProductFeignClient;
 import com.byw.api.product.dto.ProductDTO;
 import com.byw.api.product.dto.SkuDTO;
@@ -59,9 +60,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class OrderServiceImpl implements OrderService {
 
-    /** 秒杀订单标识：SeckillOrderConsumer 创建秒杀单时固定写入的 remark，用于跳过 DB 库存操作 */
-    private static final String SECKILL_ORDER_REMARK = "秒杀活动订单";
-
     /** 幂等键"首单处理中"占位值：抢到键但订单尚未落库时写入，重复请求据此判断是"处理中"而非"已完成" */
     private static final String IDEMPOTENT_PENDING = "PENDING";
 
@@ -78,6 +76,7 @@ public class OrderServiceImpl implements OrderService {
     private final ProductFeignClient productFeignClient;
     private final CartFeignClient cartFeignClient;
     private final PromotionFeignClient promotionFeignClient;
+    private final PayFeignClient payFeignClient;
     private final UserFeignClient userFeignClient;
     private final LogisticsFeignClient logisticsFeignClient;
     private final OrderEventProducer orderEventProducer;
@@ -525,13 +524,30 @@ public class OrderServiceImpl implements OrderService {
 
         // 父订单：联动取消其全部未完成子订单，再取消父订单本身
         if (order.getIsParent() != null && order.getIsParent() == 1) {
+            Integer parentFromStatus = order.getStatus();
+            // 父订单自身也必须处于可取消状态。此前这一支没有任何闸门，交易完成(3)/退款中(5)的
+            // 父订单照样能被取消，cancelParentRecord 还会把整单优惠券退回 —— 而子订单的货早已发出，
+            // 结果是"券复活 + 货照拿"。
+            if (parentFromStatus == null || (parentFromStatus != 0 && parentFromStatus != 1)) {
+                throw new BusinessException("当前订单状态不可取消");
+            }
             List<Order> children = orderMapper.selectList(
                     new LambdaQueryWrapper<Order>().eq(Order::getParentOrderNo, orderNo));
+            // 已有子订单进入履约（发货/收货/退款）时不允许整单取消：父单关闭后这些子订单
+            // 会失去聚合支付载体，退款与结算都无从挂靠，只能逐商品走售后。
+            for (Order child : children) {
+                Integer childStatus = child.getStatus();
+                if (childStatus != null && childStatus != 0 && childStatus != 1 && childStatus != 4) {
+                    throw new BusinessException("部分商品已进入履约流程，请对该商品申请售后");
+                }
+            }
             for (Order child : children) {
                 if (child.getStatus() != null && (child.getStatus() == 0 || child.getStatus() == 1)) {
                     doCancelChild(child, reason, operator);
                 }
             }
+            // 父订单不单独退款：父单实付 = 各子单实付之和（优惠按比例分摊、末店取余额），
+            // 上面逐子单的退款既不漏也不重，且天然排除了此前已单独取消并退过款的子单。
             cancelParentRecord(order, reason, operator);
             return;
         }
@@ -602,6 +618,13 @@ public class OrderServiceImpl implements OrderService {
 
         saveStatusLog(order.getId(), fromStatus, 4, operator, reason);
         orderEventProducer.sendOrderStatusChangeEvent(order.getOrderNo(), fromStatus, 4);
+        // 已支付（待发货）订单被取消：货没发、钱必须退。此前只回补库存不退钱，
+        // 用户付了款却既拿不到货也拿不到退款。退款放在事务提交之后，避免"远端已退 + 本地回滚"被重试放大。
+        if (fromStatus != null && fromStatus == 1) {
+            BigDecimal payAmount = order.getPayAmount();
+            String refundOrderNo = order.getOrderNo();
+            registerAfterCommit(() -> refundForCancel(refundOrderNo, payAmount));
+        }
         log.info("订单取消成功: orderNo={}, operator={}", order.getOrderNo(), operator);
     }
 
@@ -626,6 +649,26 @@ public class OrderServiceImpl implements OrderService {
         }
         saveStatusLog(parent.getId(), fromStatus, 4, operator, reason);
         log.info("父订单取消成功: parentOrderNo={}, operator={}", parent.getOrderNo(), operator);
+    }
+
+    @Override
+    public boolean refundCancelledOnPaid(String orderNo) {
+        Order order = orderMapper.selectOne(
+                new LambdaQueryWrapper<Order>().eq(Order::getOrderNo, orderNo));
+        if (order == null || order.getStatus() == null || order.getStatus() != 4) {
+            return false;
+        }
+        // 只处理"取消关闭"(close_type=1)：退款关闭(2)的钱已由售后链路退回，再退一次就是重复退款
+        if (order.getCloseType() == null || order.getCloseType() != 1) {
+            return false;
+        }
+        log.warn("支付成功但订单已取消关闭，发起原路退款: orderNo={}, payAmount={}", orderNo, order.getPayAmount());
+        // 退款失败必须抛出让 MQ 重试：refNo 幂等，重试不会重复退款；
+        // 若在此吞掉，消息被当作消费成功，这笔钱就只能等人工发现。
+        if (!refundForCancel(orderNo, order.getPayAmount())) {
+            throw new BusinessException("已取消订单的退款失败，等待重试");
+        }
+        return true;
     }
 
     @Override
@@ -775,9 +818,15 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-    /** 秒杀订单判定：SeckillOrderConsumer 创建时固定写入 remark="秒杀活动订单"，且无独立类型字段 */
+    /**
+     * 秒杀订单判定：以 {@code biz_key} 前缀为准，不采信 remark。
+     *
+     * <p>remark 来自下单入参（{@code createDTO.getRemark()}），普通订单也能写成"秒杀活动订单"；
+     * 一旦伪造，本单支付时的库存核销、取消时的库存释放会被整体跳过，预占的 lock_stock 永久回不来。
+     * biz_key 只由 {@link SeckillOrderCreator} 在消费秒杀消息时写入，普通下单恒为 NULL，无法伪造。
+     */
     private boolean isSeckillOrder(Order order) {
-        return order != null && SECKILL_ORDER_REMARK.equals(order.getRemark());
+        return order != null && SeckillOrderCreator.isSeckillBizKey(order.getBizKey());
     }
 
     /**
@@ -1025,6 +1074,59 @@ public class OrderServiceImpl implements OrderService {
                 }
             }
         });
+    }
+
+    /**
+     * 登记"本地事务提交后"执行的远端写动作。
+     *
+     * <p>退款这类资金写必须放在提交之后：放进事务内的话，"远端已退款 + 本地回滚"会在重试时
+     * 重复退款，而资金不像库存那样可以简单回补。
+     */
+    private void registerAfterCommit(Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            action.run(); // 非事务上下文（异常调用路径）：直接执行，不静默丢弃资金动作
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
+    }
+
+    /**
+     * 取消已支付订单后的退款，以子订单/独立订单为维度，refNo 固定为 {@code CANCEL:{orderNo}} 保证幂等。
+     *
+     * <p>拆单场景下支付单挂在父订单号上，byw-pay 的 {@code findRefundablePayOrder} 会回溯父单，
+     * 并用"累计退款 ≤ 支付金额"兜底，因此逐子单退款合计恰好等于父单实付，不会漏也不会重。
+     *
+     * <p>提交后 best-effort：失败不回滚取消（钱已收、货未发，取消对用户有利），但必须打 error
+     * 并留全 orderNo/amount/refNo 供人工或对账补退。refNo 幂等，重复驱动安全。
+     *
+     * @return 退款是否成功（无需退款时视为成功）
+     */
+    private boolean refundForCancel(String orderNo, BigDecimal payAmount) {
+        if (payAmount == null || payAmount.signum() <= 0) {
+            return true;
+        }
+        String refNo = "CANCEL:" + orderNo;
+        // 退款原因用固定文案，不拼接用户填写的取消原因：t_refund_record.reason 是 VARCHAR(200)，
+        // 超长会在退款内部抛截断异常，反而让这笔退款静默失败。用户填的原因已存在 t_order.cancel_reason。
+        String refundReason = "订单取消退款";
+        try {
+            R<Boolean> result = payFeignClient.refund(orderNo, payAmount, refundReason, refNo);
+            if (result == null || !result.isSuccess() || !Boolean.TRUE.equals(result.getData())) {
+                log.error("取消订单退款失败，需人工补退: orderNo={}, amount={}, refNo={}, msg={}",
+                        orderNo, payAmount, refNo, result == null ? "null" : result.getMessage());
+                return false;
+            }
+            log.info("取消订单退款成功: orderNo={}, amount={}, refNo={}", orderNo, payAmount, refNo);
+            return true;
+        } catch (Exception e) {
+            log.error("取消订单退款异常，需人工补退: orderNo={}, amount={}, refNo={}", orderNo, payAmount, refNo, e);
+            return false;
+        }
     }
 
     /** 回滚补偿：把本单核销掉的券恢复为未使用 */

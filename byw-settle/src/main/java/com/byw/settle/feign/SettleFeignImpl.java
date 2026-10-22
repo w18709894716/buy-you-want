@@ -18,6 +18,7 @@ import com.byw.settle.service.WithdrawService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -55,6 +56,15 @@ public class SettleFeignImpl implements SettleFeignClient {
                                                             @RequestParam(value = "pageNum", defaultValue = "1") Integer pageNum,
                                                             @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize) {
         return R.ok(settleService.listSettleRecords(shopId, status, pageNum, pageSize));
+    }
+
+    @Override
+    @PostMapping("/refund-adjust")
+    public R<Boolean> adjustOnRefund(@RequestParam("orderNo") String orderNo,
+                                     @RequestParam("refundAmount") BigDecimal refundAmount,
+                                     @RequestParam("refNo") String refNo) {
+        settleService.adjustOnRefund(orderNo, refundAmount, refNo);
+        return R.ok(true);
     }
 
     @Override

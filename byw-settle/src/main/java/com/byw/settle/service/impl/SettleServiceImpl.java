@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -124,6 +125,77 @@ public class SettleServiceImpl implements SettleService {
             log.info("T+N 结算入账完成，本次入账 {} 笔", count);
         }
         return count;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void adjustOnRefund(String orderNo, BigDecimal refundAmount, String refNo) {
+        if (refundAmount == null || refundAmount.signum() <= 0) {
+            return;
+        }
+        // 无幂等键就无法保证不重复冲减，直接拒绝而不是冒险扣钱
+        if (refNo == null || refNo.isEmpty()) {
+            throw new BusinessException("退款冲减缺少业务幂等键");
+        }
+        SettleRecord record = settleRecordMapper.selectOne(new LambdaQueryWrapper<SettleRecord>()
+                .eq(SettleRecord::getOrderNo, orderNo)
+                .last("LIMIT 1"));
+        if (record == null) {
+            // 结算单在确认收货时才生成：收货前的退款（未发货仅退款、退货退款）本就无结算可冲减
+            log.info("退款无对应结算单，跳过冲减: orderNo={}, refundAmount={}", orderNo, refundAmount);
+            return;
+        }
+        if (record.getStatus() != null && record.getStatus() == 2) {
+            log.info("结算单已因退款关闭，跳过: settleNo={}, orderNo={}", record.getSettleNo(), orderNo);
+            return;
+        }
+        // 幂等：同一售后单号只冲减一次。冲减在 byw-order 的终态事务提交之后发起，
+        // 进程崩溃重试或对账重驱都可能重复调用，靠余额流水的 refNo 判定。
+        if (balanceService.hasRefundDeduction(refNo)) {
+            log.info("退款冲减已处理过，跳过: settleNo={}, refNo={}", record.getSettleNo(), refNo);
+            return;
+        }
+
+        BigDecimal orderAmount = record.getOrderAmount();
+        BigDecimal settleAmount = record.getSettleAmount();
+        if (orderAmount == null || orderAmount.signum() <= 0
+                || settleAmount == null || settleAmount.signum() <= 0) {
+            log.info("结算单无可冲减金额，跳过: settleNo={}, orderAmount={}, settleAmount={}",
+                    record.getSettleNo(), orderAmount, settleAmount);
+            return;
+        }
+        // 商家应担份额按结算占比折算：平台佣金那部分随退款一并让出，不由商家独自承担
+        BigDecimal merchantShare = refundAmount.multiply(settleAmount)
+                .divide(orderAmount, 2, RoundingMode.HALF_UP)
+                .min(settleAmount);
+        if (merchantShare.signum() <= 0) {
+            log.info("退款折算后商家份额为 0，跳过: settleNo={}, refundAmount={}",
+                    record.getSettleNo(), refundAmount);
+            return;
+        }
+
+        if (record.getStatus() != null && record.getStatus() == 1) {
+            // 已过冷静期入账：钱在商家可用余额里，从余额冲减（余额不足说明已提现，抛错交人工追偿）
+            balanceService.deductAvailableForRefund(record.getShopId(), merchantShare, refNo,
+                    "退款冲减已入账结算:" + orderNo);
+            log.warn("结算入账后发生退款，已从可用余额冲减: settleNo={}, orderNo={}, merchantShare={}, refNo={}",
+                    record.getSettleNo(), orderNo, merchantShare, refNo);
+            return;
+        }
+
+        // 冷静期内：全额退完直接关单，部分退款下调应得金额；两者都要把待结算额度扣回来。
+        // CAS 失败说明 T+N 入账任务已并发生效，抛错让调用方按"已入账"重驱，绝不静默漏扣。
+        boolean fullRefund = merchantShare.compareTo(settleAmount) >= 0;
+        int rows = fullRefund
+                ? settleRecordMapper.closeForRefund(record.getId(), "退款全额冲减，结算关闭:" + refNo)
+                : settleRecordMapper.reduceSettleAmount(record.getId(), merchantShare);
+        if (rows == 0) {
+            throw new BusinessException("结算单状态已变更，退款冲减失败: settleNo=" + record.getSettleNo());
+        }
+        balanceService.deductPendingForRefund(record.getShopId(),
+                fullRefund ? settleAmount : merchantShare, refNo, "退款冲减待结算:" + orderNo);
+        log.info("退款冲减待结算完成: settleNo={}, orderNo={}, merchantShare={}, fullRefund={}, refNo={}",
+                record.getSettleNo(), orderNo, merchantShare, fullRefund, refNo);
     }
 
     @Override

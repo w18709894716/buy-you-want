@@ -182,7 +182,7 @@ public class SeckillOrderConsumer implements RocketMQListener<Map<String, Object
     private String buildBizKey(Long activityId, Long itemId, Long skuId, Long userId) {
         String itemPart = itemId != null ? String.valueOf(itemId)
                 : (skuId != null ? "sku" + skuId : "act" + activityId);
-        return "seckill:" + itemPart + ":" + userId;
+        return SeckillOrderCreator.BIZ_KEY_PREFIX + itemPart + ":" + userId;
     }
 
     private Long toLong(Object obj) {

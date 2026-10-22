@@ -37,6 +37,14 @@ public interface PayService {
     void handleMockCallback(String channel, String payNo, String tradeNo);
 
     /**
+     * 模拟支付（服务间调用）：把支付单置为已支付，走与真实回调相同的落库 + 事务消息路径。
+     *
+     * <p>闸门与 {@link #handleMockCallback} 完全一致（{@code byw.pay.mock-enabled=true} + 支付单归属校验）。
+     * userId 显式入参，不依赖 {@code UserContext} 的跨服务透传。
+     */
+    void mockPay(String payNo, Long userId);
+
+    /**
      * 支付成功回调的本地事务：将支付单置为已支付。
      * 由事务消息的半消息落盘后调用，必须经 Spring 代理调用才会开启事务。
      */

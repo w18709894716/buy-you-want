@@ -24,6 +24,20 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class SeckillOrderCreator {
 
+    /**
+     * 秒杀订单业务幂等键前缀，也是**唯一可信的秒杀订单标识**。
+     *
+     * <p>{@code t_order.biz_key} 只由本类在消费秒杀消息时写入，普通下单链路从不设置（恒为 NULL），
+     * 客户端无法通过任何入参影响它。此前用 {@code remark == "秒杀活动订单"} 判定，而 remark
+     * 直接来自下单入参，伪造后会让库存核销/释放/回补全部被跳过，导致预占库存永久锁死。
+     */
+    public static final String BIZ_KEY_PREFIX = "seckill:";
+
+    /** 是否秒杀订单：以 biz_key 前缀判定，不采信任何用户可控字段 */
+    public static boolean isSeckillBizKey(String bizKey) {
+        return bizKey != null && bizKey.startsWith(BIZ_KEY_PREFIX);
+    }
+
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
     private final OrderStatusLogMapper orderStatusLogMapper;

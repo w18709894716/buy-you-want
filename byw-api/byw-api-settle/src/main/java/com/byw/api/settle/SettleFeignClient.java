@@ -37,6 +37,16 @@ public interface SettleFeignClient {
                                                      @RequestParam(value = "pageNum", defaultValue = "1") Integer pageNum,
                                                      @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize);
 
+    /**
+     * 退款联动冲减结算（供 byw-order 售后退款成功后调用）。
+     *
+     * @param refNo 业务幂等键（售后单号），重复调用只冲减一次
+     */
+    @PostMapping("/feign/settle/refund-adjust")
+    R<Boolean> adjustOnRefund(@RequestParam("orderNo") String orderNo,
+                              @RequestParam("refundAmount") java.math.BigDecimal refundAmount,
+                              @RequestParam("refNo") String refNo);
+
     // ========== 提现 ==========
 
     @PostMapping("/feign/settle/withdraw/apply")

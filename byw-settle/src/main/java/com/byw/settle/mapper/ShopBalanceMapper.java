@@ -48,4 +48,20 @@ public interface ShopBalanceMapper extends BaseMapper<ShopBalance> {
             + "available_balance = available_balance + #{amount}, updated_at = NOW() "
             + "WHERE shop_id = #{shopId} AND deleted = 0 AND frozen_amount >= #{amount}")
     int unfreezeForReject(@Param("shopId") Long shopId, @Param("amount") BigDecimal amount);
+
+    /** 退款冲减待结算：pending -= amount（结算单仍在冷静期，钱还没进商家可用余额） */
+    @Update("UPDATE t_shop_balance SET pending_amount = pending_amount - #{amount}, updated_at = NOW() "
+            + "WHERE shop_id = #{shopId} AND deleted = 0 AND pending_amount >= #{amount}")
+    int reducePending(@Param("shopId") Long shopId, @Param("amount") BigDecimal amount);
+
+    /**
+     * 退款冲减可用余额：available -= amount、total_income -= amount（结算单已入账后的退款）。
+     *
+     * <p>守卫 {@code available_balance >= amount}：商家可能已把这笔钱提现走了，此时扣不动，
+     * 由调用方按失败处理并告警人工追偿，绝不把余额扣成负数。
+     */
+    @Update("UPDATE t_shop_balance SET available_balance = available_balance - #{amount}, "
+            + "total_income = total_income - #{amount}, updated_at = NOW() "
+            + "WHERE shop_id = #{shopId} AND deleted = 0 AND available_balance >= #{amount}")
+    int reduceAvailable(@Param("shopId") Long shopId, @Param("amount") BigDecimal amount);
 }
