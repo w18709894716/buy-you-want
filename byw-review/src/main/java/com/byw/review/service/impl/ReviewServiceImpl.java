@@ -22,6 +22,7 @@ import com.byw.review.repository.ReviewDetailRepository;
 import com.byw.review.service.ReviewService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
@@ -84,7 +85,15 @@ public class ReviewServiceImpl implements ReviewService {
         review.setIsAnonymous(isAnonymous != null ? isAnonymous : 0);
         review.setHasImage(reviewDetail.getImages() != null && !reviewDetail.getImages().isEmpty() ? 1 : 0);
         review.setStatus(1); // 显示
-        reviewMapper.insert(review);
+        try {
+            reviewMapper.insert(review);
+        } catch (DuplicateKeyException e) {
+            // uk_order_sku_active 兜底：两个并发提交同时通过了上面的查重，只有一个能落库。
+            // 这里按"已评价"返回，而不是把数据库异常抛成 500。
+            log.warn("评价写入撞唯一键（并发重复提交）: orderNo={}, skuId={}",
+                    reviewDetail.getOrderId(), reviewDetail.getSkuId());
+            throw new BusinessException("该订单已评价");
+        }
 
         // 4. 保存图片到MySQL
         if (reviewDetail.getImages() != null) {
@@ -341,8 +350,8 @@ public class ReviewServiceImpl implements ReviewService {
 
         // 同页内相同商品仅查询一次名称
         Map<Long, String> productNameCache = new HashMap<>();
-        // 同页内相同用户仅查询一次名称
-        Map<Long, String> userNameCache = new HashMap<>();
+        // 整页用户昵称一次 Feign 取回（原先每个不同用户一次远程调用，一页 10 条最多 10 次往返）
+        Map<Long, String> userNameCache = loadUserNames(reviewPage.getRecords());
         List<Map<String, Object>> list = reviewPage.getRecords().stream().map(r -> {
             Map<String, Object> map = new LinkedHashMap<>();
             map.put("id", r.getId());
@@ -414,6 +423,42 @@ public class ReviewServiceImpl implements ReviewService {
             }
             return "商品#" + pid;
         });
+    }
+
+    /**
+     * 批量取用户展示名（昵称优先、其次用户名），一次 Feign 调用完成整页回填。
+     *
+     * <p>取不到的用户不会出现在返回的 map 里，交给 {@link #resolveUserName} 的
+     * {@code computeIfAbsent} 逐条补查 —— 单条失败仍降级成 用户{id}，不阻断列表渲染。
+     */
+    private Map<Long, String> loadUserNames(List<Review> reviews) {
+        Map<Long, String> names = new HashMap<>();
+        List<Long> userIds = reviews.stream()
+                .map(Review::getUserId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (userIds.isEmpty()) {
+            return names;
+        }
+        try {
+            R<List<UserDTO>> resp = userFeignClient.getUsersByIds(userIds);
+            if (resp != null && resp.isSuccess() && resp.getData() != null) {
+                for (UserDTO u : resp.getData()) {
+                    if (u.getId() == null) {
+                        continue;
+                    }
+                    String name = u.getNickname() != null && !u.getNickname().isBlank()
+                            ? u.getNickname() : u.getUsername();
+                    if (name != null && !name.isBlank()) {
+                        names.put(u.getId(), name);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("批量获取用户名称失败，将逐条补查: {}", e.getMessage());
+        }
+        return names;
     }
 
     /**
@@ -575,7 +620,13 @@ public class ReviewServiceImpl implements ReviewService {
             review.setIsAnonymous(detail.getIsAnonymous() != null ? detail.getIsAnonymous() : 0);
             review.setHasImage(detail.getImages() != null && !detail.getImages().isEmpty() ? 1 : 0);
             review.setStatus(1);
-            reviewMapper.insert(review);
+            try {
+                reviewMapper.insert(review);
+            } catch (DuplicateKeyException e) {
+                // 同 createReview：并发重复提交由唯一键兜底；整批回滚
+                log.warn("批量评价写入撞唯一键（并发重复提交）: orderNo={}, skuId={}", orderNo, detail.getSkuId());
+                throw new BusinessException("该订单已评价");
+            }
 
             // 6. 保存图片
             if (detail.getImages() != null) {

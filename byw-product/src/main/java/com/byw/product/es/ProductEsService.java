@@ -159,7 +159,7 @@ public class ProductEsService implements ApplicationRunner {
         if (product == null || product.getId() == null) {
             return;
         }
-        markPendingSync(product.getId());
+        boolean marked = markPendingSync(product.getId());
         if (!available) {
             return;
         }
@@ -167,7 +167,14 @@ public class ProductEsService implements ApplicationRunner {
             elasticsearchOperations.save(toDoc(product));
             clearPendingSync(product.getId());
         } catch (Exception e) {
-            log.warn("同步商品到 ES 失败，已登记待补同步: id={}, err={}", product.getId(), e.getMessage());
+            if (marked) {
+                log.warn("同步商品到 ES 失败，已登记待补同步: id={}, err={}", product.getId(), e.getMessage());
+            } else {
+                // 既没写进 ES、也没登记成功 —— 补同步任务永远不会处理它，索引会永久缺这条。
+                // 必须 error 级别 + 说清怎么修，否则只能等有人发现搜索结果对不上。
+                log.error("同步商品到 ES 失败且无法登记待补同步，该商品将长期不在索引中，"
+                        + "需人工调用 /product/es/reindex 重建: id={}, err={}", product.getId(), e.getMessage());
+            }
         }
     }
 
@@ -176,7 +183,7 @@ public class ProductEsService implements ApplicationRunner {
         if (productId == null) {
             return;
         }
-        markPendingSync(productId);
+        boolean marked = markPendingSync(productId);
         if (!available) {
             return;
         }
@@ -184,7 +191,12 @@ public class ProductEsService implements ApplicationRunner {
             elasticsearchOperations.delete(productId.toString(), IndexCoordinates.of(ProductDoc.INDEX));
             clearPendingSync(productId);
         } catch (Exception e) {
-            log.warn("从 ES 删除商品失败，已登记待补同步: id={}, err={}", productId, e.getMessage());
+            if (marked) {
+                log.warn("从 ES 删除商品失败，已登记待补同步: id={}, err={}", productId, e.getMessage());
+            } else {
+                log.error("从 ES 删除商品失败且无法登记待补同步，该商品会继续留在索引里被搜到，"
+                        + "需人工调用 /product/es/reindex 重建: id={}, err={}", productId, e.getMessage());
+            }
         }
     }
 
@@ -239,11 +251,14 @@ public class ProductEsService implements ApplicationRunner {
         }
     }
 
-    private void markPendingSync(Long productId) {
+    /** @return true 表示已成功登记进待补同步集合；false 表示 Redis 也写不进去，这条不会再被自动补同步 */
+    private boolean markPendingSync(Long productId) {
         try {
             redisUtil.sAdd(ES_DIRTY_SET, productId);
+            return true;
         } catch (Exception e) {
-            log.warn("登记待补同步商品失败: id={}, err={}", productId, e.getMessage());
+            log.error("登记待补同步商品失败: id={}, err={}", productId, e.getMessage());
+            return false;
         }
     }
 

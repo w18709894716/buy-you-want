@@ -113,7 +113,10 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
     }
 
     @Override
-    @Cached(name = CacheNames.PRODUCT_DETAIL, key = "#id", expire = 30, timeUnit = TimeUnit.MINUTES)
+    // cacheNullValue：不存在的 id 也缓存，否则伪造商品 id 反复访问就是稳定穿透到 DB。
+    // 商品 id 由雪花算法在插入时生成，不存在"先查不到、后来被创建"的脏读窗口。
+    @Cached(name = CacheNames.PRODUCT_DETAIL, key = "#id", expire = 30, timeUnit = TimeUnit.MINUTES,
+            cacheNullValue = true)
     public Product getProductDetail(Long id) {
         return baseMapper.selectById(id);
     }

@@ -500,11 +500,24 @@ public class OrderServiceImpl implements OrderService {
         Page<Order> page = new Page<>(pageNum, pageSize);
         Page<Order> orderPage = orderMapper.selectPage(page, wrapper);
 
-        List<OrderDetailDTO> dtoList = orderPage.getRecords().stream().map(order -> {
-            List<OrderItem> items = orderItemMapper.selectList(
-                    new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderNo, order.getOrderNo()));
-            return buildOrderDetailDTO(order, items);
-        }).collect(Collectors.toList());
+        // 明细一次查完整页再按 orderNo 归组：原来每单一条 SQL，一页 10 条就是 10 次额外往返，
+        // 且这些往返都在同一个请求线程里串行，翻页越频繁越明显。
+        List<String> pageOrderNos = orderPage.getRecords().stream()
+                .map(Order::getOrderNo)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        Map<String, List<OrderItem>> itemsByOrderNo = pageOrderNos.isEmpty()
+                ? java.util.Collections.emptyMap()
+                : orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                        .in(OrderItem::getOrderNo, pageOrderNos))
+                  .stream()
+                  .collect(Collectors.groupingBy(OrderItem::getOrderNo));
+
+        List<OrderDetailDTO> dtoList = orderPage.getRecords().stream()
+                .map(order -> buildOrderDetailDTO(order,
+                        itemsByOrderNo.getOrDefault(order.getOrderNo(), java.util.Collections.emptyList())))
+                .collect(Collectors.toList());
 
         fillShopNames(dtoList);
         fillAfterSaleSummary(dtoList);

@@ -2,6 +2,8 @@ package com.byw.product.feign;
 
 import jakarta.validation.Valid;
 import com.byw.common.log.annotation.OperationLog;
+import com.alicp.jetcache.Cache;
+import com.alicp.jetcache.CacheManager;
 import com.alicp.jetcache.anno.CacheInvalidate;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -63,6 +65,8 @@ public class ProductFeignImpl implements ProductFeignClient {
     private final BannerService bannerService;
     private final ShopFeignClient shopFeignClient;
     private final ProductEsService productEsService;
+    /** 批量失效商品详情缓存用（@CacheInvalidate 表达不了多 key） */
+    private final CacheManager cacheManager;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
@@ -142,8 +146,12 @@ public class ProductFeignImpl implements ProductFeignClient {
                 new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Product>()
                         .eq(Product::getId, productId)
                         .setSql("sales_count = IFNULL(sales_count, 0) + " + qty)));
-        // 销量变化同步 ES（sales 排序维度）
+        // 销量变了，详情缓存里还是旧值（TTL 30 分钟），商品页会长时间显示过期销量。
+        // 一次请求涉及多个商品，@CacheInvalidate 只能表达单个 key，所以直接按 key 逐个清；
+        // 清缓存与同步 ES 合成一个循环，避免再为同一批 id 查两遍。
+        Cache<Object, Object> detailCache = cacheManager.getCache(CacheNames.PRODUCT_DETAIL);
         for (Long productId : productQty.keySet()) {
+            detailCache.remove(productId);
             Product p = productService.getById(productId);
             if (p != null) productEsService.upsert(p);
         }

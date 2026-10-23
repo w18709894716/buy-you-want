@@ -37,7 +37,10 @@ public class ShopServiceImpl implements ShopService {
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     @Override
-    @Cached(name = CacheNames.SHOP_INFO, key = "#shopId", expire = 30, timeUnit = TimeUnit.MINUTES)
+    // cacheNullValue：不存在的 shopId 也缓存，避免伪造 id 反复穿透到 DB。
+    // 店铺 id 自增，不存在"先查不到、后来被创建"的脏读窗口。
+    @Cached(name = CacheNames.SHOP_INFO, key = "#shopId", expire = 30, timeUnit = TimeUnit.MINUTES,
+            cacheNullValue = true)
     public ShopDTO getShopById(Long shopId) {
         Shop shop = shopMapper.selectById(shopId);
         return toShopDTO(shop);

@@ -31,8 +31,8 @@ public class UserController {
         User user = userService.getUserDetail(userId);
         if (user != null) {
             // 密码哈希属于凭据，任何出网接口都不得返回（见 docs/development/security-hardening.md 第 3 条）。
+            // getUserDetail 在服务层已经抹掉 password（缓存里也不带），这里再置空是出口处的兜底。
             // 手机号/邮箱是本人信息、个人中心需要展示，与公开端点 /user/{userId} 不同，这里保留。
-            // getUserDetail 走 JetCache remote（无本地缓存），每次都是反序列化出的新实例，置空不会污染缓存。
             user.setPassword(null);
         }
         return R.ok(user);
@@ -44,6 +44,7 @@ public class UserController {
         User user = userService.getUserDetail(userId);
         if (user != null) {
             // 公开端点：裁剪敏感字段，仅保留展示所需的公开信息
+            // （password 服务层已抹掉，这里一并清掉，避免后续有人换掉 getDetail 的实现时漏掉）
             user.setPassword(null);
             user.setPhone(null);
             user.setEmail(null);
