@@ -148,6 +148,12 @@ const router = createRouter({
   routes
 })
 
+/**
+ * 权限集本地缓存的有效期。超过后守卫会重新拉取：后台改授权后，最迟这么久就会在界面上生效，
+ * 而不是一直沿用 localStorage 里那份永不更新的旧权限。
+ */
+const PERMS_CACHE_TTL_MS = 10 * 60 * 1000
+
 // 路由守卫：登录校验 + 页面级权限校验
 router.beforeEach(async (to, from, next) => {
   const token = getToken()
@@ -162,15 +168,26 @@ router.beforeEach(async (to, from, next) => {
   // 已登录访问业务页：确保菜单/权限已加载，再做 perm 校验
   if (token && to.path !== '/login' && to.path !== '/403') {
     const store = useUserStore()
-    if (store.perms.length === 0 && store.menus.length === 0) {
+    // 只看时间戳，不看 perms 是否为空：确实没有任何权限的账号也是"已加载"，
+    // 若把它当作未加载，每次路由切换都会重打一次 /admin/me/menus。
+    const cacheFresh = store.permsCachedAt > 0
+      && Date.now() - store.permsCachedAt < PERMS_CACHE_TTL_MS
+    // permsKnown 表示"这次确实拿到了权限集"。拉取失败时它是 false：
+    // 此时**不做**前端权限判断、直接放行，由后端接口鉴权兜底。
+    // 原实现拉取失败也继续往下走 hasPerm，而权限集为空时 hasPerm 恒为 false，
+    // 结果是后端一抖动所有人（含超管）都被丢到 /403 —— 注释写的"不阻断跳转"与行为正好相反。
+    let permsKnown = cacheFresh
+    if (!cacheFresh) {
       try {
         await store.fetchMenus()
+        permsKnown = true
       } catch {
-        // 拉取失败不阻断跳转，交由后端接口鉴权兜底
+        // 保留已有缓存（可能为空），但不据此拒绝导航
+        console.warn('[router] 拉取菜单/权限失败，本次跳过前端权限校验，交由后端鉴权兜底')
       }
     }
     const perm = to.meta?.perm as string | undefined
-    if (perm && !hasPerm(perm)) {
+    if (permsKnown && perm && !hasPerm(perm)) {
       next('/403')
       return
     }

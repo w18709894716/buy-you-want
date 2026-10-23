@@ -26,7 +26,15 @@ import java.util.List;
 @Component
 public class ApiDocsAccessFilter implements GlobalFilter, Ordered {
 
-    private static final List<String> DOC_PATH_PREFIXES = List.of("/v3/api-docs", "/swagger-ui", "/webjars");
+    /**
+     * 关闭文档后要一并挡住的路径前缀。
+     *
+     * <p>必须与 {@code byw-common-security} 的 {@code WebMvcConfig} 里各服务免登录放行的路径保持同一份口径：
+     * 那边把 {@code /doc.html}、{@code /swagger-resources} 也从鉴权拦截器里排除了，
+     * 这里若只挡 {@code /v3/api-docs} 和 {@code /swagger-ui}，等于"关了文档但 knife4j 首页还开着"。
+     */
+    private static final List<String> DOC_PATH_PREFIXES = List.of(
+            "/v3/api-docs", "/swagger-ui", "/swagger-resources", "/doc.html", "/webjars");
 
     @Value("${byw.gateway.api-docs.enabled:true}")
     private boolean apiDocsEnabled;

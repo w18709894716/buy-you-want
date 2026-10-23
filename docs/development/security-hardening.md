@@ -31,7 +31,8 @@
 | `BYW_API_DOCS_ENABLED=false` | 关闭 API 文档 | 全站接口结构对外可见 |
 | `BYW_SECURITY_WS_ALLOWED_ORIGINS` | WebSocket 允许来源 | 默认只放行 localhost |
 | `MYSQL_PASSWORD` / `REDIS_HOST` 等 | 数据源凭据 | 默认 root/root、localhost |
-| `byw.pay.mock-enabled=false` | 关闭模拟支付回调 | 回调不做渠道验签（当前仅限支付单归属用户可触发，仍不应在生产开启） |
+| `REDIS_PASSWORD` | Redis 认证口令 | 默认不写该配置（本地 Redis 无密码）。Redis 里存着全部 Sa-Token 会话与权限集，能连到 6379 的人可以伪造任意用户登录，**生产必须开启**：给 Redis 配 `requirepass` 后，在 `byw-common.yml` 的 `spring.data.redis` 下加 `password: ${REDIS_PASSWORD}`。注意**不要**写成 `${REDIS_PASSWORD:}` —— Spring 会把它绑定成空字符串而不是 null，Redisson 只判 null，于是会发一个空密码的 `AUTH`，连没有密码的 Redis 都会认证失败导致全部服务起不来 |
+| `BYW_PAY_MOCK_ENABLED` | 模拟支付开关（`byw-pay.yml` 默认 true，仅本地/演示） | 代码默认值是 **false**（fail-closed）：漏配时表现为"模拟支付不可用"，而不是"凭支付单号就能把订单标记为已支付"。开启时回调不做渠道验签（仍仅限支付单归属用户可触发），生产必须关闭 |
 
 **另外两项必须在部署层完成**（代码无法覆盖）：
 

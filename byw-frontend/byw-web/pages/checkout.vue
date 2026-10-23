@@ -740,9 +740,14 @@ async function payNow() {
       })),
     }
     const orderNo = await post<string>('/order/create', orderData)
-    // 清空已下单的购物车项
+    // 清空已下单的购物车项：订单已经创建成功，这一步失败不能把整个下单流程打断
+    // （removeItem 现在失败会抛出且不改本地状态，所以单项失败时后面的项还要继续清）
     for (const item of orderItems.value) {
-      await cartStore.removeItem(item.cartId)
+      try {
+        await cartStore.removeItem(item.cartId)
+      } catch (e) {
+        console.warn('清理购物车项失败，订单已创建', item.cartId, e)
+      }
     }
     // 2. 发起支付（走 byw-pay：创建支付单 + 模拟渠道回调，无第三方跳转）
     //    若支付失败，订单仍为待支付，引导用户去支付页继续支付

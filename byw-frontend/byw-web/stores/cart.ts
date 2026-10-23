@@ -111,20 +111,22 @@ export const useCartStore = defineStore('cart', {
       await this.getCartList()
     },
 
-    /** 删除购物车商品 */
+    /**
+     * 删除购物车商品。
+     *
+     * <p>失败必须抛出去、且**不改本地状态**：此前 catch 后照样 filter 掉本地项，
+     * 界面显示"删除成功"，刷新后商品又回来了 —— 用户以为删掉的东西还在，
+     * 下次下单会连带买走。本地状态只能在服务端确认之后再动。
+     */
     async removeItem(cartId: number) {
       const item = this.items.find(i => i.cartId === cartId)
       if (!item) return
-      try {
-        await del(`/cart/${item.skuId}`)
-      } catch {
-        // ignore
-      }
+      await del(`/cart/${item.skuId}`)
       this.items = this.items.filter(i => i.cartId !== cartId)
       this.saveLocal()
     },
 
-    /** 更新商品数量 */
+    /** 更新商品数量；失败同样抛出且不改本地状态，理由同 {@link removeItem} */
     async updateQuantity(cartId: number, quantity: number) {
       const item = this.items.find(i => i.cartId === cartId)
       if (!item) return
@@ -134,11 +136,7 @@ export const useCartStore = defineStore('cart', {
         return
       }
 
-      try {
-        await put('/cart/update', null, { params: { skuId: item.skuId, quantity } })
-      } catch {
-        // ignore
-      }
+      await put('/cart/update', null, { params: { skuId: item.skuId, quantity } })
       item.quantity = quantity
       this.saveLocal()
     },

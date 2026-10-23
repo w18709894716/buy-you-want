@@ -90,12 +90,19 @@ services:
       - byw-mongo-data:/data/db
 
   elasticsearch:
-    image: elasticsearch:7.17.18
+    # 版本必须与客户端同级：Spring Boot 3.2.5 管到的是 elasticsearch-java 8.11.x，
+    # 8.x 客户端连 7.x 服务端属官方不支持组合（部分 API 会直接报 media_type 错误）。
+    # 与 docs 里写的 8.13.4 和本地开发用的版本保持一致。
+    # 注意：8.x 只能从 7.17 的数据目录就地升级；若 byw-es-data 是更早的 7.x 写的，
+    # 需先 docker compose down -v（索引可由 ProductEsService 重建）或先起 7.17.18 过渡。
+    image: elasticsearch:8.13.4
     container_name: byw-elasticsearch
     environment:
       discovery.type: single-node
       xpack.security.enabled: "false"
       ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      # 单机演示关掉地理 IP 下载，否则首次启动会卡在联网拉取 GeoIP 库
+      ingest.geoip.downloader.enabled: "false"
     ports:
       - "9200:9200"
     volumes:

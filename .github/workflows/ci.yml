@@ -71,7 +71,12 @@ jobs:
       - uses: actions/checkout@v4
 
       # 只校验语法与变量插值，不真正构建镜像（16 个镜像的构建放在发布流水线里按需触发）
+      # docker-compose.app.yml 用 ${JASYPT_ENCRYPTOR_PASSWORD:?} 强制要求注入主密钥，
+      # 不提供一个占位值的话 `compose config` 会直接以"变量未设置"退出，本 job 永远红。
+      # 这里只做插值不启动容器，占位值不会进入任何运行时。
       - name: docker compose config
+        env:
+          JASYPT_ENCRYPTOR_PASSWORD: ci-config-validation-only
         run: |
           docker compose -f deploy/docker-compose.yml config -q
           docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.app.yml config -q

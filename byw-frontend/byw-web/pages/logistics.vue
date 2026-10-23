@@ -124,6 +124,9 @@
 import { ref, computed, onMounted } from 'vue'
 import { get } from '~/utils/request'
 
+// 物流轨迹按订单号查，必须是登录用户才能看；未登录由中间件带着回跳地址送登录页
+definePageMeta({ middleware: ['auth'] })
+
 interface Trace {
   description: string
   location?: string

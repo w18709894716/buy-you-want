@@ -58,11 +58,10 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public LoginResponse login(LoginRequest request) {
         String failureKey = loginFailureKey(CommonConstants.USER_TYPE_C, request.getUsername());
-        assertNotLocked(failureKey);
+        consumeLoginAttempt(failureKey);
         // Fetch user info (including password) via single Feign call
         R<UserDTO> result = userFeignClient.getUserByUsername(request.getUsername());
         if (!result.isSuccess() || result.getData() == null) {
-            recordLoginFailure(failureKey);
             throw new BusinessException(ResultCode.USER_NOT_FOUND);
         }
 
@@ -73,7 +72,6 @@ public class AuthServiceImpl implements AuthService {
 
         // Local password verification
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            recordLoginFailure(failureKey);
             throw new BusinessException(ResultCode.PASSWORD_ERROR);
         }
         clearLoginFailures(failureKey);
@@ -94,11 +92,10 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public LoginResponse adminLogin(LoginRequest request) {
         String failureKey = loginFailureKey(CommonConstants.USER_TYPE_SYS, request.getUsername());
-        assertNotLocked(failureKey);
+        consumeLoginAttempt(failureKey);
         // 平台员工登录主体为 t_sys_user（与 C 端会员彻底分离）
         R<SysUserDTO> result = rbacFeignClient.getSysUserByUsername(request.getUsername());
         if (!result.isSuccess() || result.getData() == null) {
-            recordLoginFailure(failureKey);
             throw new BusinessException(ResultCode.USER_NOT_FOUND);
         }
 
@@ -108,7 +105,6 @@ public class AuthServiceImpl implements AuthService {
         }
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            recordLoginFailure(failureKey);
             throw new BusinessException(ResultCode.PASSWORD_ERROR);
         }
         clearLoginFailures(failureKey);
@@ -129,10 +125,9 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public LoginResponse merchantLogin(LoginRequest request) {
         String failureKey = loginFailureKey(CommonConstants.USER_TYPE_MERCHANT, request.getUsername());
-        assertNotLocked(failureKey);
+        consumeLoginAttempt(failureKey);
         R<MerchantAccountDTO> result = shopFeignClient.getMerchantByUsername(request.getUsername());
         if (!result.isSuccess() || result.getData() == null) {
-            recordLoginFailure(failureKey);
             throw new BusinessException(ResultCode.USER_NOT_FOUND);
         }
 
@@ -140,7 +135,6 @@ public class AuthServiceImpl implements AuthService {
 
         // 密码校验
         if (!passwordEncoder.matches(request.getPassword(), merchant.getPassword())) {
-            recordLoginFailure(failureKey);
             throw new BusinessException(ResultCode.PASSWORD_ERROR);
         }
         clearLoginFailures(failureKey);
@@ -345,32 +339,36 @@ public class AuthServiceImpl implements AuthService {
         return "auth:login:fail:" + userType + ":" + username;
     }
 
-    private void assertNotLocked(String failureKey) {
-        String value = stringRedisTemplate.opsForValue().get(failureKey);
-        if (value != null && parseCount(value) >= MAX_LOGIN_FAILURES) {
+    /**
+     * 消耗一次登录尝试额度：先原子自增计数，再按自增**之后**的值判定是否已锁定。
+     *
+     * <p>为什么计数要放在校验凭据**之前**：原实现是"先 get 判是否已锁 → 再校验密码 → 失败才 increment"，
+     * get 与 increment 之间没有原子性，并发发起 N 个请求时它们都能在计数达到上限前通过检查，
+     * 于是"最多试 5 次"实际变成"一批并发可以试 N 次"，撞库防护形同虚设。
+     * 改成先自增再判定后，判定依据就是 Redis 单命令的返回值，并发请求各自看到递增后的不同值，
+     * 超出上限的一律被拒；登录成功时由 {@link #clearLoginFailures} 把计数清零，
+     * 对正常用户仍然是"连续 5 次输错才锁"。
+     */
+    private void consumeLoginAttempt(String failureKey) {
+        Long count = stringRedisTemplate.opsForValue().increment(failureKey);
+        // 先确保计数键一定带 TTL，再判定：
+        // 首次写入设 15 分钟；若上次进程在 increment 与 expire 之间挂掉留下永不过期的键，这里自愈。
+        // 顺序不能反过来 —— 先抛"已锁定"再补 TTL 的话，那个账号会在超限后永久锁死
+        // （fail-closed 不能退化成对单账号的 DoS）。
+        Long ttlSeconds = stringRedisTemplate.getExpire(failureKey, TimeUnit.SECONDS);
+        if ((count != null && count == 1L) || (ttlSeconds != null && ttlSeconds == -1L)) {
+            stringRedisTemplate.expire(failureKey, LOGIN_FAILURE_TTL_MINUTES, TimeUnit.MINUTES);
+        }
+        // 取不到计数（Redis 处于 pipeline/事务等异常状态）时按已超限处理：宁可拒绝登录，
+        // 也不能在无法判定的情况下放行，否则锁定机制会在最需要它的时候失效。
+        if (count == null || count > MAX_LOGIN_FAILURES) {
             throw new BusinessException("登录失败次数过多，账号已临时锁定，请 "
                     + LOGIN_FAILURE_TTL_MINUTES + " 分钟后再试");
         }
     }
 
-    /** 记录一次凭据失败；仅在首次写入时设置 TTL，使锁定时长固定而不是被持续刷新 */
-    private void recordLoginFailure(String failureKey) {
-        Long count = stringRedisTemplate.opsForValue().increment(failureKey);
-        if (count != null && count == 1L) {
-            stringRedisTemplate.expire(failureKey, LOGIN_FAILURE_TTL_MINUTES, TimeUnit.MINUTES);
-        }
-    }
-
     private void clearLoginFailures(String failureKey) {
         stringRedisTemplate.delete(failureKey);
-    }
-
-    private long parseCount(String value) {
-        try {
-            return Long.parseLong(value.trim());
-        } catch (NumberFormatException e) {
-            return 0L;
-        }
     }
 
     /** 日志脱敏：只保留前 3 位与后 4 位 */

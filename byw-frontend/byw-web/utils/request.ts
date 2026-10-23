@@ -13,6 +13,11 @@ interface R<T = any> {
 
 interface RequestOptions extends Parameters<typeof $fetch>[1] {
   raw?: boolean // 是否返回原始响应（不解包）
+  /**
+   * 401 时只清本地 token，不跳登录页也不弹登录框。
+   * 给"本来就在清登录态"的调用用（如登出）：token 早已失效时再弹一次登录框是反效果。
+   */
+  skipAuthRedirect?: boolean
 }
 
 const TOKEN_KEY = 'byw_token'
@@ -138,7 +143,7 @@ export async function request<T = any>(
   url: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  const { raw = false, ...fetchOptions } = options
+  const { raw = false, skipAuthRedirect = false, ...fetchOptions } = options
   const config = useRuntimeConfig()
   const baseURL = config.public.apiBase as string
 
@@ -177,9 +182,13 @@ export async function request<T = any>(
     // 401 处理：清除失效 token；仅受保护页面跳登录，公开页面（如首页/商品页）原地弹出登录框不强跳
     if (error?.response?.status === 401 || error?.statusCode === 401) {
       clearToken()
-      if (import.meta.client) {
+      if (import.meta.client && !skipAuthRedirect) {
         if (!isPublicPath(window.location.pathname)) {
-          navigateTo('/login')
+          // 带上当前完整路径（含 query），登录成功后能回到用户原本在看的那一页而不是首页
+          navigateTo({
+            path: '/login',
+            query: { redirect: window.location.pathname + window.location.search },
+          })
         } else {
           // 弹出全局登录框；抛出 silent 错误供页面 catch 后跳过 Toast 提示
           useLoginModal().openLoginModal()

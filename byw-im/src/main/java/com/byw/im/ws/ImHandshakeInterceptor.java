@@ -62,14 +62,18 @@ public class ImHandshakeInterceptor implements HandshakeInterceptor {
             return false;
         }
         String role = session.getString(CommonConstants.SESSION_ROLE);
-        Long shopId = session.getLong(CommonConstants.SESSION_SHOP_ID);
+        // SaSession.getLong() 键不存在时返回 0 而不是 null，用它读 shopId 会让"没有店铺"变成"店铺 0"，
+        // 下面 merchant && shopId == null 的拒绝分支永远不触发，多个缺店铺的商家账号还会共用
+        // principal "shop:0" 互相看到对方的会话。这里与 AuthServiceImpl / AuthGlobalFilter 用同一种读法。
+        Object rawShopId = session.get(CommonConstants.SESSION_SHOP_ID);
+        Long shopId = rawShopId instanceof Number number ? number.longValue() : null;
         if (role == null) {
             role = CommonConstants.ROLE_USER;
         }
 
         boolean merchant = CommonConstants.ROLE_MERCHANT_OWNER.equals(role)
                 || CommonConstants.ROLE_MERCHANT_STAFF.equals(role);
-        if (merchant && shopId == null) {
+        if (merchant && (shopId == null || shopId <= 0)) {
             log.warn("IM 握手被拒绝：商家账号缺少 shopId, userId={}", userId);
             return false;
         }
@@ -101,20 +105,24 @@ public class ImHandshakeInterceptor implements HandshakeInterceptor {
 
     /**
      * 判断商家账号是否具备客服接待权限：主账号（"*"）或拥有 m:im:workbench 权限码。
-     * 权限集缺失（如老登录态）或校验异常时默认放行，仅明确无权限时排除。
+     *
+     * <p>fail-closed：权限集缺失（TTL 到期、老登录态）或 Redis 异常时**不**参与自动派单，
+     * 与 {@code PermissionChecker.hasPermission} 及商家端 HTTP 接口的 {@code @RequirePerm} 口径一致 ——
+     * 那些接口在权限集缺失时本来就返回 403，只有握手这里放行的话，会出现"页面打不开但仍在被派单"的错配，
+     * 用户消息被分给一个自己看不到工作台的账号。重新登录即可恢复。
      */
     private boolean canServeIm(Long userId) {
         try {
             String key = CommonConstants.AUTH_PERMS_KEY_PREFIX + CommonConstants.USER_TYPE_MERCHANT + ":" + userId;
             if (!Boolean.TRUE.equals(redisUtil.hasKey(key))) {
-                log.warn("IM 商家账号权限集缺失，默认放行：userId={}", userId);
-                return true;
+                log.warn("IM 商家账号权限集缺失，不参与自动派单（重新登录可恢复）：userId={}", userId);
+                return false;
             }
             return Boolean.TRUE.equals(redisUtil.sIsMember(key, CommonConstants.PERM_ALL))
                     || Boolean.TRUE.equals(redisUtil.sIsMember(key, IM_WORKBENCH_PERM));
         } catch (Exception e) {
-            log.warn("IM 权限校验异常，默认放行：userId={}, err={}", userId, e.getMessage());
-            return true;
+            log.warn("IM 权限校验异常，不参与自动派单：userId={}, err={}", userId, e.getMessage());
+            return false;
         }
     }
 

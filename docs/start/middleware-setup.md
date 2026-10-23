@@ -42,7 +42,7 @@
 
 ### 初始化数据库
 
-项目包含 10 个建库 SQL 脚本，按以下顺序执行：
+项目包含 11 个建库 SQL 脚本，按以下顺序执行：
 
 ```bash
 mysql -u root -p < docs/database/byw_user.sql
@@ -55,9 +55,10 @@ mysql -u root -p < docs/database/byw_review.sql
 mysql -u root -p < docs/database/byw_promotion.sql
 mysql -u root -p < docs/database/byw_shop.sql
 mysql -u root -p < docs/database/byw_settle.sql
+mysql -u root -p < docs/database/byw_im.sql
 ```
 
-> 存量环境升级需补执行增量迁移脚本（migration_shop_tenancy.sql / migration_product_audit.sql / migration_order_split.sql），详见 [后端启动 - 初始化数据库](backend-startup.md)。
+> 存量环境升级需按日期顺序补执行 `docs/database/migration/` 下的增量脚本，详见 [后端启动 - 初始化数据库](backend-startup.md)。
 
 也可以在 Navicat 或 DBeaver 中打开并逐个执行每个 SQL 文件。
 

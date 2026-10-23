@@ -20,7 +20,7 @@ mvn clean install -DskipTests
 
 ## 第二步：初始化数据库
 
-执行 10 个建库 SQL 脚本（详见 [中间件安装 - MySQL 部分](middleware-setup.md#mysql-setup)）：
+执行 11 个建库 SQL 脚本（详见 [中间件安装 - MySQL 部分](middleware-setup.md#mysql-setup)）：
 
 ```bash
 mysql -u root -p < docs/database/byw_user.sql
@@ -33,26 +33,68 @@ mysql -u root -p < docs/database/byw_review.sql
 mysql -u root -p < docs/database/byw_promotion.sql
 mysql -u root -p < docs/database/byw_shop.sql
 mysql -u root -p < docs/database/byw_settle.sql
+mysql -u root -p < docs/database/byw_im.sql
 ```
 
-> **新部署环境**：直接执行上述 10 个完整建库脚本即可。
+> **新部署环境**：直接执行上述 11 个完整建库脚本即可。
+> 单个服务对应的库：byw-auth/byw-user → `byw_user`，byw-product → `byw_product`，byw-cart → `byw_cart`，
+> byw-order → `byw_order`，byw-pay → `byw_pay`，byw-logistics → `byw_logistics`，byw-review → `byw_review`，
+> byw-promotion → `byw_promotion`，byw-shop/byw-merchant → `byw_shop`，byw-settle → `byw_settle`，
+> byw-im → `byw_im`。`byw-file` 不落库（文件存 MinIO），`byw-admin` 是 BFF 不落库。
+
+> **存量环境升级**：全量脚本只用于新库。已有库请按顺序执行
+> `docs/database/migration/` 下的增量脚本（文件名前缀即执行日期），不要用全量脚本覆盖。
+
 ---
 
-## 第三步：配置 Nacos
+## 第三步：配置 Nacos（配置全量托管）
 
-确认各服务的 `bootstrap.yml` 中 Nacos 地址正确：
+本项目**所有业务配置都由 Nacos 托管**，`src/main/resources/` 下只有 `bootstrap.yml`（本地地址与
+`shared-configs` 声明）。仓库里的 [docs/deploy/nacos/](../deploy/nacos/README.md) 只是**镜像**，
+运行时各服务读的是 Nacos 服务端上的同名配置 —— 改仓库文件不会影响运行中的服务。
 
-```yaml
-spring:
-  cloud:
-    nacos:
-      discovery:
-        server-addr: localhost:8848
-      config:
-        server-addr: localhost:8848
+### 3.1 需要存在的配置
+
+| dataId | group | 说明 |
+|--------|-------|------|
+| `byw-common.yml` | `DEFAULT_GROUP` | 共享配置：Redis、MyBatis-Plus、内部签名密钥、Sentinel、Seata 等 |
+| `byw-<service>.yml` | `DEFAULT_GROUP` | 每个服务的端口、数据源（`spring.datasource.url`）等，共 16 份 |
+
+所有服务通过 `bootstrap.yml` 的 `spring.cloud.nacos.config.shared-configs` 引入 `byw-common.yml`。
+
+### 3.2 首次导入 / 修改配置
+
+```powershell
+# 把 docs/deploy/nacos/**/*.yml 全量推送到 Nacos（首次导入或批量改动后用）
+pwsh docs/deploy/nacos/publish.ps1 -Server http://localhost:8848
 ```
 
-如需在 Nacos 中配置数据源等参数，可在 Nacos 控制台（http://localhost:8848/nacos）添加各服务的配置文件。
+只改一两项时也可以直接在 Nacos 控制台（http://localhost:8848/nacos）编辑对应 dataId，
+**但不要只改仓库里的文件** —— 那样重启服务也读不到新值。
+
+> ⚠️ **配置文件必须保持纯 ASCII**。Nacos 的 properties/yaml 解析遇到非 ASCII 字符时，
+> 整份配置会静默解析成空（服务不会报错，只是全部用默认值），排查成本极高。
+> 因此 `docs/deploy/nacos/` 下的 yml **不写中文注释**，`publish.ps1` 会上传前校验。
+
+### 3.3 两个必须由环境提供的密钥
+
+| 环境变量 | 缺失后果 | 说明 |
+|----------|----------|------|
+| `JASYPT_ENCRYPTOR_PASSWORD` | **服务启动失败** | 配置里所有 `ENC(...)` 密文的解密主密钥 |
+| `byw.security.internal-secret`（配置项） | **服务启动失败** | 网关/服务间身份头 HMAC 签名密钥；源码里没有可用默认值，必须是 `ENC(...)` 或 64 位十六进制明文 |
+
+生成新密文的步骤见 [docs/deploy/jasypt/](../deploy/jasypt/)。
+
+### 3.4 `byw-common.yml` 里可以覆盖的常用项
+
+| 配置项 | 默认 | 说明 |
+|--------|------|------|
+| `spring.data.redis.host/port` | `localhost:6379` | 对应 `REDIS_HOST` / `REDIS_PORT` |
+| `spring.data.redis.password` | 不配置（无认证） | 生产开启 Redis 认证时加 `password: ${REDIS_PASSWORD}`，**不要**写成 `${REDIS_PASSWORD:}`（空串会被当成空密码去 `AUTH`，连无密码的 Redis 都会连不上）。Redis 里存着全部会话与权限集 |
+| `byw.pay.mock-enabled` | **false**（代码默认） | 模拟支付开关；本地/演示由 `byw-pay.yml` 显式设为 true |
+| `byw.gateway.api-docs.enabled` | true | 置 false 后网关直接 404 掉所有文档路径，生产应关闭 |
+| `byw.security.cors.allowed-origins` | localhost 各端 | 生产改成明确的前端域名 |
+| `byw.gateway.rate-limit.trust-forwarded-for` | false | 只有网关前确有可信代理（Nginx/SLB）时才置 true |
 
 ---
 
@@ -94,7 +136,7 @@ Nacos + MySQL + Redis（必须启动的中间件底座）
 | MySQL | **必须** | 各服务启动时建立数据库连接池 |
 | Redis | **必须** | 缓存、Token 存储、分布式锁等，几乎所有服务依赖 |
 | RocketMQ | 按需 | byw-order / byw-pay / byw-logistics / byw-product 使用 |
-| Elasticsearch | 按需 | 仅 byw-product 商品搜索使用 |
+| Elasticsearch | 按需 | 仅 byw-product 商品搜索使用。**服务端必须是 8.x**（Spring Boot 3.2 管理的是 elasticsearch-java 8.11.x，8.x 客户端连 7.x 服务端属不支持的组合）；未装 IK 分词插件时会自动回退 `standard` 分词，索引仍可建立，只是中文搜索质量下降 |
 | MongoDB | 按需 | 仅 byw-review 评价详情使用 |
 | MinIO | 按需 | 仅 byw-file 文件/图片上传使用 |
 

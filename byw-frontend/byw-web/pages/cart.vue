@@ -90,18 +90,18 @@
                   <button
                     class="w-7 h-7 flex items-center justify-center text-gray-500 hover:bg-gray-100 disabled:opacity-50"
                     :disabled="item.quantity <= 1"
-                    @click="cartStore.updateQuantity(item.cartId, item.quantity - 1)"
+                    @click="handleQuantity(item.cartId, item.quantity - 1)"
                   >-</button>
                   <input
                     :value="item.quantity"
                     type="number"
                     min="1"
                     class="w-10 h-7 text-center border-x outline-none text-sm"
-                    @change="(e: Event) => cartStore.updateQuantity(item.cartId, Number((e.target as HTMLInputElement).value) || 1)"
+                    @change="(e: Event) => handleQuantity(item.cartId, Number((e.target as HTMLInputElement).value) || 1)"
                   />
                   <button
                     class="w-7 h-7 flex items-center justify-center text-gray-500 hover:bg-gray-100"
-                    @click="cartStore.updateQuantity(item.cartId, item.quantity + 1)"
+                    @click="handleQuantity(item.cartId, item.quantity + 1)"
                   >+</button>
                 </div>
               </div>
@@ -120,18 +120,18 @@
                 <button
                   class="w-7 h-7 flex items-center justify-center text-gray-500 hover:bg-gray-100 disabled:opacity-50"
                   :disabled="item.quantity <= 1"
-                  @click="cartStore.updateQuantity(item.cartId, item.quantity - 1)"
+                  @click="handleQuantity(item.cartId, item.quantity - 1)"
                 >-</button>
                 <input
                   :value="item.quantity"
                   type="number"
                   min="1"
                   class="w-10 h-7 text-center border-x outline-none text-sm"
-                  @change="(e: Event) => cartStore.updateQuantity(item.cartId, Number((e.target as HTMLInputElement).value) || 1)"
+                  @change="(e: Event) => handleQuantity(item.cartId, Number((e.target as HTMLInputElement).value) || 1)"
                 />
                 <button
                   class="w-7 h-7 flex items-center justify-center text-gray-500 hover:bg-gray-100"
-                  @click="cartStore.updateQuantity(item.cartId, item.quantity + 1)"
+                  @click="handleQuantity(item.cartId, item.quantity + 1)"
                 >+</button>
               </div>
             </div>
@@ -255,6 +255,15 @@
         </div>
       </Transition>
     </Teleport>
+
+    <!-- Toast 提示：删除/改数量失败时告诉用户"没成功"，否则本地状态回退会被当成页面抽风 -->
+    <Transition name="toast">
+      <div v-if="toast.visible"
+        :class="['fixed top-20 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2',
+          toast.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white']">
+        {{ toast.message }}
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -266,6 +275,14 @@ definePageMeta({ middleware: ['auth'] })
 const cartStore = useCartStore()
 const removeTarget = ref<number | null>(null)
 
+const toast = reactive({ visible: false, message: '', type: 'success' as 'success' | 'error' })
+let toastTimer: ReturnType<typeof setTimeout> | null = null
+function showToast(message: string, type: 'success' | 'error' = 'success') {
+  if (toastTimer) clearTimeout(toastTimer)
+  toast.visible = true; toast.message = message; toast.type = type
+  toastTimer = setTimeout(() => { toast.visible = false }, 2500)
+}
+
 onMounted(() => {
   cartStore.getCartList()
 })
@@ -274,11 +291,30 @@ function handleRemove(cartId: number) {
   removeTarget.value = cartId
 }
 
-function confirmRemove() {
-  if (removeTarget.value != null) {
-    cartStore.removeItem(removeTarget.value)
+/**
+ * 购物车的删/改都只在服务端确认之后才动本地状态，所以失败时界面不会自己变，
+ * 这里必须把失败告诉用户，并重新拉一次列表把界面拉回服务端的真实状态。
+ */
+async function applyCartChange(action: () => Promise<void>, failMessage: string) {
+  try {
+    await action()
+  } catch (e: any) {
+    console.error(failMessage, e)
+    showToast(e?.message || failMessage, 'error')
+    await cartStore.getCartList()
   }
+}
+
+async function confirmRemove() {
+  const cartId = removeTarget.value
   removeTarget.value = null
+  if (cartId != null) {
+    await applyCartChange(() => cartStore.removeItem(cartId), '删除失败，购物车未变更')
+  }
+}
+
+async function handleQuantity(cartId: number, quantity: number) {
+  await applyCartChange(() => cartStore.updateQuantity(cartId, quantity), '修改数量失败，已恢复原数量')
 }
 
 /** 解析 specData JSON 为可读数组 */

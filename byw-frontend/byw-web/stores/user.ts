@@ -93,10 +93,31 @@ export const useUserStore = defineStore('user', {
       useCartStore().clear()
     },
 
-    /** 退出登录：回首页继续游客浏览（受保护页面由中间件引导至登录） */
-    logout() {
+    /**
+     * 退出登录：回首页继续游客浏览（受保护页面由中间件引导至登录）。
+     *
+     * <p>必须调后端注销：只清本地的话，那个 token 在服务端仍然有效到 24 小时到期，
+     * 从 localStorage / 浏览器历史 / 已泄露的日志里拿到它的人可以接着用。
+     *
+     * <p>顺序是"先记下 token → 立刻清本地并跳转 → 再拿记下的 token 发注销请求"：
+     * 本地状态先清，用户点完立刻看到已退出，不必等一个可能很慢甚至失败的网络请求；
+     * 而注销请求必须显式带上记下的 token（此时 getToken() 已经是 null 了）。
+     * skipAuthRedirect 保证 token 早已失效时后端返回的 401 不会又弹一次登录框。
+     */
+    async logout() {
+      const token = getToken()
       this.reset()
       navigateTo('/')
+      if (!token) return
+      try {
+        await post('/auth/logout', null, {
+          skipAuthRedirect: true,
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      } catch (error) {
+        // 后端不可达也要保证本地已退出；服务端会话最迟 24h 后自行过期
+        console.warn('[user] 服务端注销失败（本地登录态已清）', error)
+      }
     },
   },
 })

@@ -38,8 +38,8 @@
 
 | 文档 | 说明 |
 |------|------|
-| [数据库设计](database/database-design.md) | 10 个库的结构说明、ER 关系图、多商家增量 |
-| [SQL 脚本](database/database-design.md) | 建库建表 SQL 文件（10 个）+ 增量迁移脚本（3 个） |
+| [数据库设计](database/database-design.md) | 11 个库的结构说明、ER 关系图、多商家增量 |
+| [SQL 脚本](database/database-design.md) | 建库建表 SQL 文件（11 个）+ 增量迁移脚本（4 个） |
 
 ### 🔧 开发规范
 

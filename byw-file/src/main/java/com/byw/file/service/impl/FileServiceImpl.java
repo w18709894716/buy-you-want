@@ -17,6 +17,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -44,6 +45,27 @@ public class FileServiceImpl implements FileService {
 
     /** 目录段白名单格式 */
     private static final Pattern FOLDER_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{1,32}$");
+
+    /**
+     * 扩展名 → Content-Type，上传时**只按这张表写**，不采信客户端传来的 Content-Type。
+     *
+     * <p>桶是公开读的，对象最终由 MinIO 直接吐给浏览器，渲染行为由 Content-Type 决定而不是文件名后缀：
+     * 一个后缀为 {@code .jpg}、Content-Type 却是 {@code text/html} 的对象会被浏览器当网页执行，
+     * 等于在本域下拿到一个存储型 XSS 落点（可读取同域 Cookie、冒充站点发请求）。
+     */
+    private static final Map<String, String> EXT_CONTENT_TYPE = Map.ofEntries(
+            Map.entry("jpg", "image/jpeg"),
+            Map.entry("jpeg", "image/jpeg"),
+            Map.entry("png", "image/png"),
+            Map.entry("gif", "image/gif"),
+            Map.entry("webp", "image/webp"),
+            Map.entry("bmp", "image/bmp"),
+            Map.entry("pdf", "application/pdf"),
+            Map.entry("doc", "application/msword"),
+            Map.entry("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+            Map.entry("xls", "application/vnd.ms-excel"),
+            Map.entry("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            Map.entry("zip", "application/zip"));
 
     /** 单文件大小上限，默认 10MB（与 multipart 配置保持一致） */
     @Value("${byw.file.max-size-bytes:10485760}")
@@ -96,7 +118,7 @@ public class FileServiceImpl implements FileService {
                     .bucket(minioConfig.getBucketName())
                     .object(objectName)
                     .stream(file.getInputStream(), file.getSize(), -1)
-                    .contentType(file.getContentType())
+                    .contentType(resolveContentType(extension))
                     .build());
 
             String fileUrl = minioConfig.getPublicUrl() + "/" + minioConfig.getBucketName() + "/" + objectName;
@@ -146,6 +168,21 @@ public class FileServiceImpl implements FileService {
         if (!ALLOWED_EXTENSIONS.contains(extension)) {
             throw new BusinessException("不支持的文件类型，仅允许图片与常用文档");
         }
+    }
+
+    /**
+     * 按扩展名取服务端认定的 Content-Type。
+     *
+     * <p>调用前扩展名已过白名单，取不到即说明有人往 {@code ALLOWED_EXTENSIONS} 加了扩展名却忘了配这张表；
+     * 此时直接失败而不是退回 {@code application/octet-stream} —— 后者会让图片在浏览器里变成下载而不是预览，
+     * 属于难排查的静默降级。
+     */
+    private String resolveContentType(String extension) {
+        String contentType = EXT_CONTENT_TYPE.get(extension);
+        if (contentType == null) {
+            throw new IllegalStateException("扩展名缺少 Content-Type 映射: " + extension);
+        }
+        return contentType;
     }
 
     /**

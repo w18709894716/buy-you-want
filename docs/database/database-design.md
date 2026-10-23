@@ -1,7 +1,7 @@
 # 数据库设计
 
 ## 概览
-项目共 10 个数据库，每个微服务独立一个库（多商家平台化后新增 byw_shop / byw_settle）：
+项目共 11 个数据库，每个微服务独立一个库（多商家平台化后新增 byw_shop / byw_settle，IM 上线后新增 byw_im）：
 
 | 数据库 | 对应服务 | 表数量 | 说明 |
 |--------|---------|--------|------|
@@ -15,6 +15,7 @@
 | byw_promotion | byw-promotion | 5 | 营销中心（优惠券含 shop_id） |
 | byw_shop | byw-shop | 2 | 店铺中心（t_shop / t_merchant_account） |
 | byw_settle | byw-settle | 5 | 结算分账（佣金/结算单/余额/流水/提现） |
+| byw_im | byw-im | 9 | 客服聊天（会话/满意度/服务记录/派单组/派单规则/FAQ/技能组） |
 
 ## ER 关系图
 

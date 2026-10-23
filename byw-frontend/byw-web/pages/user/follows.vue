@@ -91,6 +91,10 @@
 import { get, del } from '~/utils/request'
 import { useUserStore } from '~/stores/user'
 
+// 与其余受保护页面一致：未登录由 middleware/auth 带着回跳地址送登录页，
+// 否则这里只会渲染出一个空的收藏列表，用户看不出是"没登"还是"真没有"
+definePageMeta({ middleware: ['auth'] })
+
 const userStore = useUserStore()
 
 const sidebarMenu = [

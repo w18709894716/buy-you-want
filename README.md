@@ -40,7 +40,7 @@
 
 | 文档 | 说明 |
 |------|------|
-| [数据库设计](docs/database/database-design.md) | 10 个库的结构说明、ER 关系图、多商家增量 |
+| [数据库设计](docs/database/database-design.md) | 11 个库的结构说明、ER 关系图、多商家增量 |
 
 ### 🔧 开发规范
 

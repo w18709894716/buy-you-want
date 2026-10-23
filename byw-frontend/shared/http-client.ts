@@ -143,10 +143,25 @@ export function createHttpClient(options: HttpClientOptions) {
     }
   }
 
+  /**
+   * 本轮"已失效"是否已经提示过。
+   *
+   * <p>一个页面首屏往往并发发出十几个请求，token 失效时它们会**同时**返回 401，
+   * 没有这道闸门就会叠十几条"登录已过期"toast 并连续跳十几次登录页。
+   * 只在 401 处理里置位、在任何一个请求真正成功时复位 —— 复位点选在成功响应上，
+   * 是因为那才代表重新登录后的会话已经可用；用定时器复位会在用户还没登录完时又允许弹一次。
+   */
+  let unauthorizedNotified = false
+
   function handleUnauthorized() {
     if (!cookieMode) {
       localStorage.removeItem(tokenKey)
     }
+    // 本地 token 每次都要清：并发请求各自调用，不能因为"已经提示过"就跳过清理
+    if (unauthorizedNotified) {
+      return
+    }
+    unauthorizedNotified = true
     // 登录标记的清理交给各端 onUnauthorized（它会调 clearToken 并跳登录页）
     toast.error('登录已过期，请重新登录')
     onUnauthorized()
@@ -170,6 +185,8 @@ export function createHttpClient(options: HttpClientOptions) {
       const res = response.data
       if (res.code !== undefined) {
         if (res.code === 200 || res.code === 0) {
+          // 会话已恢复，解除 401 提示闸门，下次再过期才会重新提示
+          unauthorizedNotified = false
           return res.data
         }
         if (res.code === 401) {

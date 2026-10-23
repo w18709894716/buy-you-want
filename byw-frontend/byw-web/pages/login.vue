@@ -76,6 +76,21 @@ const form = reactive({
 const loading = ref(false)
 const errorMsg = ref('')
 
+/**
+ * 登录后的回跳地址：只接受**站内相对路径**。
+ *
+ * <p>{@code redirect} 来自 URL 查询串，是可被任意构造的：{@code ?redirect=https://evil.com}
+ * 或 {@code ?redirect=//evil.com}（协议相对，浏览器会当成外站）都能把刚登录的用户送去钓鱼站，
+ * 而用户此刻对"这是本站"的信任度最高。三种写法一律退回首页：
+ * 不以 {@code /} 开头、以 {@code //} 开头、把反斜杠归一成斜杠后以 {@code //} 开头。
+ */
+function safeRedirect(raw: unknown): string {
+  if (typeof raw !== 'string') return '/'
+  const value = raw.replace(/\\/g, '/')
+  if (!value.startsWith('/') || value.startsWith('//')) return '/'
+  return value
+}
+
 async function handleLogin() {
   if (!form.username || !form.password) {
     errorMsg.value = '请填写用户名和密码'
@@ -87,8 +102,7 @@ async function handleLogin() {
 
   try {
     await userStore.login(form.username, form.password)
-    const redirect = (route.query.redirect as string) || '/'
-    navigateTo(redirect)
+    navigateTo(safeRedirect(route.query.redirect))
   } catch (error: any) {
     errorMsg.value = error?.message || '登录失败，请检查用户名和密码'
   } finally {

@@ -40,6 +40,12 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      # Redis auth is OFF by default (local dev). To enable it in production, add this
+      # line with NO empty default:
+      #   password: ${REDIS_PASSWORD}
+      # Do NOT write ${REDIS_PASSWORD:} -- Spring binds that to an empty STRING, not
+      # null, and Redisson only null-checks the password: it would send AUTH ""
+      # and even a password-less Redis rejects it, so every service fails to start.
 
 mybatis-plus:
   configuration:

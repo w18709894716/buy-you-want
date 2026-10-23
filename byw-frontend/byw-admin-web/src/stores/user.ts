@@ -28,6 +28,8 @@ export const useUserStore = defineStore('user', () => {
   const username = ref<string>(localStorage.getItem('admin_username') || '')
   const menus = ref<MenuNode[]>(readJson<MenuNode[]>('admin_menus', []))
   const perms = ref<string[]>(readJson<string[]>('admin_perms', []))
+  /** 权限集落盘时间戳：缓存必须有时效，否则后台改了授权，前端还会一直按旧权限放行 */
+  const permsCachedAt = ref<number>(Number(localStorage.getItem('admin_perms_at') || 0))
 
   const login = async (loginForm: { username: string; password: string }) => {
     // 专用管理员登录接口，服务端校验 role 必须为 platform_admin
@@ -37,6 +39,14 @@ export const useUserStore = defineStore('user', () => {
     username.value = data.username || loginForm.username
     setToken()
     localStorage.setItem('admin_username', data.username || loginForm.username)
+    // 清掉上一个账号留下的菜单/权限缓存：否则换人登录后路由守卫会认为"已加载"而跳过重新拉取，
+    // 低权限账号会照着高权限账号的菜单渲染（接口层仍会 403，但界面先骗了人）
+    menus.value = []
+    perms.value = []
+    permsCachedAt.value = 0
+    localStorage.removeItem('admin_menus')
+    localStorage.removeItem('admin_perms')
+    localStorage.removeItem('admin_perms_at')
     return data
   }
 
@@ -45,8 +55,10 @@ export const useUserStore = defineStore('user', () => {
     const data: any = await request.get('/admin/me/menus')
     menus.value = data.menus || []
     perms.value = data.perms || []
+    permsCachedAt.value = Date.now()
     localStorage.setItem('admin_menus', JSON.stringify(menus.value))
     localStorage.setItem('admin_perms', JSON.stringify(perms.value))
+    localStorage.setItem('admin_perms_at', String(permsCachedAt.value))
     return data
   }
 
@@ -61,10 +73,12 @@ export const useUserStore = defineStore('user', () => {
     username.value = ''
     menus.value = []
     perms.value = []
+    permsCachedAt.value = 0
     clearToken()
     localStorage.removeItem('admin_username')
     localStorage.removeItem('admin_menus')
     localStorage.removeItem('admin_perms')
+    localStorage.removeItem('admin_perms_at')
   }
 
   return {
@@ -72,6 +86,7 @@ export const useUserStore = defineStore('user', () => {
     username,
     menus,
     perms,
+    permsCachedAt,
     login,
     fetchMenus,
     logout

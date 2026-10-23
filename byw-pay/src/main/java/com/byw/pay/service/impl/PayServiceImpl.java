@@ -46,8 +46,12 @@ public class PayServiceImpl implements PayService {
     /**
      * 模拟支付回调开关（演示/本地联调）。
      * 开启时回调不做渠道验签，仅允许支付单归属用户触发；生产必须置 false 并接入真实渠道验签。
+     *
+     * <p>代码默认值取 {@code false}（fail-closed）：漏配时表现为"模拟支付不可用"，
+     * 而不是"生产上任何人凭支付单号就能把订单标记为已支付"。本地/演示环境由
+     * {@code docs/deploy/nacos/services/byw-pay.yml} 的 {@code ${BYW_PAY_MOCK_ENABLED:true}} 显式打开。
      */
-    @Value("${byw.pay.mock-enabled:true}")
+    @Value("${byw.pay.mock-enabled:false}")
     private boolean mockEnabled;
 
     @PostConstruct
