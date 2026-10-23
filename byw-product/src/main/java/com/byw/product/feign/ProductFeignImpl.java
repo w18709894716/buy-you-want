@@ -16,6 +16,7 @@ import com.byw.api.product.dto.SkuStockDeductDTO;
 import com.byw.api.shop.ShopFeignClient;
 import com.byw.api.shop.dto.ShopDTO;
 import com.byw.common.core.constant.CacheNames;
+import com.byw.common.core.exception.BusinessException;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
 import com.byw.common.security.annotation.InternalApi;
@@ -39,7 +40,9 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -266,7 +269,9 @@ public class ProductFeignImpl implements ProductFeignClient {
             return R.fail("无权操作其他店铺的商品");
         }
         Long originalShopId = product.getShopId();
-        BeanUtils.copyProperties(productDTO, product);
+        // salesCount / createdAt 是服务端维护的字段，不接受编辑表单回写：
+        // 表单里带的是打开页面那一刻的快照，覆盖回去会抹掉期间订单产生的销量。
+        BeanUtils.copyProperties(productDTO, product, "salesCount", "createdAt");
         product.setId(productId);
         if (ctxShopId != null) {
             product.setShopId(originalShopId);
@@ -310,6 +315,8 @@ public class ProductFeignImpl implements ProductFeignClient {
 
         List<Sku> toInsert = new ArrayList<>();
         List<Sku> toUpdate = new ArrayList<>();
+        // skuId → 库存增量，循环内只收集、循环后一次性原子调整
+        Map<Long, Integer> stockDeltas = new LinkedHashMap<>();
 
         for (int i = 0; i < skuDTOs.size(); i++) {
             SkuDTO dto = skuDTOs.get(i);
@@ -324,17 +331,25 @@ public class ProductFeignImpl implements ProductFeignClient {
                     .eq(Sku::getSkuCode, skuCode));
 
             if (existing != null) {
-                // 已有：更新属性（同步修正归属店铺，修复存量 SKU shop_id 缺失）
-                existing.setShopId(shopId);
-                existing.setSpecData(dto.getSpecData());
-                existing.setSkuName(buildSkuName(dto.getSpecData()));
-                existing.setPrice(dto.getPrice());
-                existing.setCostPrice(dto.getCostPrice());
-                existing.setStock(dto.getStock());
-                if (dto.getImage() != null) existing.setImage(dto.getImage());
-                toUpdate.add(existing);
+                // 已有：新建部分实体只带商家可编辑的字段。不能直接改 existing 再整实体更新，
+                // 否则会把读到的 stock / lock_stock 一并回写，抹掉这期间的下单预占与售后回补。
+                Sku patch = new Sku();
+                patch.setId(existing.getId());
+                // 同步修正归属店铺，修复存量 SKU shop_id 缺失
+                patch.setShopId(shopId);
+                patch.setSpecData(dto.getSpecData());
+                patch.setSkuName(buildSkuName(dto.getSpecData()));
+                patch.setPrice(dto.getPrice());
+                patch.setCostPrice(dto.getCostPrice());
+                if (dto.getImage() != null) patch.setImage(dto.getImage());
+                toUpdate.add(patch);
+
+                Integer delta = resolveStockDelta(dto);
+                if (delta != null && delta != 0) {
+                    stockDeltas.merge(existing.getId(), delta, Integer::sum);
+                }
             } else {
-                // 没有：新增
+                // 没有：新增。新记录没有并发扣减，库存按表单值直接落库
                 Sku sku = new Sku();
                 sku.setProductId(productId);
                 sku.setShopId(shopId);
@@ -351,6 +366,8 @@ public class ProductFeignImpl implements ProductFeignClient {
         }
 
         if (!toUpdate.isEmpty()) skuService.updateBatchById(toUpdate);
+        // 库存走独立的原子增量更新（单事务，任一 SKU 调整后为负则整体回滚）
+        skuService.adjustStockBatch(stockDeltas);
         if (!toInsert.isEmpty()) {
             // 清理冲突的软删除记录
             Set<String> insertCodes = toInsert.stream()
@@ -363,6 +380,28 @@ public class ProductFeignImpl implements ProductFeignClient {
             }
             skuService.saveBatch(toInsert);
         }
+    }
+
+    /**
+     * 计算商家对已有 SKU 的库存改动量。
+     *
+     * <p>表单提交的 stock 是「商家想达到的可售库存」，但它基于打开页面那一刻的快照；
+     * 直接整值覆盖会把期间的下单预占抹掉，凭空多出库存导致超卖。这里改成只取**改动量**，
+     * 由 {@link SkuMapper#adjustStock} 叠加到数据库实时值上。
+     *
+     * @return null 表示本次不改库存；否则为增量（可为负）
+     */
+    private Integer resolveStockDelta(SkuDTO dto) {
+        if (dto.getStock() == null) {
+            return null;
+        }
+        Integer snapshot = dto.getStockSnapshot();
+        // 缺基线就无法区分「改成 N」和「没动、页面加载时就是 N」，
+        // 此时拒绝而不是退回整值覆盖：宁可让商家刷新重试，也不能悄悄改错库存。
+        if (snapshot == null) {
+            throw new BusinessException("库存基线缺失，请刷新页面后重试");
+        }
+        return dto.getStock() - snapshot;
     }
 
     /** 保存 SKU 列表 */

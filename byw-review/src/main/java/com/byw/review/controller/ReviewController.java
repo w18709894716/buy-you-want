@@ -10,6 +10,7 @@ import jakarta.validation.constraints.Size;
 import com.byw.api.review.dto.ReviewStatsDTO;
 import com.byw.api.user.UserFeignClient;
 import com.byw.api.user.dto.UserDTO;
+import com.byw.common.core.exception.BusinessException;
 import com.byw.common.core.result.PageResult;
 import com.byw.common.core.result.R;
 import com.byw.common.security.annotation.Public;
@@ -46,6 +47,8 @@ public class ReviewController {
         ReviewDetail detail = new ReviewDetail();
         detail.setOrderId(request.getOrderNo());
         detail.setProductId(request.getProductId());
+        // skuId 必填：t_review.sku_id 是 NOT NULL，缺省会直接插入失败
+        detail.setSkuId(request.getSkuId());
         detail.setUserId(UserContext.getUserId());
         detail.setRating(request.getRating());
         detail.setContent(request.getContent());
@@ -137,7 +140,8 @@ public class ReviewController {
     @RequireLogin
     @GetMapping("/exists/{orderNo}")
     public R<Boolean> exists(@PathVariable String orderNo) {
-        return R.ok(reviewService.reviewExists(orderNo));
+        // 按登录用户维度查重，避免任意登录用户探测他人订单的评价状态
+        return R.ok(reviewService.reviewExists(orderNo, UserContext.getUserId()));
     }
 
     @Operation(summary = "获取本人该订单的评价明细")
@@ -165,10 +169,15 @@ public class ReviewController {
     @RequireLogin
     @PostMapping("/create-batch")
     public R<Void> createBatch(@Valid @RequestBody BatchReviewRequest request) {
+        // 一次提交只能针对同一个订单：服务端按首个 orderNo 归一，混单会被静默改写到错误的订单上
+        String orderNo = request.getReviews().get(0).getOrderNo();
         List<ReviewDetail> details = new java.util.ArrayList<>();
         for (ReviewItem item : request.getReviews()) {
+            if (!orderNo.equals(item.getOrderNo())) {
+                throw new BusinessException("一次只能评价同一个订单的商品");
+            }
             ReviewDetail detail = new ReviewDetail();
-            detail.setOrderId(item.getOrderNo());
+            detail.setOrderId(orderNo);
             detail.setProductId(item.getProductId());
             detail.setSkuId(item.getSkuId());
             detail.setUserId(UserContext.getUserId());
@@ -178,7 +187,6 @@ public class ReviewController {
             detail.setIsAnonymous(item.getIsAnonymous());
             details.add(detail);
         }
-        String orderNo = request.getReviews().get(0).getOrderNo();
         reviewService.createBatchReviews(UserContext.getUserId(), orderNo, details);
         return R.ok();
     }
@@ -200,6 +208,8 @@ public class ReviewController {
         private String orderNo;
         @NotNull(message = "商品ID不能为空")
         private Long productId;
+        @NotNull(message = "SKU不能为空")
+        private Long skuId;
         @NotNull(message = "请选择评分")
         @Min(value = 1, message = "评分只能是 1~5")
         @Max(value = 5, message = "评分只能是 1~5")

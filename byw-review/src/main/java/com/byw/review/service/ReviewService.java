@@ -36,6 +36,13 @@ public interface ReviewService {
     boolean reviewExists(String orderNo);
 
     /**
+     * 检查某用户对该订单是否已评价。
+     *
+     * <p>供 C 端「是否已评价」查询使用：不带 userId 的版本会让任意登录用户探测他人订单的评价状态。
+     */
+    boolean reviewExists(String orderNo, Long userId);
+
+    /**
      * 管理端：获取评价列表（含真实商品名称、图片与追评信息）
      */
     PageResult<Map<String, Object>> adminListReviews(Integer pageNum, Integer pageSize, Integer rating, Integer status);

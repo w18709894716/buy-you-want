@@ -33,8 +33,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -58,16 +60,19 @@ public class ReviewServiceImpl implements ReviewService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void createReview(ReviewDetail reviewDetail, Integer rating, String content, Integer isAnonymous) {
-        // 1. 检查是否已评价
+        // 1. 校验订单归属、状态与商品归属（必须在查重之前：否则可借查重结果探测他人订单）
+        OrderDetailDTO order = requireReviewableOrder(reviewDetail.getOrderId(), reviewDetail.getUserId(),
+                Collections.singletonList(reviewDetail.getSkuId()));
+        // 2. 检查是否已评价
         if (reviewExists(reviewDetail.getOrderId())) {
             throw new BusinessException("该订单已评价");
         }
         // 退款成功的商品交易未完成，不可评价
-        if (getRefundedSkuIds(reviewDetail.getOrderId()).contains(reviewDetail.getSkuId())) {
+        if (refundedSkuIds(order).contains(reviewDetail.getSkuId())) {
             throw new BusinessException("已退款的商品不可评价");
         }
 
-        // 2. 保存到MySQL
+        // 3. 保存到MySQL
         Review review = new Review();
         review.setOrderNo(reviewDetail.getOrderId());
         review.setUserId(reviewDetail.getUserId());
@@ -81,7 +86,7 @@ public class ReviewServiceImpl implements ReviewService {
         review.setStatus(1); // 显示
         reviewMapper.insert(review);
 
-        // 3. 保存图片到MySQL
+        // 4. 保存图片到MySQL
         if (reviewDetail.getImages() != null) {
             for (String imageUrl : reviewDetail.getImages()) {
                 ReviewImage image = new ReviewImage();
@@ -92,13 +97,13 @@ public class ReviewServiceImpl implements ReviewService {
             }
         }
 
-        // 4. 保存到MongoDB
+        // 5. 保存到MongoDB
         reviewDetail.setCreatedAt(LocalDateTime.now());
         reviewDetail.setIsAnonymous(isAnonymous != null ? isAnonymous : 0);
         reviewDetail.setStatus(1); // 显示，与MySQL Review.status同步
         reviewDetailRepository.save(reviewDetail);
 
-        // 5. 更新订单评价状态
+        // 6. 更新订单评价状态
         try {
             orderFeignClient.updateReviewed(reviewDetail.getOrderId(), 1);
         } catch (Exception e) {
@@ -253,24 +258,73 @@ public class ReviewServiceImpl implements ReviewService {
                 new LambdaQueryWrapper<Review>().eq(Review::getOrderNo, orderNo)) > 0;
     }
 
-    /** 查询订单中已完成退款（仅退款/退货退款）的商品 skuId 集合；订单服务异常时不阻断评价主流程 */
-    private Set<Long> getRefundedSkuIds(String orderNo) {
+    @Override
+    public boolean reviewExists(String orderNo, Long userId) {
+        if (userId == null) {
+            return false;
+        }
+        return reviewMapper.selectCount(new LambdaQueryWrapper<Review>()
+                .eq(Review::getOrderNo, orderNo)
+                .eq(Review::getUserId, userId)) > 0;
+    }
+
+    /**
+     * 评价前置校验：订单必须归属当前用户、状态为交易完成，且提交的每个 skuId 都确实在该订单内。
+     *
+     * <p>fail-closed：订单服务不可用时直接拒绝而不是放行。评价是对外公开的内容，
+     * 放过一次就无法区分"服务抖了一下"和"有人在刷单"；此前这里异常返回空集合等于放行。
+     *
+     * @return 校验通过的订单详情，供后续退款商品判定复用，避免二次远程调用
+     */
+    private OrderDetailDTO requireReviewableOrder(String orderNo, Long userId, Collection<Long> skuIds) {
+        OrderDetailDTO order;
         try {
             R<OrderDetailDTO> resp = orderFeignClient.getOrderDetail(orderNo);
-            if (resp == null || !resp.isSuccess() || resp.getData() == null || resp.getData().getItems() == null) {
-                return Collections.emptySet();
+            if (resp == null || !resp.isSuccess() || resp.getData() == null) {
+                throw new BusinessException("订单不存在");
             }
-            return resp.getData().getItems().stream()
-                    .filter(i -> i.getAfterSaleStatus() != null && i.getAfterSaleStatus() == 3
-                            && i.getAfterSaleType() != null
-                            && (i.getAfterSaleType() == 1 || i.getAfterSaleType() == 2))
-                    .map(OrderDetailDTO.OrderItemDTO::getSkuId)
-                    .filter(Objects::nonNull)
-                    .collect(Collectors.toSet());
+            order = resp.getData();
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
-            log.warn("查询订单已退款商品失败: orderNo={}, error={}", orderNo, e.getMessage());
+            log.error("校验评价订单失败，拒绝评价: orderNo={}", orderNo, e);
+            throw new BusinessException("订单校验失败，请稍后重试");
+        }
+        if (userId == null || !userId.equals(order.getUserId())) {
+            log.warn("评价被拒绝：订单不属于当前用户, orderNo={}, caller={}, owner={}",
+                    orderNo, userId, order.getUserId());
+            throw new BusinessException("订单不存在");
+        }
+        // 交易完成(status=3)才可评价：与 C 端仅在 status===3 展示评价入口一致
+        if (order.getStatus() == null || order.getStatus() != 3) {
+            throw new BusinessException("订单完成后才能评价");
+        }
+        List<OrderDetailDTO.OrderItemDTO> items = order.getItems();
+        Set<Long> orderSkuIds = items == null ? Collections.emptySet() : items.stream()
+                .map(OrderDetailDTO.OrderItemDTO::getSkuId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        for (Long skuId : skuIds) {
+            if (skuId == null || !orderSkuIds.contains(skuId)) {
+                log.warn("评价被拒绝：商品不在订单内, orderNo={}, skuId={}", orderNo, skuId);
+                throw new BusinessException("评价的商品不属于该订单");
+            }
+        }
+        return order;
+    }
+
+    /** 订单中已完成退款（仅退款/退货退款）的商品 skuId：交易未完成，不可评价 */
+    private Set<Long> refundedSkuIds(OrderDetailDTO order) {
+        if (order.getItems() == null) {
             return Collections.emptySet();
         }
+        return order.getItems().stream()
+                .filter(i -> i.getAfterSaleStatus() != null && i.getAfterSaleStatus() == 3
+                        && i.getAfterSaleType() != null
+                        && (i.getAfterSaleType() == 1 || i.getAfterSaleType() == 2))
+                .map(OrderDetailDTO.OrderItemDTO::getSkuId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
     }
 
     @Override
@@ -484,13 +538,22 @@ public class ReviewServiceImpl implements ReviewService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void createBatchReviews(Long userId, String orderNo, List<ReviewDetail> reviewDetails) {
-        // 1. 检查是否已评价
+        List<Long> skuIds = reviewDetails.stream()
+                .map(ReviewDetail::getSkuId)
+                .collect(Collectors.toList());
+        // 1. 校验订单归属、状态与商品归属（fail-closed，订单服务异常一律拒绝）
+        OrderDetailDTO order = requireReviewableOrder(orderNo, userId, skuIds);
+        // 2. 检查是否已评价
         if (reviewExists(orderNo)) {
             throw new BusinessException("该订单已评价");
         }
-        // 退款成功的商品交易未完成，不可评价（前端已过滤，此处防绕过接口直接提交）
-        Set<Long> refundedSkuIds = getRefundedSkuIds(orderNo);
-        if (reviewDetails.stream().anyMatch(d -> refundedSkuIds.contains(d.getSkuId()))) {
+        // 3. 同批次内 skuId 不可重复，否则一次提交就能给同一商品刷多条评价
+        if (new HashSet<>(skuIds).size() != skuIds.size()) {
+            throw new BusinessException("同一商品重复评价");
+        }
+        // 4. 退款成功的商品交易未完成，不可评价（前端已过滤，此处防绕过接口直接提交）
+        Set<Long> refunded = refundedSkuIds(order);
+        if (skuIds.stream().anyMatch(refunded::contains)) {
             throw new BusinessException("提交的商品中包含已退款商品，不可评价");
         }
 
@@ -500,7 +563,7 @@ public class ReviewServiceImpl implements ReviewService {
             detail.setOrderId(orderNo);
             detail.setUserId(userId);
 
-            // 2. 保存到MySQL
+            // 5. 保存到MySQL
             Review review = new Review();
             review.setOrderNo(orderNo);
             review.setUserId(userId);
@@ -514,7 +577,7 @@ public class ReviewServiceImpl implements ReviewService {
             review.setStatus(1);
             reviewMapper.insert(review);
 
-            // 3. 保存图片
+            // 6. 保存图片
             if (detail.getImages() != null) {
                 for (String imageUrl : detail.getImages()) {
                     ReviewImage image = new ReviewImage();
@@ -525,13 +588,13 @@ public class ReviewServiceImpl implements ReviewService {
                 }
             }
 
-            // 4. 保存到MongoDB
+            // 7. 保存到MongoDB
             detail.setCreatedAt(LocalDateTime.now());
             detail.setStatus(1); // 显示，与MySQL Review.status同步
             reviewDetailRepository.save(detail);
         }
 
-        // 5. 更新订单评价状态
+        // 8. 更新订单评价状态
         try {
             orderFeignClient.updateReviewed(orderNo, 1);
         } catch (Exception e) {

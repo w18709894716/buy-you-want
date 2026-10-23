@@ -107,6 +107,8 @@ interface SkuItem {
   specs: string[]
   price: number
   stock: number
+  /** 加载时的库存快照，提交后由服务端换算成改动量，避免覆盖并发下单的扣减 */
+  stockSnapshot?: number
   skuCode: string
 }
 

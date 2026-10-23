@@ -224,6 +224,9 @@ const loadProduct = async () => {
           specs,
           price: sku.price || 0,
           stock: sku.stock || 0,
+          // 记住加载时的库存：提交时服务端按 (提交值 - 快照) 算改动量叠加到实时库存，
+          // 避免用页面快照整值覆盖掉期间的下单扣减
+          stockSnapshot: sku.stock || 0,
           skuCode: sku.skuCode || ''
         }
       })
@@ -266,6 +269,7 @@ const handleSubmit = async () => {
             skuCode: sku.skuCode || '',
             price: sku.price || 0,
             stock: sku.stock || 0,
+            stockSnapshot: sku.stockSnapshot,
             specData: JSON.stringify(
               Object.fromEntries((sku.specs || []).map((v: string, i: number) => [names[i] || `规格${i + 1}`, v]))
             )

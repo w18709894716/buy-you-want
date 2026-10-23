@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -114,6 +115,24 @@ public class SkuServiceImpl extends ServiceImpl<SkuMapper, Sku> implements SkuSe
             }
         }
         return true;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void adjustStockBatch(Map<Long, Integer> deltas) {
+        if (deltas == null || deltas.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<Long, Integer> entry : deltas.entrySet()) {
+            Integer delta = entry.getValue();
+            if (entry.getKey() == null || delta == null || delta == 0) {
+                continue;
+            }
+            // WHERE 带 stock + delta >= 0：影响行数为 0 说明期间已被订单占用，调整后会变负数
+            if (baseMapper.adjustStock(entry.getKey(), delta) == 0) {
+                throw new BusinessException("库存已被订单占用，请刷新页面后重试");
+            }
+        }
     }
 
     /**
