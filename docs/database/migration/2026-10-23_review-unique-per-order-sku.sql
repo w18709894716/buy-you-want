@@ -71,10 +71,17 @@ ALTER TABLE t_review
     ADD UNIQUE KEY uk_order_sku_active (order_no, sku_id, active_uk);
 
 -- ⑥ 验证：应返回 1
-SELECT COUNT(*) AS uk_order_sku_active_exists
+--    information_schema.STATISTICS 是"每个索引列一行"，不是"每个索引一行"，
+--    直接 COUNT(*) 对这个三列索引会返回 3。这里按 INDEX_NAME 去重统计，
+--    并限定 NON_UNIQUE = 0（确认是真唯一键，而不是同名普通索引）。
+--    想核对列顺序与可空性，再跑：
+--      SHOW INDEX FROM t_review WHERE Key_name = 'uk_order_sku_active';
+--    期望 KEY 顺序 order_no → sku_id → active_uk，三列 Non_unique 均为 0。
+SELECT COUNT(DISTINCT INDEX_NAME) AS uk_order_sku_active_exists
   FROM information_schema.STATISTICS
  WHERE TABLE_SCHEMA = DATABASE()
    AND TABLE_NAME = 't_review'
+   AND NON_UNIQUE = 0
    AND INDEX_NAME = 'uk_order_sku_active';
 
 -- =============================================================================

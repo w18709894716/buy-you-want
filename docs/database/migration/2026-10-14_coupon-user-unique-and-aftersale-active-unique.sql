@@ -48,10 +48,14 @@ ALTER TABLE t_coupon_record
     ADD UNIQUE KEY uk_coupon_user (coupon_id, user_id);
 
 -- ④ 验证：应返回 1
-SELECT COUNT(*) AS uk_coupon_user_exists
+--    information_schema.STATISTICS 是"每个索引列一行"，不是"每个索引一行"，
+--    直接 COUNT(*) 对这个两列索引会返回 2。这里按 INDEX_NAME 去重统计，
+--    并限定 NON_UNIQUE = 0（确认是真唯一键，而不是同名普通索引）。
+SELECT COUNT(DISTINCT INDEX_NAME) AS uk_coupon_user_exists
   FROM information_schema.STATISTICS
  WHERE TABLE_SCHEMA = DATABASE()
    AND TABLE_NAME = 't_coupon_record'
+   AND NON_UNIQUE = 0
    AND INDEX_NAME = 'uk_coupon_user';
 
 -- -----------------------------------------------------------------------------
