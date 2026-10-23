@@ -15,13 +15,20 @@ import java.util.Optional;
 /**
  * 网关限流键解析。
  *
- * <p>当前只有**一个** {@code KeyResolver} bean（{@code pathIpKeyResolver}）：网关的
- * {@code RequestRateLimiterGatewayFilterFactory} 要求 {@code KeyResolver} 唯一，多一个就启动失败。
+ * <p>这里有**两个** {@code KeyResolver}，靠 {@code @Primary} 解决注入歧义：
+ * <ul>
+ *   <li>{@code globalIpKeyResolver}（{@code @Primary}）：全局 {@code default-filters} 用它，
+ *       以及 {@code RequestRateLimiterGatewayFilterFactory} 按类型注入时的默认值；</li>
+ *   <li>{@code pathIpKeyResolver}：敏感接口在路由上通过 SpEL {@code key-resolver: "#{@pathIpKeyResolver}"}
+ *       显式指定，走独立的桶。</li>
+ * </ul>
  * key 语义 = "客户端 IP + 路由 id"，即**按接口分组限流**：
  * <ul>
- *   <li>全局 {@code default-filters}（50/100）对每个接口各自生效 → 刷一个接口不会拖垮同出口的其它接口；</li>
+ *   <li>全局桶（50/100）对每个接口各自生效 → 刷一个接口不会拖垮同出口的其它接口；</li>
  *   <li>登录/短信/下单/支付在路由上另挂更严的令牌桶，与全局桶叠加，取更严者。</li>
  * </ul>
+ * 两个 bean 的 key 必须带不同后缀（{@code :global} / {@code :strict}），否则同一个请求
+ * 会被两道过滤器各扣一次令牌，等效强度翻倍。
  *
  * <p>关于 {@code X-Forwarded-For}：默认**不信任**。直连部署时该请求头由客户端完全可控，
  * 若用它做限流键，攻击者每次换一个伪造 IP 就能绕过限流；只有在网关前面确实有可信代理

@@ -46,7 +46,7 @@ docker build -f deploy/Dockerfile --build-arg MODULE=byw-gateway -t byw/byw-gate
 
 ## 四、CI（GitHub Actions）
 
-[ci.yml](.github/workflows/ci.yml) 三个 job：
+[ci.yml](../../.github/workflows/ci.yml) 三个 job：
 
 | job | 内容 |
 |---|---|

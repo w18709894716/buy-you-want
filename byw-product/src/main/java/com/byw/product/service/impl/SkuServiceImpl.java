@@ -8,12 +8,14 @@ import com.byw.product.entity.Sku;
 import com.byw.product.mapper.SkuMapper;
 import com.byw.product.service.SkuService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class SkuServiceImpl extends ServiceImpl<SkuMapper, Sku> implements SkuService {
@@ -57,7 +59,11 @@ public class SkuServiceImpl extends ServiceImpl<SkuMapper, Sku> implements SkuSe
                     .setSql("lock_stock = lock_stock + " + dto.getQuantity());
             int rows = baseMapper.update(null, wrapper);
             if (rows == 0) {
-                throw new BusinessException("库存不足，无法锁定，SKU ID: " + dto.getSkuId());
+                // 影响行数为 0 = 库存不足或 SKU 不存在。skuId 只进日志，不进异常消息：
+                // 这句会一路透到买家页面，内部标识对用户没有意义（见文案规范）
+                log.info("锁定库存失败（库存不足或 SKU 不存在）: skuId={}, quantity={}",
+                        dto.getSkuId(), dto.getQuantity());
+                throw new BusinessException("库存不足，请调整购买数量后重试");
             }
         }
         return true;
@@ -76,7 +82,10 @@ public class SkuServiceImpl extends ServiceImpl<SkuMapper, Sku> implements SkuSe
                     .setSql("lock_stock = lock_stock - " + dto.getQuantity());
             int rows = baseMapper.update(null, wrapper);
             if (rows == 0) {
-                throw new BusinessException("锁定库存不足，无法释放，SKU ID: " + dto.getSkuId());
+                // lock_stock 不够扣，通常是重复释放或预占记录与库存不同步，属于需要排查的异常
+                log.warn("释放库存失败（lock_stock 不足）: skuId={}, quantity={}",
+                        dto.getSkuId(), dto.getQuantity());
+                throw new BusinessException("库存释放失败，请稍后重试");
             }
         }
         return true;
@@ -94,7 +103,10 @@ public class SkuServiceImpl extends ServiceImpl<SkuMapper, Sku> implements SkuSe
                     .setSql("lock_stock = lock_stock - " + dto.getQuantity());
             int rows = baseMapper.update(null, wrapper);
             if (rows == 0) {
-                throw new BusinessException("锁定库存不足，无法核销，SKU ID: " + dto.getSkuId());
+                // 支付成功后核销预占，失败意味着 lock_stock 与订单不符（重复回调或超卖兜底），必须留痕
+                log.warn("核销库存失败（lock_stock 不足）: skuId={}, quantity={}",
+                        dto.getSkuId(), dto.getQuantity());
+                throw new BusinessException("库存核销失败，请稍后重试");
             }
         }
         return true;
@@ -111,7 +123,9 @@ public class SkuServiceImpl extends ServiceImpl<SkuMapper, Sku> implements SkuSe
                     .setSql("stock = stock + " + dto.getQuantity());
             int rows = baseMapper.update(null, wrapper);
             if (rows == 0) {
-                throw new BusinessException("库存回补失败，SKU 不存在，SKU ID: " + dto.getSkuId());
+                log.warn("回补库存失败（SKU 不存在）: skuId={}, quantity={}",
+                        dto.getSkuId(), dto.getQuantity());
+                throw new BusinessException("库存回补失败，请稍后重试");
             }
         }
         return true;

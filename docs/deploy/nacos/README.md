@@ -108,7 +108,7 @@ logging:
 | 改公共服务配置 | 改 `byw-common.yml` → `.\publish.ps1` → 提交 → 服务 `refresh: true` 热生效（部分项仍需重启，见 jasypt/README） |
 | 改某服务私有配置 | 改 `services/byw-<name>.yml` → 发布 → **重启该服务**（datasource/rocketmq 这类初始化参数不支持热改） |
 | 新增一个服务 | 本地 `bootstrap.yml` 照第二节模板（23 行）；在 `services/` 下加 `byw-<name>.yml`；执行 `publish.ps1` |
-| 新增敏感项 | 用 [jasypt/encrypt.ps1](jasypt/encrypt.ps1) 生成 `ENC(...)` → 写进对应 yml（**加引号**）→ 发布 |
+| 新增敏感项 | 用 [jasypt/encrypt.ps1](../jasypt/encrypt.ps1) 生成 `ENC(...)` → 写进对应 yml（**加引号**）→ 发布 |
 
 > 安全边界：当前 Nacos 是 standalone + 内嵌 Derby、**未开鉴权**、明文 HTTP。生产必须开鉴权 + 内网 + TLS，
 > 并把配置落到外置 MySQL（集群硬要求）。

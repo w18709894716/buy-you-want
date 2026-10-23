@@ -99,6 +99,9 @@ export const useCartStore = defineStore('cart', {
 
     /** 从本地缓存恢复购物车（未登录场景，不发起接口请求） */
     restoreLocal() {
+      // SSR 阶段没有 localStorage：getCartList 的 catch 在服务端也可能走到这里，
+      // 不挡住会直接 ReferenceError（服务端渲染整页 500）
+      if (!import.meta.client) return
       const cached = localStorage.getItem('byw_cart')
       if (cached) {
         this.items = JSON.parse(cached)
