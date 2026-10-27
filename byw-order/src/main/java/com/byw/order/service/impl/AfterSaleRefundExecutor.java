@@ -9,12 +9,16 @@ import com.byw.order.entity.OrderItem;
 import com.byw.order.mapper.AfterSaleMapper;
 import com.byw.order.mapper.OrderItemMapper;
 import com.byw.order.mapper.OrderMapper;
+import com.byw.order.service.CompensationService;
 import com.byw.order.service.OrderService;
+import com.byw.order.service.compensation.CompensationPayloads;
+import com.byw.order.service.compensation.CompensationType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
@@ -40,6 +44,7 @@ public class AfterSaleRefundExecutor {
     private final OrderMapper orderMapper;
     private final ProductFeignClient productFeignClient;
     private final OrderService orderService;
+    private final CompensationService compensationService;
 
     /**
      * 退款成功后落终态：售后单 退款中(6) → 已完成(3)，并编排订单状态。
@@ -72,6 +77,14 @@ public class AfterSaleRefundExecutor {
         }
         afterSale.setStatus(3);
         settleOrderAfterRefund(afterSale);
+        // 结算冲减任务必须在本事务内登记：放到提交之后再登记，就仍有"终态已提交、任务没写"的窗口。
+        // 不冲减的后果是"同一笔钱付两次"——买家已拿到退款，冷静期一到结算仍把全额打给商家。
+        BigDecimal refundAmount = afterSale.getRefundAmount();
+        if (refundAmount != null && refundAmount.signum() > 0) {
+            compensationService.enqueueInCurrentTx(CompensationType.SETTLE_ADJUST,
+                    afterSale.getAfterSaleNo(), afterSale.getOrderNo(), afterSale.getAfterSaleNo(),
+                    new CompensationPayloads.SettleAdjust(refundAmount));
+        }
         log.info("售后退款完成: afterSaleNo={}, orderNo={}", afterSale.getAfterSaleNo(), afterSale.getOrderNo());
         return true;
     }

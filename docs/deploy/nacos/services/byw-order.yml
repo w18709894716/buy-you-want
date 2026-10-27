@@ -16,3 +16,13 @@ rocketmq:
   producer:
     group: byw-order-producer
     send-message-timeout: 3000
+byw:
+  order:
+    # Post-commit compensation task (t_compensation_task) scan settings.
+    # Tasks are always created; this only controls how fast the scheduler retries them.
+    compensation-scan-interval-ms: ${BYW_ORDER_COMPENSATION_SCAN_INTERVAL_MS:60000}
+    compensation-batch-size: ${BYW_ORDER_COMPENSATION_BATCH_SIZE:100}
+    # After this many attempts a task moves to status=2 (manual).
+    compensation-max-retry: ${BYW_ORDER_COMPENSATION_MAX_RETRY:7}
+    # A task stuck in status=3 longer than this is assumed crashed and requeued.
+    compensation-stale-minutes: ${BYW_ORDER_COMPENSATION_STALE_MINUTES:10}

@@ -113,7 +113,28 @@ CREATE TABLE t_after_sale (
     UNIQUE KEY uk_item_active (order_item_id, active_flag)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+DROP TABLE IF EXISTS t_compensation_task;
+CREATE TABLE t_compensation_task (
+    id            BIGINT       PRIMARY KEY AUTO_INCREMENT,
+    task_type     VARCHAR(32)  NOT NULL COMMENT '补偿类型 CANCEL_REFUND/SETTLE_ADJUST/RELEASE_COUPON/RELEASE_STOCK',
+    biz_key       VARCHAR(96)  NOT NULL COMMENT '幂等键：CANCEL:{orderNo} / afterSaleNo / {orderNo}:{couponId} / parentOrderNo',
+    order_no      VARCHAR(64)  DEFAULT NULL,
+    after_sale_no VARCHAR(64)  DEFAULT NULL,
+    payload       TEXT         COMMENT '执行参数 JSON 快照，执行时不再回查业务表（回补/撤预占可能几十个 SKU，故用 TEXT）',
+    status        TINYINT      NOT NULL DEFAULT 0 COMMENT '0待执行 1已完成 2需人工 3执行中',
+    retry_count   INT          NOT NULL DEFAULT 0 COMMENT '已重试次数',
+    next_retry_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '下次可执行时间（指数退避）',
+    last_error    VARCHAR(500) DEFAULT NULL COMMENT '最近一次失败原因，供人工排查',
+    created_at    DATETIME     DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    -- 同一类型同一业务键只允许一条：重复登记（重试、重复回调）撞唯一键即视为已登记
+    UNIQUE KEY uk_type_biz (task_type, biz_key),
+    -- 扫描"到期待执行"用；status 在前区分度更高
+    KEY idx_status_next (status, next_retry_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='后置补偿任务（本地消息表）';
+
 -- ========== 清空数据 ==========
+TRUNCATE TABLE t_compensation_task;
 TRUNCATE TABLE t_after_sale;
 TRUNCATE TABLE t_order_status_log;
 TRUNCATE TABLE t_order_item;

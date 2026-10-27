@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.byw.api.pay.PayFeignClient;
 import com.byw.api.pay.dto.RefundInfoDTO;
-import com.byw.api.settle.SettleFeignClient;
 import com.byw.common.core.exception.BusinessException;
 import com.byw.common.core.util.SnowflakeIdGenerator;
 import com.byw.common.core.result.PageResult;
@@ -18,7 +17,9 @@ import com.byw.order.mapper.AfterSaleMapper;
 import com.byw.order.mapper.OrderItemMapper;
 import com.byw.order.mapper.OrderMapper;
 import com.byw.order.service.AfterSaleService;
+import com.byw.order.service.CompensationService;
 import com.byw.order.service.OrderService;
+import com.byw.order.service.compensation.CompensationType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
@@ -43,9 +44,9 @@ public class AfterSaleServiceImpl implements AfterSaleService {
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
     private final PayFeignClient payFeignClient;
-    private final SettleFeignClient settleFeignClient;
     private final OrderService orderService;
     private final AfterSaleRefundExecutor refundExecutor;
+    private final CompensationService compensationService;
 
     /** 退款类售后类型：仅退款/退货退款/价保，必须携带退款金额 */
     private static final List<Integer> REFUND_TYPES = List.of(1, 2, 6);
@@ -414,39 +415,12 @@ public class AfterSaleServiceImpl implements AfterSaleService {
         // 本地终态（6→3 + 订单编排）在一个事务内完成
         boolean finalized = refundExecutor.finalizeRefund(afterSale.getId());
         if (finalized) {
-            // 库存回补放在终态事务提交之后：避免"远程回补成功 + 本地回滚"被重试放大成重复回补
+            // 库存回补放在终态事务提交之后：避免"远程回补成功 + 本地回滚"被重试放大成重复回补。
+            // （restoreStock 是 stock = stock + q，不幂等，因此没有纳入补偿任务表）
             refundExecutor.restoreStockIfUnshipped(afterSale);
-            // 结算冲减同样放在事务外，以售后单号为幂等键。不冲减的后果是"同一笔钱付两次"：
-            // 买家拿到退款，冷静期一到 settleDueRecords 仍把全额打进商家可用余额。
-            notifySettleAdjust(afterSale);
-        }
-    }
-
-    /**
-     * 通知结算服务冲减商家应得份额。
-     *
-     * <p>与库存回补同理放在终态事务提交之后、best-effort：失败只 error 不回滚终态
-     * （退款已经发生，售后单必须收敛到已完成），并留全 afterSaleNo/orderNo/amount
-     * 供人工核对商家余额。refNo 幂等，重驱安全。
-     */
-    private void notifySettleAdjust(AfterSale afterSale) {
-        BigDecimal amount = afterSale.getRefundAmount();
-        if (amount == null || amount.signum() <= 0) {
-            return;
-        }
-        String afterSaleNo = afterSale.getAfterSaleNo();
-        String orderNo = afterSale.getOrderNo();
-        try {
-            R<Boolean> result = settleFeignClient.adjustOnRefund(orderNo, amount, afterSaleNo);
-            if (result == null || !result.isSuccess()) {
-                log.error("退款结算冲减失败，需人工核对商家余额: afterSaleNo={}, orderNo={}, amount={}, msg={}",
-                        afterSaleNo, orderNo, amount, result == null ? "null" : result.getMessage());
-                return;
-            }
-            log.info("退款结算冲减完成: afterSaleNo={}, orderNo={}, amount={}", afterSaleNo, orderNo, amount);
-        } catch (Exception e) {
-            log.error("退款结算冲减异常，需人工核对商家余额: afterSaleNo={}, orderNo={}, amount={}",
-                    afterSaleNo, orderNo, amount, e);
+            // 结算冲减的任务已在 finalizeRefund 的事务内登记，这里只做"提交后立刻驱动一次"，
+            // 失败由 CompensationTaskScheduler 按退避重试，不会像以前那样只剩一行 error 日志。
+            compensationService.executeNow(CompensationType.SETTLE_ADJUST, afterSale.getAfterSaleNo());
         }
     }
 

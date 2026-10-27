@@ -33,7 +33,10 @@ import com.byw.order.mapper.AfterSaleMapper;
 import com.byw.common.core.util.SnowflakeIdGenerator;
 import com.byw.common.redis.util.RedisUtil;
 import com.byw.order.producer.OrderEventProducer;
+import com.byw.order.service.CompensationService;
 import com.byw.order.service.OrderService;
+import com.byw.order.service.compensation.CompensationPayloads;
+import com.byw.order.service.compensation.CompensationType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
@@ -82,6 +85,7 @@ public class OrderServiceImpl implements OrderService {
     private final OrderEventProducer orderEventProducer;
     private final ShopFeignClient shopFeignClient;
     private final RedisUtil redisUtil;
+    private final CompensationService compensationService;
 
     /** 幂等键存活时长（秒）：覆盖用户连点/网络重试的时间窗，过期后允许同内容重新下单 */
     @Value("${byw.order.idempotent-ttl-seconds:30}")
@@ -114,6 +118,12 @@ public class OrderServiceImpl implements OrderService {
         }
         // 抢到幂等键 = 本次是首单。若首单失败必须把键删掉，否则用户改不动内容、只能干等 TTL 过期。
         registerRollbackCompensation(() -> releaseIdempotentKey(idempotentKey));
+
+        // 先生成父订单号：后面第 4 步核销优惠券就要用它作为回滚补偿的幂等键。
+        // 之前是在第 6 步才生成，导致券补偿只能退而用"请求指纹"做键 —— 而同内容重试会产生
+        // 相同的指纹，第二次失败时补偿任务会被唯一键判成"已登记"而不再执行，券就白扣了。
+        // generateOrderNo 是纯雪花取号，提前调用无副作用。
+        String parentOrderNo = generateOrderNo();
 
         // 1. 以商品服务为准回填价格/归属店铺/商品快照：客户端传入的 price 只参与"是否已变更"的比对，
         //    绝不作为下单金额（否则可直接构造 price=0.01 下单）
@@ -176,7 +186,8 @@ public class OrderServiceImpl implements OrderService {
                 // 只在"确认核销成功"时登记 —— 调用超时导致结果未知时不敢盲撤，
                 // 否则会把用户另一笔订单已用掉的券误恢复成未使用。
                 Long usedCouponId = createDTO.getCouponId();
-                registerRollbackCompensation(() -> releaseCouponQuietly(usedCouponId, userId));
+                registerRollbackCompensation(
+                        () -> compensateReleaseCoupon(usedCouponId, userId, parentOrderNo));
                 if (couponResult.getData() == null) {
                     // 核销已成功却没返回优惠金额：不能按"0 优惠"继续（用户会多付钱），
                     // 抛错让事务回滚，上面登记的补偿会把券退回。
@@ -189,8 +200,7 @@ public class OrderServiceImpl implements OrderService {
         // 5. 解析收货地址（父订单与各子订单共用），并校验地址归属下单人
         String[] receiver = resolveReceiver(createDTO.getAddressId(), userId);
 
-        // 6. 生成父订单号并创建父订单（聚合支付，无明细，不归属单一店铺）
-        String parentOrderNo = generateOrderNo();
+        // 6. 创建父订单（聚合支付，无明细，不归属单一店铺）；订单号已在第 0 步生成
         // 幂等键从占位更新为首单订单号：此后的重复请求将直接拿到这个号
         redisUtil.set(idempotentKey, parentOrderNo, idempotentTtlSeconds, TimeUnit.SECONDS);
         BigDecimal parentPayAmount = grandTotal.subtract(totalDiscount).max(BigDecimal.ZERO);
@@ -291,7 +301,7 @@ public class OrderServiceImpl implements OrderService {
         }
         // 预占已生效：登记回滚补偿。lockStock 抛错时走不到这里，也不必补偿 ——
         // 库存不足是高频路径，此时上面登记的优惠券补偿会把券还给用户。
-        registerRollbackCompensation(() -> releaseStockQuietly(deductList, parentOrderNo));
+        registerRollbackCompensation(() -> compensateReleaseStock(deductList, parentOrderNo));
 
         // 9. 清除购物车中已下单商品：属于可以后补的副作用，不是订单成立的必要条件。
         // 失败只告警不回滚 —— 若让它把整单事务拖垮，会连带撤掉刚核销的券与刚预占的库存，
@@ -632,11 +642,20 @@ public class OrderServiceImpl implements OrderService {
         saveStatusLog(order.getId(), fromStatus, 4, operator, reason);
         orderEventProducer.sendOrderStatusChangeEvent(order.getOrderNo(), fromStatus, 4);
         // 已支付（待发货）订单被取消：货没发、钱必须退。此前只回补库存不退钱，
-        // 用户付了款却既拿不到货也拿不到退款。退款放在事务提交之后，避免"远端已退 + 本地回滚"被重试放大。
+        // 用户付了款却既拿不到货也拿不到退款。
+        // 退款仍放在事务提交之后执行（放进事务里会被"远端已成功 + 本地回滚"放大成重复退款），
+        // 但**任务在事务内登记**：这样即使进程在提交后、调用前崩溃，任务也已经在表里，
+        // 由 CompensationTaskScheduler 接着重试，不会像以前那样只剩一行 error 日志。
         if (fromStatus != null && fromStatus == 1) {
             BigDecimal payAmount = order.getPayAmount();
             String refundOrderNo = order.getOrderNo();
-            registerAfterCommit(() -> refundForCancel(refundOrderNo, payAmount));
+            if (payAmount != null && payAmount.signum() > 0) {
+                String bizKey = "CANCEL:" + refundOrderNo;
+                compensationService.enqueueInCurrentTx(CompensationType.CANCEL_REFUND, bizKey,
+                        refundOrderNo, null, new CompensationPayloads.CancelRefund(payAmount));
+                registerAfterCommit(() -> compensationService.executeNow(
+                        CompensationType.CANCEL_REFUND, bizKey));
+            }
         }
         log.info("订单取消成功: orderNo={}, operator={}", order.getOrderNo(), operator);
     }
@@ -1109,13 +1128,15 @@ public class OrderServiceImpl implements OrderService {
     }
 
     /**
-     * 取消已支付订单后的退款，以子订单/独立订单为维度，refNo 固定为 {@code CANCEL:{orderNo}} 保证幂等。
+     * 取消维度的退款，以子订单/独立订单为维度，refNo 固定为 {@code CANCEL:{orderNo}} 保证幂等。
      *
      * <p>拆单场景下支付单挂在父订单号上，byw-pay 的 {@code findRefundablePayOrder} 会回溯父单，
      * 并用"累计退款 ≤ 支付金额"兜底，因此逐子单退款合计恰好等于父单实付，不会漏也不会重。
      *
-     * <p>提交后 best-effort：失败不回滚取消（钱已收、货未发，取消对用户有利），但必须打 error
-     * 并留全 orderNo/amount/refNo 供人工或对账补退。refNo 幂等，重复驱动安全。
+     * <p>现在只剩 {@link #refundCancelledOnPaid(String)} 在用：那条链路由 MQ 消费驱动，
+     * 失败要抛出布尔值让消息重试，所以保留同步返回值。
+     * 用户主动取消订单走的已不是这里，而是补偿任务（{@code CANCEL_REFUND}）——
+     * 因为它需要"提交后执行 + 崩溃后仍能被扫到"。
      *
      * @return 退款是否成功（无需退款时视为成功）
      */
@@ -1142,24 +1163,44 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-    /** 回滚补偿：把本单核销掉的券恢复为未使用 */
-    private void releaseCouponQuietly(Long couponId, Long userId) {
+    /**
+     * 回滚补偿：把本单核销掉的券恢复为未使用。
+     *
+     * <p>改为"先登记补偿任务、再立即驱动一次"：原实现在这里直接调远端、失败只打 error，
+     * 进程崩在「本地回滚完成、远端调用之前」时，券就永远停留在已使用状态而无人知晓。
+     * 此时业务事务已经回滚，所以用独立事务登记任务。
+     */
+    private void compensateReleaseCoupon(Long couponId, Long userId, String orderNo) {
+        String bizKey = orderNo + ":" + couponId;
         try {
-            promotionFeignClient.releaseCoupon(couponId, userId);
-            log.warn("订单创建回滚，已撤回优惠券核销: couponId={}, userId={}", couponId, userId);
+            compensationService.enqueueStandalone(CompensationType.RELEASE_COUPON, bizKey, orderNo, null,
+                    new CompensationPayloads.ReleaseCoupon(couponId, userId));
         } catch (Exception e) {
-            log.error("订单创建回滚后撤回优惠券失败，需人工处理: couponId={}, userId={}", couponId, userId, e);
+            log.error("登记撤回优惠券补偿失败，券可能仍处于已使用状态，需人工处理: couponId={}, userId={}, orderNo={}",
+                    couponId, userId, orderNo, e);
+            return;
         }
+        compensationService.executeNow(CompensationType.RELEASE_COUPON, bizKey);
     }
 
-    /** 回滚补偿：把本单预占的库存退回可售（releaseStock 不满足 lock_stock>=qty 时会抛错，不会误加） */
-    private void releaseStockQuietly(List<SkuStockDeductDTO> stockList, String parentOrderNo) {
+    /**
+     * 回滚补偿：把本单预占的库存退回可售。
+     *
+     * <p>与撤券同理改为"登记任务 + 立即驱动"。商品侧的 releaseStock 带 CAS，
+     * 重复执行不会把可售库存加两次，所以重试安全。
+     */
+    private void compensateReleaseStock(List<SkuStockDeductDTO> stockList, String orderNo) {
         try {
-            productFeignClient.releaseStock(stockList);
-            log.warn("订单创建回滚，已撤回库存预占: orderNo={}", parentOrderNo);
+            compensationService.enqueueStandalone(CompensationType.RELEASE_STOCK, orderNo, orderNo, null,
+                    new CompensationPayloads.ReleaseStock(stockList.stream()
+                            .map(s -> new CompensationPayloads.ReleaseStock.Item(s.getSkuId(), s.getQuantity()))
+                            .toList()));
         } catch (Exception e) {
-            log.error("订单创建回滚后撤回库存预占失败，需人工处理: orderNo={}, items={}", parentOrderNo, stockList, e);
+            log.error("登记撤回库存预占补偿失败，库存可能仍被占用，需人工处理: orderNo={}, items={}",
+                    orderNo, stockList, e);
+            return;
         }
+        compensationService.executeNow(CompensationType.RELEASE_STOCK, orderNo);
     }
 
     /**
